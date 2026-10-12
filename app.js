@@ -4162,6 +4162,10 @@ function renderSessioneAttiva() {
     .sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
   const sidebarHtml = sessionCallbacks.length ? renderSessionCallbackSidebar(sessionCallbacks) : '';
 
+  const lastCall = s.calls[s.calls.length - 1];
+  const undoBtnHtml = lastCall && lastCall.undoState
+    ? `<div class="session-undo-row"><button id="btnUndoLastCall" class="btn-undo" title="Cancella l'ultimo esito che hai segnato e torna indietro">↶ Annulla ultimo esito <span class="session-undo-label">${escapeHtml(lastCall.outcomeLabel)}</span></button></div>`
+    : '';
   appRoot.innerHTML = `
     <div class="session-screen${isPaused ? ' is-paused' : ''}">
       <div class="session-body">
@@ -4176,6 +4180,7 @@ function renderSessioneAttiva() {
               <button id="btnSkip" class="btn-skip">Skip →</button>
             </div>
           </div>
+          ${undoBtnHtml}
 
           <div class="session-stats">
             <div class="stat-block">
@@ -4210,6 +4215,8 @@ function renderSessioneAttiva() {
     btn.addEventListener('click', () => { if (!db.activeSession.pausedAt) logCallAction(btn.dataset.outcomeId); });
   });
   document.getElementById('btnSkip').addEventListener('click', () => { if (!db.activeSession.pausedAt) skipLeadAction(); });
+  const undoBtn = document.getElementById('btnUndoLastCall');
+  if (undoBtn) undoBtn.addEventListener('click', undoLastCallAction);
   document.getElementById('btnEndSession').addEventListener('click', endSessionAction);
   document.getElementById('btnPauseSession').addEventListener('click', toggleSessionPause);
   document.getElementById('btnMinimizeSession').addEventListener('click', () => {
@@ -4337,6 +4344,13 @@ function logCallAction(outcomeId) {
   // Se eravamo in attesa di un richiamo, questo click è un ulteriore tentativo sullo
   // STESSO lead (non un lead nuovo), qualunque sia l'esito di questa chiamata.
   const isRetryAttempt = (s.retryCallsPending || 0) > 0;
+  // Stato del giro PRIMA di questa chiamata: serve al tasto "Annulla ultima" (vedi
+  // undoLastCallAction) per rimettere tutto com'era.
+  const undoState = {
+    retryCallsPending: s.retryCallsPending,
+    callAttemptsOnLead: s.callAttemptsOnLead,
+    currentLeadGroupId: s.currentLeadGroupId
+  };
 
   // groupId: identifica univocamente "questo lead" a prescindere dalla posizione nell'array
   // (vedi computeStats in utils.js) — un nuovo lead riceve un id nuovo, un tentativo di
@@ -4353,7 +4367,8 @@ function logCallAction(outcomeId) {
     isConversion: !!outcome.isConversion,
     isNoAnswer: !!outcome.isNoAnswer,
     isSecondAttempt: isRetryAttempt,
-    groupId: s.currentLeadGroupId
+    groupId: s.currentLeadGroupId,
+    undoState
   };
   s.calls.push(callRecord);
 
@@ -4375,11 +4390,13 @@ function logCallAction(outcomeId) {
   renderSessioneAttiva();
 
   if (outcome.label === APPOINTMENT_SET_OUTCOME_LABEL) {
+    uiState.pendingApptCallId = callRecord.id;
     openAppointmentSetModal();
   } else if (outcome.label === CALLBACK_OUTCOME_LABEL) {
     openCallbackModal({
       mode: 'create',
       groupId: callRecord.groupId,
+      sourceCallId: callRecord.id,
       sourceSessionId: s.id,
       sourcePipelineId: pipeline.id,
       sourcePipelineName: pipeline.name,
@@ -4431,6 +4448,8 @@ function openAppointmentSetModal() {
     apt.scheduledAt = when;
     // Sessione in cui è stato fissato: serve alla lista sotto gli esiti (vedi renderSessionApptList).
     apt.sourceSessionId = db.activeSession ? db.activeSession.id : null;
+    apt.sourceCallId = uiState.pendingApptCallId || null;
+    uiState.pendingApptCallId = null;
     db.appointments.unshift(apt);
     persist();
     closeModal();
@@ -4801,6 +4820,7 @@ function openCallbackModal(opts) {
         sourcePipelineId: opts.sourcePipelineId || null,
         sourcePipelineName: opts.sourcePipelineName || '',
         sourceSessionId: opts.sourceSessionId || null,
+        sourceCallId: opts.sourceCallId || null,
         status: 'pending',
         callCount: 0,
         lastCalledAt: null,
@@ -4874,6 +4894,37 @@ function removeCallback(callbackId, onDone) {
     showToast('Tolto dai da richiamare.');
     if (onDone) onDone();
   }, { confirmLabel: 'Togli' });
+}
+
+/**
+ * Tasto "↶ Annulla ultimo esito" in sessione (richiesta di Hamza, 2026-10-12): cancella
+ * l'ultima chiamata segnata con i bottoni degli esiti e rimette il giro com'era prima
+ * (lead in corso, richiamo immediato, tentativi). Se quell'esito aveva creato un "Da
+ * richiamare" o un appuntamento, li toglie insieme. Si può premere più volte di fila.
+ * Non vale per le chiamate del Round Conferme o dei richiami (non hanno undoState).
+ */
+function undoLastCallAction() {
+  const s = db.activeSession;
+  if (!s || !s.calls.length) return;
+  const call = s.calls[s.calls.length - 1];
+  if (!call.undoState) return;
+  const linkedCbs = (db.callbacks || []).filter(c => c.sourceCallId === call.id);
+  const linkedApts = (db.appointments || []).filter(a => a.sourceCallId === call.id);
+  const extra = [];
+  if (linkedCbs.length) extra.push(`il "Da richiamare" di ${linkedCbs.map(c => c.leadName || '(senza nome)').join(', ')}`);
+  if (linkedApts.length) extra.push(`l'appuntamento di ${linkedApts.map(a => a.clientName || '(senza nome)').join(', ')}`);
+  const msg = `Annullare l'ultimo esito "${call.outcomeLabel}"?` + (extra.length ? ` Verrà tolto anche ${extra.join(' e ')}.` : '');
+  showConfirm(msg, () => {
+    s.calls.pop();
+    s.retryCallsPending = call.undoState.retryCallsPending;
+    s.callAttemptsOnLead = call.undoState.callAttemptsOnLead;
+    s.currentLeadGroupId = call.undoState.currentLeadGroupId;
+    if (linkedCbs.length) db.callbacks = db.callbacks.filter(c => c.sourceCallId !== call.id);
+    if (linkedApts.length) db.appointments = db.appointments.filter(a => a.sourceCallId !== call.id);
+    persist();
+    showToast('Esito annullato.');
+    renderSessioneAttiva();
+  }, { confirmLabel: 'Annulla esito', cancelLabel: 'Lascia così' });
 }
 
 /** Pennetta ✎ su un "Da richiamare" (Simone, 2026-10-08): corregge nome, telefono e
