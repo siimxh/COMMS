@@ -2312,9 +2312,21 @@ function pickNextConfirmAppt() {
   return pending[0];
 }
 
-/** Vedi commento in cima alla sezione: le chiamate del round finiscono sempre nella
- * sessione automatica giornaliera "Conferme", mai in db.activeSession. */
+/** Dove finiscono le chiamate del round (richiesta di Hamza, 2026-10-12): se c'è una
+ * sessione aperta, DENTRO quella sessione, come lead chiamati in più (così i numeri della
+ * sessione tornano senza doverle segnare a mano). Se il round è partito dal Sì/No di
+ * inizio sessione, la sessione scelta viene aperta subito (in background) e le chiamate
+ * vanno lì. Solo senza nessuna sessione (round da Appuntamenti) restano nella sessione
+ * automatica giornaliera "Conferme". */
 function appendConfirmCallToSession(callRecord) {
+  if (!db.activeSession && db.confirmRoundReturnMode === 'session' && db.confirmRoundPendingPipelineId) {
+    createPipelineSession(db.confirmRoundPendingPipelineId);
+    uiState.sessionMinimized = true;
+  }
+  if (db.activeSession) {
+    db.activeSession.calls.push(callRecord);
+    return;
+  }
   const todayKey = dateInputValue(new Date());
   let autoSession = db.sessions.find(s => s.pipelineId === CONFIRM_AUTO_PIPELINE_ID && dateInputValue(s.startedAt) === todayKey);
   if (!autoSession) {
@@ -2505,7 +2517,13 @@ function exitConfirmRound() {
   db.confirmRoundPendingPipelineId = null;
   persist();
   document.body.classList.remove('in-session');
-  if (mode === 'session' && pendingPid) {
+  if (db.activeSession && mode === 'session') {
+    // Sessione già aperta dal round stesso (vedi appendConfirmCallToSession):
+    // si torna lì invece di crearne una nuova.
+    uiState.sessionMinimized = false;
+    location.hash = '#/sessione-attiva';
+    renderRoute();
+  } else if (mode === 'session' && pendingPid) {
     beginPipelineSession(pendingPid);
   } else {
     location.hash = '#/setting-appuntamenti';
@@ -5106,8 +5124,19 @@ function startSessionAction(pipelineId) {
 }
 
 function beginPipelineSession(pipelineId) {
+  if (!createPipelineSession(pipelineId)) return;
+  uiState.sessionMinimized = false;
+  persist();
+  closeModal();
+  location.hash = '#/sessione-attiva';
+  renderRoute();
+}
+
+/** Crea la sessione senza aprirla a schermo (usata anche dal Round Conferme, vedi
+ * appendConfirmCallToSession). */
+function createPipelineSession(pipelineId) {
   const pipeline = db.pipelines.find(p => p.id === pipelineId);
-  if (!pipeline) return;
+  if (!pipeline) return false;
   db.sessionCounter += 1;
   db.activeSession = {
     id: uid('sess'),
@@ -5124,11 +5153,7 @@ function beginPipelineSession(pipelineId) {
     pausedTotalMs: 0,
     currentLeadGroupId: null // id del lead attualmente in corso (vedi logCallAction/computeStats)
   };
-  uiState.sessionMinimized = false;
-  persist();
-  closeModal();
-  location.hash = '#/sessione-attiva';
-  renderRoute();
+  return true;
 }
 
 /* ---------- Backup: esporta / importa ---------- */
