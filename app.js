@@ -774,7 +774,7 @@ const FUNNEL_STEPS_VENDITORE = [
   // 4a tappa richiesta esplicitamente dall'utente: il totale VENDUTO (non le commissioni)
   // sugli appuntamenti Venditore chiusi nel periodo — vedi "fatturato" in computeFunnelValues.
   { key: 'fatturato', label: 'Fatturato', money: true },
-  // 5a tappa (richiesta 2026-10-08): commissioni Venditore = 10% del fatturato sopra.
+  // 5a tappa: commissioni Venditore = 10% dell'incassato (cash collected + rate pagate), vedi computeFunnelValues.
   { key: 'commissioniVendita', label: 'Commissioni', money: true }
 ];
 
@@ -1132,10 +1132,20 @@ function buildAndamentoSeries(range, timeframe, metric, role) {
   const stepMs = totalMs / numBuckets;
 
   const buckets = [];
-  for (let i = 0; i < numBuckets; i++) {
-    const bStart = new Date(range.start.getTime() + stepMs * i);
-    const bEnd = i === numBuckets - 1 ? range.end : new Date(range.start.getTime() + stepMs * (i + 1) - 1);
-    buckets.push({ start: bStart, end: bEnd });
+  if (totalDays <= 31) {
+    // Un bucket per giorno di CALENDARIO (mezzanotte-mezzanotte): con passi fissi da 24h
+    // il cambio ora legale/solare (25/10, fine marzo) spostava i giorni di un'ora.
+    const d0 = startOfDay(range.start);
+    for (let i = 0; i < numBuckets; i++) {
+      const day = new Date(d0); day.setDate(d0.getDate() + i);
+      buckets.push({ start: day, end: i === numBuckets - 1 ? range.end : endOfDay(day) });
+    }
+  } else {
+    for (let i = 0; i < numBuckets; i++) {
+      const bStart = new Date(range.start.getTime() + stepMs * i);
+      const bEnd = i === numBuckets - 1 ? range.end : new Date(range.start.getTime() + stepMs * (i + 1) - 1);
+      buckets.push({ start: bStart, end: bEnd });
+    }
   }
 
   const values = buckets.map(b => {
@@ -1850,7 +1860,7 @@ function renderSessioneDetail(id) {
   const totalLeads = countSessionLeads(s, db.sessions);
   const duration = (s.endedAt ? (new Date(s.endedAt) - new Date(s.startedAt)) : (Date.now() - new Date(s.startedAt))) - (s.pausedTotalMs || 0);
   const counts = {};
-  s.calls.forEach(c => { counts[c.outcomeLabel] = (counts[c.outcomeLabel] || 0) + 1; });
+  Object.assign(counts, sessionOutcomeCountsByLead(s));
   const breakdown = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([label, count]) => `
     <div class="bar-row">
       <div class="bar-label">${escapeHtml(label)}</div>
@@ -2170,7 +2180,7 @@ function openRecoveryAppointmentModal(leadId) {
   const srcApt = db.appointments.find(a => a.id === lead.sourceAppointmentId);
   const prefillName = (srcApt && srcApt.clientName) || lead.clientName || '';
   const prefillPhone = (srcApt && srcApt.phone) || lead.phone || '';
-  const nowLocal = new Date().toISOString().slice(0, 16);
+  const nowLocal = localDateTimeValue(new Date());
 
   openModal(`
     <h3>Appuntamento fissato — recupero appuntamento</h3>
@@ -2552,10 +2562,20 @@ function skipConfirmAppt(apptId) {
  * - non_risposto: doppio squillo (CONFIRM_MAX_CALL_ATTEMPTS) — resta sullo stesso
  *   appuntamento al primo tentativo, passa al prossimo al secondo.
  */
+/** Lead della conferma: uno per appuntamento PER GIORNO (bug 13/10: prima restava lo
+ * stesso anche il giorno dopo, e le chiamate di due giorni diversi contavano 1 lead). */
+function ensureConfirmGroupId(apt) {
+  const todayKey = dateInputValue(new Date());
+  if (!apt.confirmGroupId || apt.confirmGroupDate !== todayKey) {
+    apt.confirmGroupId = uid('lead');
+    apt.confirmGroupDate = todayKey;
+  }
+}
+
 function applyConfirmOutcome(apptId, outcome) {
   const apt = db.appointments.find(a => a.id === apptId);
   if (!apt) return;
-  if (!apt.confirmGroupId) apt.confirmGroupId = uid('lead');
+  ensureConfirmGroupId(apt);
   const now = new Date().toISOString();
   const isRetryAttempt = !!apt.confirmRetryPending;
 
@@ -2642,7 +2662,7 @@ function openConfirmMoveModal(apptId) {
     const when = document.getElementById('confirmMoveWhen').value;
     if (!when) { showToast('Inserisci la nuova data e ora.', true); return; }
 
-    if (!apt.confirmGroupId) apt.confirmGroupId = uid('lead');
+    ensureConfirmGroupId(apt);
     appendConfirmCallToSession({
       id: uid('call'), timestamp: new Date().toISOString(), outcomeId: null, outcomeLabel: 'Appuntamento spostato',
       isConversion: false, isNoAnswer: false, isSecondAttempt: !!apt.confirmRetryPending,
@@ -2772,7 +2792,7 @@ function newAppointment(role) {
     role: role || 'setter',
     clientName: '',
     phone: null,
-    scheduledAt: new Date().toISOString().slice(0, 16),
+    scheduledAt: localDateTimeValue(new Date()),
     presentedStatus: 'no',
     presentedAt: null,
     closed: false,
@@ -3145,6 +3165,9 @@ function wireAppuntamentiEvents() {
     input.addEventListener('change', () => {
       const apt = db.appointments.find(x => x.id === input.dataset.scheduledInput);
       if (!apt || !input.value) return;
+      // presentedAt era la vecchia data: se l'utente corregge la data, la segue
+      // (altrimenti statistiche e commissioni restano sul giorno sbagliato).
+      if (apt.presentedAt && apt.presentedAt === apt.scheduledAt) apt.presentedAt = input.value;
       apt.scheduledAt = input.value;
       persist();
       renderAppuntamenti();
@@ -3430,6 +3453,9 @@ function wireVenditoreAppuntamentiEvents() {
     input.addEventListener('change', () => {
       const apt = db.appointments.find(x => x.id === input.dataset.scheduledInput);
       if (!apt || !input.value) return;
+      // presentedAt era la vecchia data: se l'utente corregge la data, la segue
+      // (altrimenti statistiche e commissioni restano sul giorno sbagliato).
+      if (apt.presentedAt && apt.presentedAt === apt.scheduledAt) apt.presentedAt = input.value;
       apt.scheduledAt = input.value;
       persist();
       renderVenditoreAppuntamenti();
@@ -3694,7 +3720,7 @@ function renderInstallmentsModal(apt, role) {
       id: uid('rata'),
       label: `Rata ${apt.installments.length + 1}`,
       amount: 0,
-      dueDate: new Date().toISOString().slice(0, 10),
+      dueDate: dateInputValue(new Date()),
       paid: false,
       paidDate: null
     });
@@ -3725,7 +3751,7 @@ function renderInstallmentsModal(apt, role) {
         else if (field === 'dueDate') inst.dueDate = fieldEl.value;
         else if (field === 'paid') {
           inst.paid = fieldEl.checked;
-          if (inst.paid && !inst.paidDate) inst.paidDate = new Date().toISOString().slice(0, 10);
+          if (inst.paid && !inst.paidDate) inst.paidDate = dateInputValue(new Date());
         } else if (field === 'paidDate') inst.paidDate = fieldEl.value;
 
         persist();
@@ -4120,7 +4146,7 @@ function renderSessioneAttiva() {
   const outcomes = pipeline ? pipeline.outcomes : [];
 
   const counts = {};
-  s.calls.forEach(c => { counts[c.outcomeLabel] = (counts[c.outcomeLabel] || 0) + 1; });
+  Object.assign(counts, sessionOutcomeCountsByLead(s));
   const totalCalls = s.calls.length;
   const totalLeads = countSessionLeads(s, db.sessions);
 
@@ -4415,7 +4441,7 @@ function logCallAction(outcomeId) {
  * (il flusso da sessione è sempre lato Setter) e i campi forniti già impostati.
  */
 function openAppointmentSetModal() {
-  const nowLocal = new Date().toISOString().slice(0, 16);
+  const nowLocal = localDateTimeValue(new Date());
   openModal(`
     <h3>Appuntamento fissato</h3>
     <p class="text-dim" style="font-size:0.85rem;">Aggiungilo subito al CRM come Setter — completerai gli altri campi dopo, nella schermata Appuntamenti.</p>
@@ -4717,11 +4743,11 @@ function logCallbackCall(outcomeId) {
  * un valore precalcolato, lascia che sia l'utente a scegliere manualmente. */
 function computeQuickCallbackTime(key) {
   const now = new Date();
-  if (key === '10m') return new Date(now.getTime() + 10 * 60000).toISOString().slice(0, 16);
-  if (key === '1h') return new Date(now.getTime() + 60 * 60000).toISOString().slice(0, 16);
-  if (key === 'afternoon') { const d = new Date(now); d.setHours(15, 0, 0, 0); return d.toISOString().slice(0, 16); }
-  if (key === 'tomorrow') { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return d.toISOString().slice(0, 16); }
-  if (key === 'nextweek') { const d = startOfWeek(now); d.setDate(d.getDate() + 7); d.setHours(9, 0, 0, 0); return d.toISOString().slice(0, 16); }
+  if (key === '10m') return localDateTimeValue(new Date(now.getTime() + 10 * 60000));
+  if (key === '1h') return localDateTimeValue(new Date(now.getTime() + 60 * 60000));
+  if (key === 'afternoon') { const d = new Date(now); d.setHours(15, 0, 0, 0); return localDateTimeValue(d); }
+  if (key === 'tomorrow') { const d = new Date(now); d.setDate(d.getDate() + 1); d.setHours(9, 0, 0, 0); return localDateTimeValue(d); }
+  if (key === 'nextweek') { const d = startOfWeek(now); d.setDate(d.getDate() + 7); d.setHours(9, 0, 0, 0); return localDateTimeValue(d); }
   return null;
 }
 
@@ -4796,6 +4822,9 @@ function openCallbackModal(opts) {
       const cb = (db.callbacks || []).find(c => c.id === opts.existingCallbackId);
       if (!cb) { closeModal(); return; }
       cb.scheduledAt = when;
+      // Il lead "di oggi" è quello della chiamata appena fatta: un richiamo più tardi oggi
+      // deve riusare QUEL groupId, non quello del giorno in cui era nato (bug 13/10).
+      if (cb.inCallGroupId) cb.leadGroupId = cb.inCallGroupId;
       cb.createdDateKey = dateInputValue(new Date());
       cb.createdAt = new Date().toISOString();
       cb.status = 'pending';
@@ -5210,7 +5239,7 @@ function createPipelineSession(pipelineId) {
 /* ---------- Backup: esporta / importa ---------- */
 
 async function exportData() {
-  const filename = `chiamate-tracker-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  const filename = `chiamate-tracker-backup-${dateInputValue(new Date())}.json`;
   const jsonStr = JSON.stringify(db, null, 2);
 
   // Se la pagina gira come Artifact pubblicato, usa la capability "downloads"

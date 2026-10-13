@@ -55,9 +55,13 @@ function getTimeframeRange(preset, customFrom, customTo) {
 
 /** Periodo immediatamente precedente, della stessa durata, usato per l'andamento. */
 function previousPeriod(range) {
-  const durationMs = range.end.getTime() - range.start.getTime();
+  // Stesso numero di giorni di calendario, contati con le date (non in millisecondi):
+  // a cavallo del cambio ora legale/solare il periodo precedente partiva/finiva a
+  // un'ora sbagliata invece che a mezzanotte.
+  const days = Math.round((startOfDay(range.end) - startOfDay(range.start)) / 86400000) + 1;
   const prevEnd = new Date(range.start.getTime() - 1);
-  const prevStart = new Date(prevEnd.getTime() - durationMs);
+  const prevStart = startOfDay(prevEnd);
+  prevStart.setDate(prevStart.getDate() - (days - 1));
   return { start: prevStart, end: prevEnd };
 }
 
@@ -98,6 +102,13 @@ function fmtRelativeDayTime(d) {
   if (targetKey === todayKey) return `Oggi alle ${timeStr}`;
   if (targetKey === tomorrowKey) return `Domani alle ${timeStr}`;
   return `${fmtDate(target)} alle ${timeStr}`;
+}
+
+/** "AAAA-MM-GGTHH:MM" in ORA LOCALE, per gli input datetime-local (bug 13/10: prima si usava
+ * toISOString, che è in UTC, e gli orari proposti risultavano indietro di 2 ore). */
+function localDateTimeValue(d) {
+  const x = new Date(d);
+  return `${dateInputValue(x)}T${String(x.getHours()).padStart(2, '0')}:${String(x.getMinutes()).padStart(2, '0')}`;
 }
 
 function dateInputValue(d) {
@@ -149,7 +160,8 @@ function getFilteredSessions(db, range, pipelineId) {
  * chiamata a un lead "Da richiamare" fatta lo stesso giorno riusa il groupId del lead
  * originale (vedi startCallbackCall in app.js): se quel groupId compare già in una
  * chiamata precedente di un'ALTRA sessione, il lead è già stato contato lì e qui non
- * conta di nuovo. Stessa logica di computeStats, ma limitata alla singola sessione.
+ * conta di nuovo (vale anche per le chiamate del Round Conferme fatte in due round dello
+ * stesso giorno). Stessa logica di computeStats, ma limitata alla singola sessione.
  */
 function countSessionLeads(s, allSessions) {
   const seen = new Set();
@@ -159,7 +171,7 @@ function countSessionLeads(s, allSessions) {
     if (c.groupId) {
       if (seen.has(c.groupId)) return;
       seen.add(c.groupId);
-      if (c.isCallbackCall) {
+      if (c.isCallbackCall || c.isConfirmCall) {
         const t = new Date(c.timestamp).getTime();
         const countedElsewhere = (allSessions || []).some(o => o !== s && o.id !== s.id &&
           (o.calls || []).some(oc => oc.groupId === c.groupId && new Date(oc.timestamp).getTime() < t));
@@ -171,6 +183,34 @@ function countSessionLeads(s, allSessions) {
   return n;
 }
 
+/**
+ * Esiti di UNA sessione contati per LEAD (ultimo esito di ogni lead), non per chiamata —
+ * stessa regola di computeStats: un lead chiamato 3 volte senza risposta è "1 Non risp",
+ * non 3 (bug 13/10). Le chiamate vecchie senza groupId usano il raggruppamento posizionale.
+ */
+function sessionOutcomeCountsByLead(s) {
+  const groups = [];
+  const byId = {};
+  let current = null;
+  s.calls.forEach(c => {
+    if (c.groupId) {
+      if (byId[c.groupId]) byId[c.groupId].push(c);
+      else { byId[c.groupId] = [c]; groups.push(byId[c.groupId]); }
+    } else if (c.isSecondAttempt && current) {
+      current.push(c);
+    } else {
+      current = [c];
+      groups.push(current);
+    }
+  });
+  const counts = {};
+  groups.forEach(g => {
+    const last = g[g.length - 1];
+    counts[last.outcomeLabel] = (counts[last.outcomeLabel] || 0) + 1;
+  });
+  return counts;
+}
+
 function computeStats(sessions) {
   let totalCalls = 0, totalDurationMs = 0, totalSkips = 0;
   const leads = []; // ogni elemento raggruppa le chiamate (1 o più) fatte allo stesso lead
@@ -178,7 +218,9 @@ function computeStats(sessions) {
 
   sessions.forEach(s => {
     const end = s.endedAt ? new Date(s.endedAt) : new Date();
-    totalDurationMs += Math.max(0, end.getTime() - new Date(s.startedAt).getTime());
+    // Tempo effettivo: senza le pause (stesso calcolo del timer e del dettaglio sessione).
+    const ongoingPauseMs = (!s.endedAt && s.pausedAt) ? Math.max(0, Date.now() - new Date(s.pausedAt).getTime()) : 0;
+    totalDurationMs += Math.max(0, end.getTime() - new Date(s.startedAt).getTime() - (s.pausedTotalMs || 0) - ongoingPauseMs);
     totalSkips += s.skips || 0;
     totalCalls += s.calls.length;
 
@@ -464,7 +506,11 @@ function computeFunnelValues(db, role, range) {
   // APPUNTAMENTO nel periodo (scheduledAt) — Simone, 2026-10-08: gli appuntamenti di fine
   // settembre inseriti a ottobre finivano negli assegnati di ottobre.
   const bookingField = role === 'venditore' ? 'scheduledAt' : 'createdAt';
-  const fissatiAppts = roleAppts.filter(a => isCountedAsNewBooking(a) && inRange(a[bookingField], range));
+  // Spostati: per il Setter (contato per data di inserimento) il fissaggio vale sul vecchio
+  // appuntamento; per il Venditore (contato per data appuntamento) vale sul NUOVO, quello
+  // che si svolge davvero — altrimenti uno spostato a cavallo di due mesi finiva assegnato
+  // a un mese e presentato/chiuso nell'altro (bug 13/10).
+  const fissatiAppts = roleAppts.filter(a => (role === 'venditore' ? !isMovedAppointment(a) : isCountedAsNewBooking(a)) && inRange(a[bookingField], range));
   const appts = roleAppts.filter(a => inRange(a.scheduledAt, range));
   // "Presentati": per il Setter segue presentedStatus (invariato); per il Venditore
   // segue il nuovo dealStage — presentato = isPresented (vedi
@@ -485,7 +531,10 @@ function computeFunnelValues(db, role, range) {
   const fatturato = round2(appts.filter(a => a.closed).reduce((sum, a) => sum + apptTotalSold(a), 0));
 
   return {
-    commissioniVendita: round2(fatturato * 0.10),
+    // Commissioni venditore = 10% dell'INCASSATO (Simone, 2026-10-13): cash collected +
+    // rate spuntate come pagate, alla loro data. Le rate future contano quando le spunti.
+    // Stessa fonte del calendario commissioni e delle Statistiche Venditore.
+    commissioniVendita: role === 'venditore' ? sumEvents(chiusureEvents) : 0,
     appuntamentiFissati: fissatiAppts.length,
     presentati,
     chiusi,
@@ -573,7 +622,7 @@ function computeVenditoreStats(db, range) {
   const all = (db.appointments || []).filter(a => a.role === 'venditore');
   const inR = (a, field) => !range || inRange(a[field], range);
 
-  const assegnati = all.filter(a => isCountedAsNewBooking(a) && inR(a, 'scheduledAt')).length; // data appuntamento, vedi computeFunnelValues
+  const assegnati = all.filter(a => !isMovedAppointment(a) && inR(a, 'scheduledAt')).length; // data appuntamento, vedi computeFunnelValues
   const scoped = all.filter(a => inR(a, 'scheduledAt'));
 
   const noShow = scoped.filter(a => a.dealStage === 'no_show').length;
@@ -605,7 +654,7 @@ function computeVenditoreStats(db, range) {
 /**
  * Pace del mese (richiesto 2026-10-08): commissioni del mese corrente fatte finora,
  * proiettate su tutto il mese in base ai giorni lavorativi (lun-ven) passati, oggi incluso.
- * Setter: commissioni totali (show up + chiusure). Venditore: 10% del fatturato del mese.
+ * Setter: commissioni totali (show up + chiusure). Venditore: 10% dell'incassato del mese.
  */
 function computeMonthPace(db, role) {
   const now = new Date();
@@ -656,10 +705,11 @@ function computeSetterStats(db, range) {
   const fissatiAppts = all.filter(a => isCountedAsNewBooking(a) && inR(a, 'createdAt'));
   const scoped = all.filter(a => inR(a, 'scheduledAt'));
 
-  // Un appuntamento spostato non si è svolto in quella data: non entra negli "svolti"
-  // (altrimenti abbasserebbe lo show-up rate). Conta il nuovo, quando si svolge.
-  // Stesso discorso per l'annullato: né show né no-show, fuori dallo show-up rate.
-  const svolti = scoped.filter(a => !isMovedAppointment(a) && a.presentedStatus !== 'annullato' && a.scheduledAt && new Date(a.scheduledAt) <= now);
+  // "Svolti" = appuntamenti passati con un esito vero: Presentato o No Show (stessa
+  // base dello show rate Venditore). Spostati e annullati non si sono svolti; quelli
+  // passati ma lasciati su "No"/"Confermato24h" non hanno ancora un esito e
+  // abbasserebbero il tasso come se fossero no show (bug 13/10).
+  const svolti = scoped.filter(a => !isMovedAppointment(a) && (a.presentedStatus === 'presented' || a.presentedStatus === 'no_show') && a.scheduledAt && new Date(a.scheduledAt) <= now);
   const presentati = scoped.filter(a => a.presentedStatus === 'presented');
   const presentatiSvolti = svolti.filter(a => a.presentedStatus === 'presented');
 
