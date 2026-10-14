@@ -253,5 +253,10 @@ Per gli screenshot da mandare a Simone: viewport 1440×900, salva PNG fuori dal 
 
 ## 10. Dove andiamo
 
-- **Database**: oggi i dati stanno solo nel browser. Prossimo passo: database con login (Firebase, già presente come sync, oppure Supabase). Prima della migrazione: date tutte nello stesso formato con fuso Europe/Rome; la sync Firebase attuale all'apertura sovrascrive i dati locali.
-- **Gestione appuntamenti via chat** (dopo il database): Simone scrive in chat cosa è successo con un appuntamento, Claude aggiorna esito, nota, data di follow-up, il calendario e manda i promemoria. Dettagli e domande aperte nel file di passaggio.
+Decisione di Simone (14/10/2026): **login + database Supabase**, il prima possibile, con il tool pubblicato su **Vercel (piano Hobby)**.
+
+- Oggi i dati stanno solo nel browser (localStorage). La sync Firebase attuale è facoltativa e all'apertura sovrascrive i dati locali: col database va tolta o sostituita.
+- Prima della migrazione: date tutte nello stesso formato con fuso Europe/Rome.
+- Hamza non deve fermarsi: la versione nuova si costruisce e si prova a un indirizzo separato, mentre lui continua sul link GitHub Pages. Passa solo alla fine, al primo login il tool carica i dati che ha già nel browser.
+- Chiavi Supabase: nel codice solo la chiave pubblica (anon) con le regole RLS attive. La chiave `service_role` mai nel repo.
+- Dopo il database: **gestione appuntamenti del venditore via chat** (Simone scrive cosa è successo, Claude aggiorna esito, nota, follow-up, calendario e promemoria). Dettagli e domande aperte nel file di passaggio.
