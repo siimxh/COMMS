@@ -3498,7 +3498,16 @@ function openNotesModal(apptId) {
 }
 
 function renderNotesModal(apt) {
-  const notes = [...(apt.notes || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  openNotesEditor(apt, apt.clientName, renderVenditoreAppuntamenti);
+}
+
+/**
+ * Sistema di note (quadernino): elenco con data e ora + "Aggiungi nota". Lo usano gli
+ * appuntamenti Venditore e i "Da richiamare" (richiesta di Hamza, 2026-10-14).
+ * `holder` è l'oggetto che contiene l'array `notes`; `onClose` ridisegna la pagina sotto.
+ */
+function openNotesEditor(holder, leadName, onClose) {
+  const notes = [...(holder.notes || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const notesHtml = notes.length ? notes.map(n => `
     <div class="note-card">
       <div class="note-card-text">${escapeHtml(n.text)}</div>
@@ -3506,7 +3515,7 @@ function renderNotesModal(apt) {
     </div>`).join('') : '<p class="text-dim">Nessuna nota ancora.</p>';
 
   openModal(`
-    <h3>Note — ${escapeHtml(apt.clientName || '(senza nome)')}</h3>
+    <h3>Note — ${escapeHtml(leadName || '(senza nome)')}</h3>
     <div class="note-add-row">
       <textarea id="newNoteText" placeholder="Scrivi una nota su questo lead…"></textarea>
       <button class="btn-primary" id="btnAddNote" style="align-self:flex-end;">+ Aggiungi nota</button>
@@ -3516,16 +3525,16 @@ function renderNotesModal(apt) {
       <button class="btn-ghost" data-close-modal="1">Chiudi</button>
     </div>
   `);
-  modalRoot.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', () => { closeModal(); renderVenditoreAppuntamenti(); }));
+  modalRoot.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', () => { closeModal(); if (onClose) onClose(); }));
 
   document.getElementById('btnAddNote').addEventListener('click', () => {
     const ta = document.getElementById('newNoteText');
     const text = ta.value.trim();
     if (!text) { ta.focus(); return; }
-    apt.notes = apt.notes || [];
-    apt.notes.push({ id: uid('nota'), text, createdAt: new Date().toISOString() });
+    holder.notes = holder.notes || [];
+    holder.notes.push({ id: uid('nota'), text, createdAt: new Date().toISOString() });
     persist();
-    renderNotesModal(apt);
+    openNotesEditor(holder, leadName, onClose);
   });
 }
 
@@ -4221,6 +4230,7 @@ function renderSessioneAttiva() {
   appRoot.querySelectorAll('[data-edit-callback]').forEach(btn => {
     btn.addEventListener('click', () => openEditCallbackModal(btn.dataset.editCallback, () => renderRoute()));
   });
+  wireCallbackNotesButtons(appRoot, () => renderRoute());
   appRoot.querySelectorAll('[data-delete-callback]').forEach(btn => {
     btn.addEventListener('click', () => removeCallback(btn.dataset.deleteCallback, () => renderRoute()));
   });
@@ -4269,7 +4279,7 @@ function renderSessionApptList(s) {
 function renderSessionCallbackSidebar(sessionCallbacks) {
   const itemsHtml = sessionCallbacks.map(cb => `
     <div class="session-callback-item">
-      <div class="session-callback-item-name">${escapeHtml(cb.leadName)}<button class="callback-edit-btn" data-edit-callback="${cb.id}" title="Modifica dati del lead">✎</button><button class="callback-edit-btn" data-delete-callback="${cb.id}" title="Togli dai da richiamare">🗑</button></div>
+      <div class="session-callback-item-name">${escapeHtml(cb.leadName)}${callbackNotesButton(cb)}<button class="callback-edit-btn" data-edit-callback="${cb.id}" title="Modifica dati del lead">✎</button><button class="callback-edit-btn" data-delete-callback="${cb.id}" title="Togli dai da richiamare">🗑</button></div>
       ${cb.phone ? `<div class="session-callback-item-phone">${escapeHtml(cb.phone)}</div>` : ''}
       <div class="session-callback-item-when ${new Date(cb.scheduledAt) < startOfDay(new Date()) ? 'overdue' : ''}">${new Date(cb.scheduledAt) < startOfDay(new Date()) ? 'Arretrato · ' : ''}${fmtDateTime(cb.scheduledAt)}</div>
       <button class="btn-ghost session-callback-item-btn" data-call-callback="${cb.id}">Chiama</button>
@@ -4604,6 +4614,8 @@ function renderCallbackCallScreen() {
           ${cb.phone ? `<button class="crm-copy-phone-btn" id="btnCopyCbPhone" title="Copia numero">⧉</button>` : ''}
         </div>
         <div class="recov-hero-counter">Richiamo programmato per: <strong>${fmtDateTime(cb.scheduledAt)}</strong></div>
+        ${callbackLastNoteHtml(cb)}
+        <div style="margin-top:10px;">${callbackNotesButton(cb, true)}</div>
       </div>
 
       ${retryBannerHtml}
@@ -4619,6 +4631,8 @@ function renderCallbackCallScreen() {
     persist();
     renderRoute();
   });
+
+  wireCallbackNotesButtons(appRoot, renderCallbackCallScreen);
 
   const copyBtn = document.getElementById('btnCopyCbPhone');
   if (copyBtn) {
@@ -4740,6 +4754,8 @@ function openCallbackModal(opts) {
     ${!isReschedule ? `
     <label class="field">Nome lead<input type="text" id="cbName" placeholder="Nome e cognome" autofocus></label>
     <label class="field">Telefono (facoltativo)<input type="text" id="cbPhone" placeholder="Numero di telefono"></label>
+    <button type="button" class="btn-ghost cb-notes-toggle" id="cbNotesToggle">📒 Note</button>
+    <label class="field" id="cbNoteField" style="display:none;">Nota sul lead<textarea id="cbNote" rows="3" placeholder="Es. richiamare dopo le 18, vuole sapere i prezzi…"></textarea></label>
     ` : ''}
     <div class="field">
       <span>Quando</span>
@@ -4761,6 +4777,14 @@ function openCallbackModal(opts) {
 
   const nameInput = document.getElementById('cbName');
   if (nameInput) nameInput.focus();
+  const notesToggle = document.getElementById('cbNotesToggle');
+  if (notesToggle) {
+    notesToggle.addEventListener('click', () => {
+      document.getElementById('cbNoteField').style.display = '';
+      notesToggle.style.display = 'none';
+      document.getElementById('cbNote').focus();
+    });
+  }
 
   modalRoot.querySelectorAll('[data-quick-time]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -4805,6 +4829,7 @@ function openCallbackModal(opts) {
       const name = document.getElementById('cbName').value.trim();
       if (!name) { showToast('Inserisci il nome del lead.', true); document.getElementById('cbName').focus(); return; }
       const phone = document.getElementById('cbPhone').value.trim();
+      const noteText = document.getElementById('cbNote').value.trim();
       db.callbacks = db.callbacks || [];
       db.callbacks.push({
         id: uid('callback'),
@@ -4825,7 +4850,8 @@ function openCallbackModal(opts) {
         inCallRetryPending: false,
         inCallGroupId: null,
         resolvedOutcomeLabel: null,
-        resolvedAt: null
+        resolvedAt: null,
+        notes: noteText ? [{ id: uid('nota'), text: noteText, createdAt: new Date().toISOString() }] : []
       });
       persist();
       closeModal();
@@ -4833,6 +4859,32 @@ function openCallbackModal(opts) {
     }
 
     if (typeof opts.afterSave === 'function') opts.afterSave();
+  });
+}
+
+/* ---------- Note dei "Da richiamare" (richiesta di Hamza, 2026-10-14) ---------- */
+
+/** Quadernino 📒 con il numero di note. `big` = versione con scritta, per la schermata di richiamata. */
+function callbackNotesButton(cb, big) {
+  const n = (cb.notes || []).length;
+  const label = big ? `📒 Note${n ? ' (' + n + ')' : ''}` : `📒${n ? '<span class="cb-notes-count">' + n + '</span>' : ''}`;
+  return `<button class="${big ? 'btn-ghost' : 'callback-edit-btn'}" data-callback-notes="${cb.id}" title="Note sul lead">${label}</button>`;
+}
+
+/** L'ultima nota scritta, visibile subito durante la richiamata. */
+function callbackLastNoteHtml(cb) {
+  const notes = cb.notes || [];
+  if (!notes.length) return '';
+  const last = [...notes].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
+  return `<div class="cb-last-note">📒 ${escapeHtml(last.text)}</div>`;
+}
+
+function wireCallbackNotesButtons(root, onClose) {
+  root.querySelectorAll('[data-callback-notes]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cb = (db.callbacks || []).find(c => c.id === btn.dataset.callbackNotes);
+      if (cb) openNotesEditor(cb, cb.leadName, onClose);
+    });
   });
 }
 
@@ -4849,7 +4901,7 @@ function openCallbacksListModal() {
     return `
       <div class="callback-row">
         <div class="callback-row-main">
-          <div class="callback-row-name">${escapeHtml(cb.leadName || '(senza nome)')}<button class="callback-edit-btn" data-edit-callback="${cb.id}" title="Modifica dati del lead">✎</button><button class="callback-edit-btn" data-delete-callback="${cb.id}" title="Togli dai da richiamare">🗑</button></div>
+          <div class="callback-row-name">${escapeHtml(cb.leadName || '(senza nome)')}${callbackNotesButton(cb)}<button class="callback-edit-btn" data-edit-callback="${cb.id}" title="Modifica dati del lead">✎</button><button class="callback-edit-btn" data-delete-callback="${cb.id}" title="Togli dai da richiamare">🗑</button></div>
           <div class="callback-row-sub">${cb.phone ? escapeHtml(cb.phone) + ' · ' : ''}${escapeHtml(cb.sourcePipelineName || '')}</div>
         </div>
         <div class="callback-row-when ${overdue ? 'overdue' : ''}">${fmtDateTime(cb.scheduledAt)}</div>
@@ -4868,6 +4920,7 @@ function openCallbacksListModal() {
   modalRoot.querySelectorAll('[data-edit-callback]').forEach(btn => {
     btn.addEventListener('click', () => openEditCallbackModal(btn.dataset.editCallback, openCallbacksListModal));
   });
+  wireCallbackNotesButtons(modalRoot, openCallbacksListModal);
   modalRoot.querySelectorAll('[data-delete-callback]').forEach(btn => {
     btn.addEventListener('click', () => removeCallback(btn.dataset.deleteCallback, () => { openCallbacksListModal(); if (location.hash.indexOf('setting') !== -1) renderRoute(); }));
   });

@@ -1367,7 +1367,7 @@ tr.appt-row-moved > td { opacity: 0.6; }
 .note-card-text { font-size: 0.86rem; white-space: pre-wrap; word-break: break-word; }
 .note-card-meta { font-family: var(--mono); font-size: 0.68rem; color: var(--text-dim); margin-top: 8px; }
 .note-add-row { display: flex; flex-direction: column; gap: 8px; }
-.note-add-row textarea {
+.note-add-row textarea, #cbNote {
   width: 100%; min-height: 70px; background: var(--bg-elev2); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 9px 10px; color: var(--text); font-size: 0.86rem; resize: vertical;
   font-family: 'Archivo', sans-serif;
@@ -1819,3 +1819,9 @@ body.font-archivo, body.font-archivo h1, body.font-archivo h2, body.font-archivo
 }
 .btn-undo:hover { border-color: var(--warning); color: var(--warning); }
 .session-undo-label { font-weight: 700; margin-left: 4px; }
+
+/* Note dei "Da richiamare" (quadernino 📒) */
+.cb-notes-toggle { margin: -4px 0 14px; }
+#cbNote { text-transform: none; letter-spacing: normal; }
+.cb-notes-count { font-size: 0.7rem; font-weight: 700; margin-left: 2px; vertical-align: super; }
+.cb-last-note { margin-top: 10px; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--bg-elev2); border-radius: var(--radius-sm); white-space: pre-wrap; text-align: left; }
