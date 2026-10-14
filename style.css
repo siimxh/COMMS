@@ -307,6 +307,16 @@ p { margin: 0 0 8px; }
 #importLabel { display: inline-flex; align-items: center; }
 
 .sync-status { font-family: var(--mono); font-size: 0.72rem; color: var(--text-dim); white-space: nowrap; }
+.sync-status[data-status="pending"] { color: var(--danger); font-weight: 700; }
+
+/* Login (vedi app.js, sezione "Login e avvio") */
+body.logged-out #topbar, body.logged-out #app { display: none; }
+.login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
+.login-screen[hidden] { display: none; }
+.login-card { width: 100%; max-width: 380px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 28px 24px; }
+.login-title { font-family: var(--heading-font, inherit); font-size: 1.4rem; font-weight: 700; margin-bottom: 22px; text-align: center; }
+.login-card .btn-primary { width: 100%; padding: 12px; font-size: 1rem; }
+.login-error { color: var(--danger); font-size: 0.9rem; min-height: 1.2em; margin-bottom: 12px; }
 
 body.in-session #topbar { display: none; }
 
@@ -546,7 +556,8 @@ body.in-session #topbar { display: none; }
 .pipeline-tile-delete:hover { color: var(--danger); }
 
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; font-family: var(--mono); font-size: 0.76rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
-.field input[type="text"], .field input[type="datetime-local"] {
+.field input[type="text"], .field input[type="datetime-local"],
+.field input[type="email"], .field input[type="password"] {
   background: var(--bg-elev2);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -556,17 +567,6 @@ body.in-session #topbar { display: none; }
   font-family: inherit;
   text-transform: none;
   letter-spacing: normal;
-}
-.fb-config-textarea {
-  width: 100%;
-  font-family: var(--mono);
-  font-size: 0.78rem;
-  background: var(--bg-elev2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 9px 10px;
-  color: var(--text);
-  resize: vertical;
 }
 
 .outcome-chip-list { display: flex; flex-wrap: wrap; gap: 8px; }

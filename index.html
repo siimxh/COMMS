@@ -26,7 +26,7 @@
     <div class="topbar-actions">
       <span id="syncStatus" class="sync-status" style="display:none;"></span>
       <button id="btnBuilder" class="btn-ghost" title="Personalizza aspetto e opzioni">🎨</button>
-      <button id="btnSettings" class="btn-ghost" title="Sincronizzazione Firebase (facoltativa)">⚙</button>
+      <button id="btnAccount" class="btn-ghost" title="Account">👤</button>
       <button id="btnExport" class="btn-ghost" title="Scarica un backup dei tuoi dati">Esporta</button>
       <label class="btn-ghost" title="Ripristina un backup" id="importLabel">
         Importa
@@ -38,11 +38,28 @@
 
   <main id="app"></main>
 
+  <div id="loginScreen" class="login-screen" hidden>
+    <form id="loginForm" class="login-card">
+      <div class="login-title">📞 Chiamate Tracker</div>
+      <label class="field">
+        Email
+        <input type="email" id="loginEmail" autocomplete="username" required>
+      </label>
+      <label class="field">
+        Password
+        <input type="password" id="loginPassword" autocomplete="current-password" required>
+      </label>
+      <div id="loginError" class="login-error"></div>
+      <button type="submit" class="btn-primary" id="loginSubmit">Entra</button>
+    </form>
+  </div>
+
   <div id="modalRoot"></div>
 
   <script src="storage.js"></script>
   <script src="utils.js"></script>
-  <script src="firebase-sync.js"></script>
+  <script src="supabase-config.js"></script>
+  <script src="cloud-sync.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

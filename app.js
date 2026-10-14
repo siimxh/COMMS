@@ -1,5 +1,6 @@
 
-let db = Storage.load();
+// I dati veri arrivano dopo il login (openUserData, in fondo al file).
+let db = defaultData();
 let uiState = {
   timeframe: 'oggi',
   customFrom: null,
@@ -35,61 +36,28 @@ const modalRoot = document.getElementById('modalRoot');
 
 function persist() {
   Storage.save(db);
-  queueFirebasePush();
+  CloudSync.schedule();
 }
 
-/* ---------- Sincronizzazione Firebase (facoltativa) ---------- */
-
-let fbPushTimer = null;
-
-function queueFirebasePush() {
-  if (!FirebaseSync.isConfigured()) return;
-  clearTimeout(fbPushTimer);
-  // piccolo debounce: durante una sessione si salva ad ogni click, non serve scrivere
-  // su Firestore ad ogni singolo tocco.
-  fbPushTimer = setTimeout(async () => {
-    setSyncStatus('syncing');
-    try {
-      await FirebaseSync.push(db);
-      setSyncStatus('synced');
-    } catch (e) {
-      console.error('Sincronizzazione Firebase (push) non riuscita', e);
-      setSyncStatus('error');
-    }
-  }, 800);
-}
+/* ---------- Spia di salvataggio online (vedi cloud-sync.js) ---------- */
 
 function setSyncStatus(status) {
   const el = document.getElementById('syncStatus');
   if (!el) return;
   const map = {
-    syncing: '☁ sincronizzazione…',
-    synced: '☁ sincronizzato',
-    error: '⚠ sync non riuscita'
+    saving: '⟳ Salvataggio…',
+    saved: '✓ Salvato',
+    pending: '⚠ In attesa di rete'
+  };
+  const titles = {
+    saving: 'Sto salvando le ultime modifiche online.',
+    saved: 'Tutti i dati sono salvati online.',
+    pending: 'Il salvataggio online non è riuscito (rete assente?). I dati sono al sicuro in questo browser e partono da soli appena torna la rete.'
   };
   el.textContent = map[status] || '';
-  el.title = status === 'error' ? 'La sincronizzazione con Firebase non è riuscita. I dati restano salvati in locale.' : '';
-}
-
-/** Al primo caricamento, se configurato, scarica l'ultima versione salvata su Firestore. */
-async function initFirebaseSyncOnLoad() {
-  if (!FirebaseSync.isConfigured()) return;
-  // Se c'è già una sessione in corso salvata localmente, non sovrascriverla con il cloud:
-  // meglio non rischiare di perdere chiamate già registrate in questa sessione.
-  if (db.activeSession) return;
-  setSyncStatus('syncing');
-  try {
-    const result = await FirebaseSync.pull();
-    if (result.ok && result.data) {
-      db = mergeWithDefaults(result.data);
-      Storage.save(db);
-      renderRoute();
-    }
-    setSyncStatus('synced');
-  } catch (e) {
-    console.error('Sincronizzazione Firebase (pull) non riuscita', e);
-    setSyncStatus('error');
-  }
+  el.title = titles[status] || '';
+  el.dataset.status = status;
+  el.style.display = map[status] ? 'inline' : 'none';
 }
 
 /* ============================================================================
@@ -5238,9 +5206,9 @@ function createPipelineSession(pipelineId) {
 
 /* ---------- Backup: esporta / importa ---------- */
 
-async function exportData() {
-  const filename = `chiamate-tracker-backup-${dateInputValue(new Date())}.json`;
-  const jsonStr = JSON.stringify(db, null, 2);
+async function exportData(data, filename) {
+  filename = filename || `chiamate-tracker-backup-${dateInputValue(new Date())}.json`;
+  const jsonStr = JSON.stringify(data || db, null, 2);
 
   // Se la pagina gira come Artifact pubblicato, usa la capability "downloads"
   // (il download diretto via link non funziona in quel contesto).
@@ -5300,8 +5268,7 @@ function importData(file) {
  * Builder (Impostazioni) — pagina piena, raggiungibile dal pulsante 🎨 in topbar.
  * Scelta di design: pagina piena invece di modal, perché il builder ha molte
  * sezioni (preset, 8 color picker, radius, font, 2 slider, glow, 16 toggle) e
- * un modal sarebbe scomodo da scorrere — la sincronizzazione Firebase (⚙, poche
- * righe) resta invece un modal come prima.
+ * un modal sarebbe scomodo da scorrere.
  * ==========================================================================*/
 
 const TOGGLE_DEFS = [
@@ -5516,98 +5483,6 @@ function wireBuilderEvents() {
   });
 }
 
-/* ---------- Impostazioni: sincronizzazione Firebase (facoltativa) ---------- */
-
-function openSettingsModal() {
-  const settings = FirebaseSync.getSettings();
-  const configStr = settings.config ? JSON.stringify(settings.config, null, 2) : '';
-
-  openModal(`
-    <h3>Sincronizzazione Firebase</h3>
-    <p class="text-dim" style="font-size:0.85rem;">
-      Facoltativa: collega un progetto Firebase (Firestore) per avere gli stessi dati su più dispositivi,
-      invece di usare solo Esporta/Importa. Se non la configuri, il tool continua a salvare solo su questo browser.
-    </p>
-    <label class="checkbox-inline" style="margin-bottom:14px;">
-      <input type="checkbox" id="fbEnabled" ${settings.enabled ? 'checked' : ''}> Abilita sincronizzazione
-    </label>
-    <label class="field">
-      Codice stanza (uguale su tutti i dispositivi da sincronizzare)
-      <input type="text" id="fbRoomCode" placeholder="es. mario-rossi-2026" value="${escapeHtml(settings.roomCode || '')}">
-    </label>
-    <label class="field">
-      Configurazione Firebase (incolla qui l'oggetto firebaseConfig dalla console Firebase)
-      <textarea id="fbConfig" rows="7" class="fb-config-textarea">${escapeHtml(configStr)}</textarea>
-    </label>
-    <div class="modal-actions" style="justify-content:space-between;">
-      <button class="btn-ghost" id="btnTestFbConnection">Verifica connessione</button>
-      <div style="display:flex; gap:8px;">
-        <button class="btn-ghost" data-close-modal="1">Annulla</button>
-        <button class="btn-primary" id="btnSaveFbSettings">Salva</button>
-      </div>
-    </div>
-  `);
-  modalRoot.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', closeModal));
-
-  document.getElementById('btnTestFbConnection').addEventListener('click', async () => {
-    const btn = document.getElementById('btnTestFbConnection');
-    const roomCode = document.getElementById('fbRoomCode').value.trim();
-    let cfg;
-    try {
-      cfg = JSON.parse(document.getElementById('fbConfig').value);
-    } catch (e) {
-      showToast('La configurazione Firebase non è un JSON valido.', true);
-      return;
-    }
-    const originalLabel = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = 'Verifica in corso…';
-    try {
-      await FirebaseSync.testConnection(cfg, roomCode || '__test__');
-      showToast('Connessione a Firebase riuscita.');
-    } catch (e) {
-      console.error('Test connessione Firebase fallito', e);
-      showToast('Connessione a Firebase non riuscita. Controlla configurazione e regole Firestore.', true);
-    } finally {
-      btn.disabled = false;
-      btn.textContent = originalLabel;
-    }
-  });
-
-  document.getElementById('btnSaveFbSettings').addEventListener('click', () => {
-    const enabled = document.getElementById('fbEnabled').checked;
-    const roomCode = document.getElementById('fbRoomCode').value.trim();
-    const configText = document.getElementById('fbConfig').value.trim();
-    let cfg = null;
-    if (configText) {
-      try {
-        cfg = JSON.parse(configText);
-      } catch (e) {
-        showToast('La configurazione Firebase non è un JSON valido.', true);
-        return;
-      }
-    }
-    if (enabled && (!cfg || !roomCode)) {
-      showToast('Per abilitare la sincronizzazione servono sia la configurazione che il codice stanza.', true);
-      return;
-    }
-    FirebaseSync.saveSettings({ enabled, config: cfg, roomCode });
-    closeModal();
-    updateSyncStatusVisibility();
-    showToast(enabled ? 'Sincronizzazione Firebase attivata.' : 'Impostazioni salvate.');
-    if (enabled) {
-      initFirebaseSyncOnLoad();
-      queueFirebasePush();
-    }
-  });
-}
-
-function updateSyncStatusVisibility() {
-  const el = document.getElementById('syncStatus');
-  if (!el) return;
-  el.style.display = FirebaseSync.isConfigured() ? 'inline' : 'none';
-}
-
 /* ---------- Init ---------- */
 
 document.querySelectorAll('.navlink').forEach(l => {
@@ -5623,18 +5498,198 @@ document.getElementById('btnNuovaSessione').addEventListener('click', () => {
   }
   openNewSessionModal();
 });
-document.getElementById('btnExport').addEventListener('click', exportData);
+document.getElementById('btnExport').addEventListener('click', () => exportData());
 document.getElementById('importFile').addEventListener('change', (e) => {
   if (e.target.files[0]) importData(e.target.files[0]);
   e.target.value = '';
 });
-document.getElementById('btnSettings').addEventListener('click', openSettingsModal);
+document.getElementById('btnAccount').addEventListener('click', openAccountModal);
 document.getElementById('btnBuilder').addEventListener('click', () => { location.hash = '#/impostazioni'; });
 
-updateSyncStatusVisibility();
-initFirebaseSyncOnLoad();
+document.getElementById('loginForm').addEventListener('submit', loginSubmitAction);
+
+CloudSync.getData = () => db;
+CloudSync.onStatus = setSyncStatus;
+// Uscendo dalla pagina (o passando a un'altra app sul telefono) prova a inviare subito.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden' && CloudSync.session) CloudSync.flush();
+});
+
 applyTheme(db.settings);
+bootApp();
 
-window.addEventListener('hashchange', renderRoute);
-renderRoute();
+/* ============================================================================
+ * Login e avvio — i dati stanno sul database Supabase (cloud-sync.js), con una
+ * copia nel browser per lavorare anche senza rete.
+ * ==========================================================================*/
 
+let appStarted = false;
+
+async function bootApp() {
+  if (!CloudSync.loadSession()) {
+    showLoginScreen();
+    return;
+  }
+  await startForUser();
+}
+
+function showLoginScreen(message) {
+  document.body.classList.add('logged-out');
+  const screen = document.getElementById('loginScreen');
+  screen.hidden = false;
+  document.getElementById('loginError').textContent = message || '';
+  const email = document.getElementById('loginEmail');
+  if (CloudSync.session && CloudSync.session.user) email.value = CloudSync.session.user.email || '';
+  (email.value ? document.getElementById('loginPassword') : email).focus();
+}
+
+function hideLoginScreen() {
+  document.body.classList.remove('logged-out');
+  document.getElementById('loginScreen').hidden = true;
+  document.getElementById('loginPassword').value = '';
+}
+
+async function loginSubmitAction(e) {
+  e.preventDefault();
+  const btn = document.getElementById('loginSubmit');
+  const errEl = document.getElementById('loginError');
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPassword').value;
+  const previousUserId = appStarted && CloudSync.session ? CloudSync.session.user.id : null;
+  btn.disabled = true;
+  btn.textContent = 'Accesso…';
+  errEl.textContent = '';
+  try {
+    const user = await CloudSync.signIn(email, password);
+    // Sessione scaduta mentre si lavorava: stesso utente -> si riprende da dove si era.
+    if (previousUserId && previousUserId === user.id) {
+      hideLoginScreen();
+      CloudSync.flush();
+      return;
+    }
+    if (previousUserId) { location.reload(); return; }
+    await startForUser();
+  } catch (err) {
+    console.error('Login non riuscito', err);
+    errEl.textContent = err.offline
+      ? 'Manca la connessione a internet. Riprova tra poco.'
+      : (err.status === 400 ? 'Email o password sbagliate.' : 'Login non riuscito: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Entra';
+  }
+}
+
+async function startForUser() {
+  hideLoginScreen();
+  appRoot.innerHTML = '<div class="text-dim" style="padding:60px 16px; text-align:center;">Carico i tuoi dati…</div>';
+  try {
+    const how = await openUserData();
+    if (how === 'offline') showToast('Sei offline: lavori sulla copia di questo browser. Salvo online appena torna la rete.');
+  } catch (err) {
+    console.error('Caricamento dati non riuscito', err);
+    if (err.status === 401) {
+      showLoginScreen('Accesso scaduto: rifai il login.');
+      return;
+    }
+    appRoot.innerHTML = '<div class="text-dim" style="padding:60px 16px; text-align:center;">Non riesco a caricare i dati (manca la rete?). Ricarica la pagina tra poco.</div>';
+    return;
+  }
+  document.getElementById('btnAccount').title = 'Account: ' + CloudSync.session.user.email;
+  applyTheme(db.settings);
+  if (!appStarted) {
+    appStarted = true;
+    window.addEventListener('hashchange', renderRoute);
+  }
+  renderRoute();
+}
+
+/**
+ * Carica i dati dell'utente che ha fatto login. Ordine:
+ * 1. Se nella copia del browser ci sono modifiche non ancora inviate, le invia.
+ * 2. Scarica la versione online e la usa (è la più aggiornata, anche da un altro dispositivo).
+ * 3. Primo login (online non c'è niente): prende i dati che il tool aveva già in
+ *    questo browser (versione senza login), ne scarica PRIMA un backup .json di
+ *    sicurezza, poi li carica online.
+ * Senza rete usa la copia del browser. Ritorna 'cloud' | 'first' | 'offline'.
+ */
+async function openUserData() {
+  const user = CloudSync.session.user;
+  Storage.key = STORAGE_KEY + '__' + user.id;
+  CloudSync._loadSynced();
+  const local = localStorage.getItem(Storage.key) ? Storage.load() : null;
+
+  if (local && CloudSync.synced && CloudSync.hasPending(local)) {
+    db = local;
+    const ok = await CloudSync.flush();
+    if (!ok) return 'offline';
+  }
+
+  let remote;
+  try {
+    remote = await CloudSync.pull();
+  } catch (err) {
+    if (err.offline && local) { db = local; setSyncStatus('pending'); return 'offline'; }
+    throw err;
+  }
+
+  if (remote) {
+    db = mergeWithDefaults(remote);
+    Storage.save(db);
+    CloudSync.markSynced(db);
+    setSyncStatus('saved');
+    return 'cloud';
+  }
+
+  // Primo login per questo utente.
+  if (local) {
+    db = local;
+  } else {
+    let legacy = null;
+    try { legacy = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) { legacy = null; }
+    const hasData = legacy && ((legacy.sessions || []).length || (legacy.appointments || []).length || (legacy.pipelines || []).length);
+    if (hasData) {
+      await exportData(legacy, `chiamate-tracker-backup-prima-del-login-${dateInputValue(new Date())}.json`);
+      db = mergeWithDefaults(legacy);
+      showToast('Ho trovato i tuoi dati in questo browser: scaricato un backup di sicurezza e caricati online.');
+    } else {
+      db = defaultData();
+    }
+  }
+  Storage.save(db);
+  CloudSync.synced = null;
+  await CloudSync.flush();
+  return 'first';
+}
+
+/** Chiamata da cloud-sync.js quando il login è scaduto e non si rinnova da solo. */
+function onCloudSessionExpired() {
+  showLoginScreen('Accesso scaduto: rifai il login. Le modifiche sono al sicuro in questo browser.');
+}
+
+function openAccountModal() {
+  const email = CloudSync.session ? CloudSync.session.user.email : '';
+  openModal(`
+    <h3>Account</h3>
+    <p>Sei entrato come <strong>${escapeHtml(email)}</strong>.</p>
+    <p class="text-dim" style="font-size:0.85rem;">I dati sono salvati online e anche in questo browser.</p>
+    <div class="modal-actions">
+      <button class="btn-ghost" data-close-modal="1">Chiudi</button>
+      <button class="btn-primary" id="btnLogout">Esci</button>
+    </div>
+  `);
+  modalRoot.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', closeModal));
+  document.getElementById('btnLogout').addEventListener('click', logoutAction);
+}
+
+async function logoutAction() {
+  closeModal();
+  const ok = await CloudSync.flush();
+  const msg = ok
+    ? 'Vuoi uscire? Per rientrare servono email e password.'
+    : 'Alcune modifiche non sono ancora salvate online (manca la rete). Se esci adesso restano in questo browser e partono al prossimo login. Uscire comunque?';
+  showConfirm(msg, async () => {
+    await CloudSync.signOut();
+    location.reload();
+  }, { confirmLabel: 'Esci' });
+}

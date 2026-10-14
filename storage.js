@@ -296,9 +296,13 @@ function mergeWithDefaults(parsed) {
 }
 
 const Storage = {
+  // Chiave della copia locale. Col login diventa una per utente
+  // (STORAGE_KEY + '__' + id utente, vedi app.js openUserData): la chiave
+  // vecchia senza utente resta intatta, è la fonte dell'import al primo login.
+  key: STORAGE_KEY,
   load() {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      const raw = localStorage.getItem(this.key);
       if (!raw) return defaultData();
       const parsed = JSON.parse(raw);
       return mergeWithDefaults(parsed);
@@ -309,7 +313,7 @@ const Storage = {
   },
   save(data) {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      localStorage.setItem(this.key, JSON.stringify(data));
     } catch (e) {
       console.error('Errore salvataggio dati locali', e);
       if (typeof showToast === 'function') {

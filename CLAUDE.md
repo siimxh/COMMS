@@ -84,17 +84,20 @@ Si toccano solo "Simo Privato" (personale) e "Calendario Simone" (delicato: lo v
 
 ## 3. File
 
-Ordine di caricamento in `index.html`: `storage.js` → `utils.js` → `firebase-sync.js` → `app.js`. Tutto è globale (niente moduli): una funzione di `utils.js` si usa direttamente in `app.js`.
+Ordine di caricamento in `index.html`: `storage.js` → `utils.js` → `supabase-config.js` → `cloud-sync.js` → `app.js`. Tutto è globale (niente moduli): una funzione di `utils.js` si usa direttamente in `app.js`.
 
 | File | Cosa contiene |
 |---|---|
 | `index.html` | Guscio della pagina, topbar (Dashboard / Setting / Venditore), contenitore `#app` |
 | `storage.js` | Chiave localStorage, `defaultData()`, esiti di default, migrazioni (`migrateAppointment`, `mergeWithDefaults`) |
 | `utils.js` | Date e periodi, statistiche (`computeStats`, `computeFunnelValues`, `computeSetterStats`, `computeVenditoreStats`), commissioni, pace |
-| `firebase-sync.js` | Sincronizzazione facoltativa su Firestore (tasto ⚙) |
+| `supabase-config.js` | URL e chiave pubblica (anon) di Supabase |
+| `cloud-sync.js` | Login e salvataggio sul database Supabase (senza librerie: fetch diretto alle API) |
+| `supabase/schema.sql` | Tabelle, regole RLS, foto notturna, storico modifiche. Si lancia dal SQL Editor di Supabase |
 | `app.js` | Tutta l'interfaccia: routing, render, eventi, modali (~5.600 righe) |
 | `style.css` | Stile e temi |
 | `aggiornamenti/` | Screenshot delle mail a Hamza, una cartella per rilascio |
+| `tools/` | `prova-tracker.js` (prova nel browser), `anonimizza-backup.js` (copia anonima di un backup) |
 
 Il codice è commentato in italiano e i commenti spiegano spesso **perché** una regola è così ("richiesto dall'utente", "CORREZIONE"). Leggili prima di cambiare una regola: di solito è una decisione di Simone.
 
@@ -105,7 +108,8 @@ Il codice è commentato in italiano e i commenti spiegano spesso **perché** una
 Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 
 **Base e routing**
-- `persist()` salva in localStorage e accoda il push Firebase. Chiamala dopo ogni modifica a `db`.
+- `persist()` salva nella copia locale e accoda il salvataggio online (`CloudSync.schedule`). Chiamala dopo ogni modifica a `db`.
+- Avvio: `bootApp` → login (`loginSubmitAction`) → `startForUser` → `openUserData` (dati online, o import dei dati del browser al primo login). Account ed Esci: `openAccountModal`, `logoutAction`.
 - `renderRoute()` decide cosa mostrare da `location.hash`. Route (piatte, con trattino):
   - `#/dashboard`
   - Setting: `#/setting-appuntamenti`, `#/sessioni` (dettaglio: `#/sessioni/<id>`), `#/setting-statistiche`
@@ -150,13 +154,19 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 - Statistiche: `renderSettingStatistiche`, `renderVenditoreStatistiche`. Calendari: `openAppointmentsCalendarModal`, commissioni per giorno `renderCommissioniCalendarSection`.
 
 **Dati**
-- `exportData` / `importData` (backup .json), `openSettingsModal` (Firebase).
+- `exportData` / `importData` (backup .json). Importa sostituisce tutto anche online.
 
 ---
 
 ## 5. Modello dati
 
-Tutto sta in un unico oggetto `db`, salvato in localStorage alla chiave `chiamateTrackerData_v1`. Struttura completa e commentata in `storage.js` → `defaultData()`.
+Tutto sta in un unico oggetto `db`. Struttura completa e commentata in `storage.js` → `defaultData()`.
+
+Dove viene salvato (branch `supabase`, vedi `cloud-sync.js`):
+- Online su Supabase: tabella `appuntamenti` (una riga per appuntamento), `sessioni` (una riga per sessione, chiamate dentro), `stato` (tutto il resto, una riga per utente). Si inviano solo le righe cambiate.
+- Copia locale per utente: localStorage `chiamateTrackerData_v1__<id utente>`.
+- La chiave vecchia `chiamateTrackerData_v1` (versione senza login) non viene mai toccata: al primo login il tool la legge, scarica un backup e la carica online.
+- Date nel database: timestamptz. `scheduledAt`/`presentedAt` restano stringhe locali nel tool e sono convertite come ora italiana solo in `cloud-sync.js`.
 
 - `pipelines[]`: liste di chiamata, ognuna con i suoi `outcomes[]` (`isConversion`, `isNoAnswer`).
 - `sessions[]` e `activeSession`: ogni sessione ha `calls[]`, `startedAt`, `endedAt`, `pausedTotalMs`, `skips`.
@@ -255,7 +265,7 @@ Per gli screenshot da mandare a Simone: viewport 1440×900, salva PNG fuori dal 
 
 Decisione di Simone (14/10/2026): **login + database Supabase**, il prima possibile, con il tool pubblicato su **Vercel (piano Hobby)**.
 
-- Oggi i dati stanno solo nel browser (localStorage). La sync Firebase attuale è facoltativa e all'apertura sovrascrive i dati locali: col database va tolta o sostituita.
+- Lavori in corso sul branch `supabase` (login, salvataggio online, Firebase tolto). `main` resta la versione senza login finché Simone non dà l'ok al passaggio.
 - Prima della migrazione: date tutte nello stesso formato con fuso Europe/Rome.
 - Hamza non deve fermarsi: la versione nuova si costruisce e si prova a un indirizzo separato, mentre lui continua sul link GitHub Pages. Passa solo alla fine, al primo login il tool carica i dati che ha già nel browser.
 - Chiavi Supabase: nel codice solo la chiave pubblica (anon) con le regole RLS attive. La chiave `service_role` mai nel repo.

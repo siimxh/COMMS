@@ -9,6 +9,11 @@
  * statistiche principali del mese corrente e gli eventuali errori JavaScript.
  * Salva uno screenshot di ogni pagina in /tmp/prova-tracker/.
  *
+ * Login: il database Supabase qui è FINTO (in memoria, intercettato da
+ * Playwright), così la prova non tocca i dati veri e non serve una password.
+ * I dati entrano come "dati della versione senza login" e il tool li carica al
+ * primo accesso, come farà con Hamza.
+ *
  * Playwright: usa quello installato (require('playwright')); se non lo trova prova
  * il percorso globale dei container cloud. Chromium: PLAYWRIGHT_CHROMIUM o
  * /opt/pw-browsers/chromium se esiste.
@@ -41,6 +46,27 @@ function loadPlaywright() {
     }, fakeNow);
   }
 
+  // Supabase finto: login sempre valido, tabelle in memoria.
+  const fake = { stato: [], appuntamenti: [], sessioni: [] };
+  await ctx.route(/supabase\.co\//, async route => {
+    const req = route.request();
+    const url = new URL(req.url());
+    const reply = (status, body) => route.fulfill({ status, contentType: 'application/json', body: body === undefined ? '' : JSON.stringify(body) });
+    if (url.pathname.startsWith('/auth/v1/')) {
+      return reply(200, { access_token: 't', refresh_token: 'r', expires_in: 3600, user: { id: 'prova', email: 'prova@example.com' } });
+    }
+    const table = url.pathname.split('/').pop();
+    if (req.method() === 'GET') return reply(200, url.searchParams.get('select') === 'data' ? fake[table].map(r => ({ data: r.data })) : fake[table]);
+    if (req.method() === 'POST') {
+      JSON.parse(req.postData()).forEach(r => {
+        const i = fake[table].findIndex(x => x.user_id === r.user_id && x.id === r.id);
+        if (i >= 0) fake[table][i] = r; else fake[table].push(r);
+      });
+      return reply(201);
+    }
+    return reply(204);
+  });
+
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -58,6 +84,10 @@ function loadPlaywright() {
     });
   }
   await page.reload();
+  await page.fill('#loginEmail', 'prova@example.com');
+  await page.fill('#loginPassword', 'prova');
+  await page.click('#loginSubmit');
+  await page.waitForFunction(() => document.getElementById('loginScreen').hidden && !!document.querySelector('#app *'));
   await page.waitForTimeout(500);
 
   const outDir = '/tmp/prova-tracker';
