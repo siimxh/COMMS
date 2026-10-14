@@ -16,8 +16,8 @@ Due ruoli, nello stesso tool:
 Utenti: Simone (proprietario del tool, fa setter e venditore) e Hamza (collega setter, usa soprattutto la parte Setting e propone fix).
 
 - Repo: `siimxh/CRM-SETTER-VENDITORE`, branch `main`.
-- Online con GitHub Pages: https://siimxh.github.io/CRM-SETTER-VENDITORE/
-- Push su `main` = online in 1-2 minuti (workflow "pages build and deployment").
+- **Versione in uso (dal 14/10/2026)**: https://comms-wine.vercel.app — login + database Supabase. Vercel (progetto "comms", piano Hobby) pubblica il branch `supabase`: push su `supabase` = online in 1-2 minuti.
+- Versione vecchia senza login: GitHub Pages https://siimxh.github.io/CRM-SETTER-VENDITORE/ dal branch `main`. Non si usa più per registrare (i dati restano solo nel browser).
 - `siimxh/TRACKER-OUTBOUND` è una versione vecchia: non toccarla.
 - Il repo è **pubblico**: niente dati dei lead, indirizzi email o dati personali nei file.
 
@@ -36,8 +36,8 @@ Utenti: Simone (proprietario del tool, fa setter e venditore) e Hamza (collega s
 1. Ascolti la richiesta (da Simone, o da Hamza via mail).
 2. Prepari la modifica su un branch, la testi (vedi sezione 7).
 3. Mandi a Simone in chat lo schema di cosa cambia, con screenshot, e chiedi l'ok.
-4. **Solo dopo il suo ok**: merge/push su `main`.
-5. Controlli che il deploy Pages sia andato a buon fine.
+4. **Solo dopo il suo ok**: push sul branch pubblicato (oggi `supabase`, su Vercel).
+5. Controlli che il deploy sia andato a buon fine (chiedi a Simone di aprire il link se dal cloud non si raggiunge).
 6. Mail di aggiornamento a Hamza (vedi sotto), a meno che Simone dica "no mail".
 
 Se la richiesta viene da Hamza: stessa procedura, l'ok lo dà sempre Simone. A Hamza si risponde solo dopo che il fix è online.
@@ -65,7 +65,7 @@ Mi ha chiesto di darti un aggiornamento sulle ultime modifiche.
 
 Resto a disposizione per qualsiasi domanda 🙂
 
-🔗 Apri il tool: https://siimxh.github.io/CRM-SETTER-VENDITORE/
+🔗 Apri il tool: https://comms-wine.vercel.app
 
 Cordiali saluti,
 Claude
