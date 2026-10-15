@@ -18,7 +18,10 @@
  * - Nuovi e vecchi lead non si distinguono: un solo blocco.
  * - Chiamati = persone chiamate (un lead chiamato 3 volte conta 1), esiti per
  *   lead con l'ultimo esito. "Non interessato" e "Già con noi" restano fuori.
- * - Da svolgere = appuntamenti in agenda quel giorno (spostati esclusi).
+ * - Il Setter non ha appuntamenti da svolgere: li svolge il venditore. Nella
+ *   parte Setting ci sono solo chiamate, esiti e appuntamenti fissati.
+ * - Da svolgere (Venditore) = TUTTI gli appuntamenti assegnati per quel giorno,
+ *   spostati compresi: erano assegnati, comunque sia andata.
  * - No show = No Show + Annullato. Gli spostati non sono no show.
  * - Prodotti, referral, rinnovi e upsell: il tool non li registra.
  */
@@ -74,10 +77,11 @@ function computeSource() {
     const setter = appts.filter(a => a.role === 'setter');
     const vend = appts.filter(a => a.role === 'venditore');
 
-    // Appuntamenti in agenda oggi: spostati esclusi (stessa regola degli assegnati del tool).
-    const agendaSetter = setter.filter(a => !isMovedAppointment(a) && on(a.scheduledAt));
-    const agendaVend = vend.filter(a => !isMovedAppointment(a) && on(a.scheduledAt));
+    // Da svolgere: tutti gli appuntamenti Venditore in agenda quel giorno, spostati
+    // compresi. Uno spostato a un altro orario dello STESSO giorno conta una volta sola.
     const vendScoped = vend.filter(a => on(a.scheduledAt));
+    const sameDayIds = new Set(vendScoped.map(a => a.id));
+    const daSvolgere = vendScoped.filter(a => !(a.rescheduledFromId && sameDayIds.has(a.rescheduledFromId))).length;
     const chiusi = vendScoped.filter(a => a.closed);
 
     // Incassato: acconto al giorno della presentazione + rate pagate quel giorno (Venditore).
@@ -93,13 +97,10 @@ function computeSource() {
         daRichiamare: byLabel(/^da richiamare$/i),
         nonInTarget: byLabel(/^non in target$/i),
         fake: byLabel(/^fake$/i),
-        fissati: setter.filter(a => isCountedAsNewBooking(a) && on(a.createdAt)).length,
-        daSvolgere: agendaSetter.length,
-        presentati: agendaSetter.filter(a => a.presentedStatus === 'presented').length,
-        noShow: agendaSetter.filter(a => a.presentedStatus === 'no_show' || a.presentedStatus === 'annullato').length
+        fissati: setter.filter(a => isCountedAsNewBooking(a) && on(a.createdAt)).length
       },
       vendita: {
-        daSvolgere: agendaVend.length,
+        daSvolgere,
         presentati: vendScoped.filter(a => dealStageDef(a.dealStage) && dealStageDef(a.dealStage).isPresented).length,
         noShow: vendScoped.filter(a => a.dealStage === 'no_show' || a.dealStage === 'annullato').length,
         chiusure: chiusi.length,
@@ -113,15 +114,14 @@ function computeSource() {
 const LABELS = {
   setting: [
     ['chiamati', 'N° chiamati'], ['nonRisposte', 'N° non risposte'], ['daRichiamare', 'N° da richiamare'],
-    ['nonInTarget', 'N° non in target'], ['fake', 'N° fake'], ['fissati', 'N° appuntamenti fissati'],
-    ['daSvolgere', 'N° appuntamenti da svolgere'], ['presentati', 'N° appuntamenti presentati'], ['noShow', 'N° no show']
+    ['nonInTarget', 'N° non in target'], ['fake', 'N° fake'], ['fissati', 'N° appuntamenti fissati']
   ],
   vendita: [
     ['daSvolgere', 'N° appuntamenti da svolgere'], ['presentati', 'N° appuntamenti presentati'], ['noShow', 'N° no show'],
     ['chiusure', 'N° chiusure'], ['contrattualizzato', 'Contrattualizzato (€)'], ['incassato', 'Incassato (€)']
   ]
 };
-const fmt = v => Number.isInteger(v) ? String(v) : v.toLocaleString('it-IT', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmt = v => v.toLocaleString('it-IT', { maximumFractionDigits: 2 }); // 3000 -> "3.000"
 
 function section(title, values, labels) {
   const rows = labels.filter(([k]) => values[k]).map(([k, l]) => `• ${l}: ${fmt(values[k])}`);

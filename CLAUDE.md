@@ -97,7 +97,7 @@ Ordine di caricamento in `index.html`: `storage.js` → `utils.js` → `supabase
 | `app.js` | Tutta l'interfaccia: routing, render, eventi, modali (~5.600 righe) |
 | `style.css` | Stile e temi |
 | `aggiornamenti/` | Screenshot delle mail a Hamza, una cartella per rilascio |
-| `tools/` | `prova-tracker.js` (prova nel browser), `anonimizza-backup.js` (copia anonima di un backup) |
+| `tools/` | `prova-tracker.js` (prova nel browser), `anonimizza-backup.js` (copia anonima di un backup), `eod-report.js` (numeri del modulo di fine giornata, letti dal database: lo usa la mail EOD delle 19) |
 
 Il codice è commentato in italiano e i commenti spiegano spesso **perché** una regola è così ("richiesto dall'utente", "CORREZIONE"). Leggili prima di cambiare una regola: di solito è una decisione di Simone.
 
