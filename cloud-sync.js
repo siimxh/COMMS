@@ -10,8 +10,11 @@
  * - Dopo ogni modifica (persist), con un piccolo ritardo, manda al database SOLO
  *   le righe cambiate: appuntamenti e sessioni una riga ciascuno, il resto
  *   (pipeline, sessione in corso, da richiamare, obiettivi, tema...) nella riga
- *   unica "stato". Per capire cosa è cambiato tiene un'impronta (hash) di ogni
- *   riga già salvata online.
+ *   unica "stato". I lead della parte Venditore (lead.js) vanno nella tabella
+ *   "lead", una riga per lead; finché quella tabella non esiste nel database
+ *   restano dentro "stato" e ci passano da soli appena viene creata.
+ *   Per capire cosa è cambiato tiene un'impronta (hash) di ogni riga già
+ *   salvata online.
  * - Se la rete manca o il salvataggio fallisce, riprova da solo (ogni 15 secondi
  *   e appena torna la rete). Le impronte stanno nel browser, quindi anche
  *   chiudendo la pagina le modifiche non ancora inviate partono alla riapertura.
@@ -179,11 +182,13 @@ function rowToSession(r) {
   return Object.assign(s, extra);
 }
 
-/** Tutto quello che non è appuntamenti o sessioni concluse va nella riga "stato". */
+/** Tutto quello che non è appuntamenti o sessioni concluse va nella riga "stato".
+ * Anche i lead, ma solo se la tabella "lead" non c'è ancora (vedi CloudSync.leadTable). */
 function dbToState(data) {
   const st = Object.assign({}, data);
   delete st.appointments;
   delete st.sessions;
+  if (CloudSync.leadTable) delete st.leads;
   return st;
 }
 
@@ -204,10 +209,11 @@ function cloudHash(obj) {
 }
 
 function cloudFingerprints(data) {
-  const a = {}, s = {};
+  const a = {}, s = {}, l = {};
   (data.appointments || []).forEach(x => { a[x.id] = cloudHash(x); });
   (data.sessions || []).forEach(x => { s[x.id] = cloudHash(x); });
-  return { a, s, st: cloudHash(dbToState(data)) };
+  if (CloudSync.leadTable) (data.leads || []).forEach(x => { l[x.id] = cloudHash(x); });
+  return { a, s, l, st: cloudHash(dbToState(data)) };
 }
 
 /* ---------- Client Supabase minimo (Auth + REST) ---------- */
@@ -229,6 +235,8 @@ const CloudSync = {
   _flushing: null,
   _again: false,
   getData: null,        // funzione che restituisce il db corrente (impostata da app.js)
+  leadTable: false,     // true se nel database c'è la tabella "lead" (si scopre al pull)
+  _leadsToMove: false,  // true se i lead stanno ancora in "stato" e vanno spostati nella tabella
   onStatus: null,       // callback per la spia in topbar
 
   /* --- Sessione di login --- */
@@ -373,29 +381,54 @@ const CloudSync = {
       } catch (e) {
         this.synced = null;
       }
+      // Fino al prossimo pull vale quello che si sapeva all'ultimo salvataggio.
+      this.leadTable = !!(this.synced && this.synced.leadTable);
     },
 
     _saveSynced() {
+      if (this.synced) this.synced.leadTable = this.leadTable;
       try { localStorage.setItem(this._syncedKey(), JSON.stringify(this.synced)); } catch (e) { /* non bloccante */ }
     },
 
     /** Scarica tutti i dati dell'utente. null se online non c'è ancora niente (primo login). */
     async pull() {
-      const [stato, appts, sessions] = await Promise.all([
+      const [stato, appts, sessions, leadRows] = await Promise.all([
         this._rest('GET', 'stato?select=data'),
         this._selectAll('appuntamenti', 'created_at.asc,id.asc'),
-        this._selectAll('sessioni', 'started_at.asc,id.asc')
+        this._selectAll('sessioni', 'started_at.asc,id.asc'),
+        this._selectLeads()
       ]);
+      this.leadTable = leadRows !== null;
+      this._leadsToMove = false;
       if (!stato || !stato.length) return null;
-      return Object.assign({}, stato[0].data || {}, {
+      const data = Object.assign({}, stato[0].data || {}, {
         appointments: appts.map(rowToAppt),
         sessions: sessions.map(rowToSession)
       });
+      if (this.leadTable) {
+        const fromState = Array.isArray(data.leads) ? data.leads : [];
+        if (leadRows.length || !fromState.length) data.leads = leadRows.map(r => r.data);
+        else this._leadsToMove = true; // tabella appena creata: i lead sono ancora in "stato"
+      }
+      return data;
+    },
+
+    /** Righe della tabella "lead", oppure null se la tabella non esiste ancora. */
+    async _selectLeads() {
+      try {
+        return await this._selectAll('lead', 'id.asc');
+      } catch (e) {
+        if (e.status === 404) return null;
+        throw e;
+      }
     },
 
     /** Dopo un pull: la versione appena scaricata è quella salvata online. */
     markSynced(data) {
       this.synced = cloudFingerprints(data);
+      // Lead ancora dentro "stato": li segniamo come "non salvati" nella tabella, così
+      // partono al prossimo invio, e "stato" viene riscritto senza di loro.
+      if (this._leadsToMove) { this.synced.l = {}; this.synced.st = null; this._leadsToMove = false; }
       this._saveSynced();
     },
 
@@ -404,7 +437,7 @@ const CloudSync = {
       if (!this.synced) return true;
       const fp = cloudFingerprints(data);
       if (fp.st !== this.synced.st) return true;
-      for (const k of ['a', 's']) {
+      for (const k of ['a', 's', 'l']) {
         const cur = fp[k], old = this.synced[k] || {};
         if (Object.keys(cur).some(id => cur[id] !== old[id])) return true;
         if (Object.keys(old).some(id => !(id in cur))) return true;
@@ -456,19 +489,27 @@ const CloudSync = {
       const fp = cloudFingerprints(data);
       // Le impronte si aggiornano passo per passo: se un invio fallisce a metà,
       // quello già arrivato online non viene rimandato al prossimo tentativo.
-      if (!this.synced) this.synced = { a: {}, s: {}, st: null };
+      if (!this.synced) this.synced = { a: {}, s: {}, l: {}, st: null };
       const old = this.synced;
+      if (!old.l) old.l = {};
 
       const changedA = (data.appointments || []).filter(x => fp.a[x.id] !== old.a[x.id]);
       const changedS = (data.sessions || []).filter(x => fp.s[x.id] !== old.s[x.id]);
+      const changedL = this.leadTable ? (data.leads || []).filter(x => fp.l[x.id] !== old.l[x.id]) : [];
       const deletedA = Object.keys(old.a).filter(id => !(id in fp.a));
       const deletedS = Object.keys(old.s).filter(id => !(id in fp.s));
+      const deletedL = this.leadTable ? Object.keys(old.l).filter(id => !(id in fp.l)) : [];
       const stateChanged = fp.st !== old.st;
 
-      if (!changedA.length && !changedS.length && !deletedA.length && !deletedS.length && !stateChanged) return;
+      if (!changedA.length && !changedS.length && !changedL.length && !deletedA.length && !deletedS.length && !deletedL.length && !stateChanged) return;
 
       try {
-      // Ordine: prima stato (marca "questo utente ha dati online"), poi le righe.
+      // Ordine: prima i lead nuovi (se stanno passando da "stato" alla tabella non
+      // devono mai mancare in tutti e due i posti), poi stato, poi le altre righe.
+      if (changedL.length) {
+        await this._upsert('lead', changedL.map(x => ({ user_id: uid, id: x.id, data: x })), 'user_id,id');
+        changedL.forEach(x => { old.l[x.id] = fp.l[x.id]; });
+      }
       if (stateChanged) {
         await this._upsert('stato', [{ user_id: uid, data: dbToState(data) }], 'user_id');
         old.st = fp.st;
@@ -488,6 +529,10 @@ const CloudSync = {
       if (deletedS.length) {
         await this._deleteIds('sessioni', deletedS);
         deletedS.forEach(id => { delete old.s[id]; });
+      }
+      if (deletedL.length) {
+        await this._deleteIds('lead', deletedL);
+        deletedL.forEach(id => { delete old.l[id]; });
       }
     } finally {
       this._saveSynced();

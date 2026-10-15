@@ -19,7 +19,7 @@ let uiState = {
   goalsTimeframe: 'month',     // timeframe attivo (day|week|month) per le card Obiettivi (stile Hero + Sparkline)
   goalsPeriodMode: 'current',  // 'current' (giorno/settimana/mese corrente) | 'best' (il migliore di sempre per commissioni) per le card Obiettivi
   settingTab: 'appuntamenti',  // sotto-tab attiva dentro la sezione Setting: 'appuntamenti' | 'sessioni' | 'statistiche'
-  venditoreTab: 'appuntamenti',// sotto-tab attiva dentro la sezione Venditore: 'appuntamenti' | 'statistiche'
+  venditoreTab: 'lead',        // sotto-tab attiva dentro la sezione Venditore: 'lead' | 'appuntamenti' | 'statistiche'
   settingStatsTimeframe: 'mese_corrente', // timeframe attivo per la pagina Statistiche Setting
   settingStatsCustomFrom: null,
   settingStatsCustomTo: null,
@@ -435,7 +435,7 @@ function isCashDay(dayTotal) {
 // con la scelta Appuntamenti/Sessioni (Setting) o Appuntamenti/Statistiche (Venditore)
 // fatta DENTRO la schermata tramite sotto-tab, non con più voci di nav separate).
 const SETTING_SUBROUTES = { appuntamenti: 'setting-appuntamenti', sessioni: 'sessioni', statistiche: 'setting-statistiche' };
-const VENDITORE_SUBROUTES = { appuntamenti: 'venditore-appuntamenti', statistiche: 'venditore-statistiche' };
+const VENDITORE_SUBROUTES = { lead: 'venditore-lead', appuntamenti: 'venditore-appuntamenti', statistiche: 'venditore-statistiche' };
 
 function renderRoute() {
   // Indicatore fisso "sessione in corso" + etichetta del tasto "+ Nuova sessione" — vanno
@@ -472,15 +472,20 @@ function renderRoute() {
   document.body.classList.remove('in-session');
   clearInterval(sessionTimerInterval);
 
-  const hash = location.hash || '#/dashboard';
+  // Parte Venditore (lead.js): con l'interruttore acceso si apre su "Oggi", spento
+  // spariscono Oggi e Venditore e si apre la Dashboard (vedi 👤 Account).
+  LeadCRM.applyNav();
+  const venditoreOn = LeadCRM.isOn();
+  const hash = location.hash || (venditoreOn ? '#/oggi' : '#/dashboard');
   const parts = hash.replace('#/', '').split('/');
-  const route = parts[0] || 'dashboard';
+  let route = parts[0] || 'dashboard';
+  if (!venditoreOn && (route === 'oggi' || route === 'lead' || route === 'venditore' || Object.values(VENDITORE_SUBROUTES).includes(route))) route = 'dashboard';
 
   // Le due macro-voci di nav "Setting"/"Venditore" sono attive quando la route corrente
   // è una qualunque delle loro sotto-schermate, non solo quando l'hash è esattamente
   // 'setting' o 'venditore' — altrimenti il bottone si spegnerebbe entrando in una tab.
   const isSettingRoute = route === 'setting' || Object.values(SETTING_SUBROUTES).includes(route);
-  const isVenditoreRoute = route === 'venditore' || Object.values(VENDITORE_SUBROUTES).includes(route);
+  const isVenditoreRoute = route === 'venditore' || route === 'lead' || Object.values(VENDITORE_SUBROUTES).includes(route);
   document.querySelectorAll('.navlink').forEach(l => {
     const r = l.dataset.route;
     const active = (r === 'setting' && isSettingRoute) || (r === 'venditore' && isVenditoreRoute) || r === route;
@@ -494,6 +499,9 @@ function renderRoute() {
   else if (route === 'setting-appuntamenti') { uiState.settingTab = 'appuntamenti'; renderSettingPage(); }
   else if (route === 'setting-statistiche') { uiState.settingTab = 'statistiche'; renderSettingPage(); }
   else if (route === 'setting') renderSettingPage();
+  else if (route === 'oggi') LeadCRM.renderOggi();
+  else if (route === 'lead' && parts[1]) LeadCRM.renderLead(parts[1]);
+  else if (route === 'venditore-lead') { uiState.venditoreTab = 'lead'; renderVenditorePage(); }
   else if (route === 'venditore-appuntamenti') { uiState.venditoreTab = 'appuntamenti'; renderVenditorePage(); }
   else if (route === 'venditore-statistiche') { uiState.venditoreTab = 'statistiche'; renderVenditorePage(); }
   else if (route === 'venditore') renderVenditorePage();
@@ -563,6 +571,7 @@ function renderSubTabsBar(kind, active) {
   return `
     <section class="card sub-tabs-bar">
       <div class="sub-tabs">
+        <button class="tf-tab ${active === 'lead' ? 'active' : ''}" data-venditore-tab="lead">Lead</button>
         <button class="tf-tab ${active === 'appuntamenti' ? 'active' : ''}" data-venditore-tab="appuntamenti">Appuntamenti</button>
         <button class="tf-tab ${active === 'statistiche' ? 'active' : ''}" data-venditore-tab="statistiche">Statistiche</button>
       </div>
@@ -582,7 +591,7 @@ function wireSubTabsBar(kind) {
     appRoot.querySelectorAll('[data-venditore-tab]').forEach(btn => {
       btn.addEventListener('click', () => {
         uiState.venditoreTab = btn.dataset.venditoreTab;
-        location.hash = uiState.venditoreTab === 'statistiche' ? '#/venditore-statistiche' : '#/venditore-appuntamenti';
+        location.hash = '#/' + (VENDITORE_SUBROUTES[uiState.venditoreTab] || 'venditore-lead');
       });
     });
   }
@@ -596,11 +605,13 @@ function renderSettingPage() {
   else renderAppuntamenti();
 }
 
-/** Wrapper "Venditore": sotto-tab Appuntamenti/Statistiche, scelta dentro la schermata. */
+/** Wrapper "Venditore": sotto-tab Lead/Appuntamenti/Statistiche, scelta dentro la schermata.
+ * "Lead" (lead.js) è la prima: la parte Venditore a lead approvata da Simone il 15/10/2026. */
 function renderVenditorePage() {
-  const tab = uiState.venditoreTab || 'appuntamenti';
+  const tab = uiState.venditoreTab || 'lead';
   if (tab === 'statistiche') renderVenditoreStatistiche();
-  else renderVenditoreAppuntamenti();
+  else if (tab === 'appuntamenti') renderVenditoreAppuntamenti();
+  else LeadCRM.renderLeadList(renderSubTabsBar('venditore', 'lead'));
 }
 
 /* ---------- Dashboard ---------- */
@@ -648,10 +659,10 @@ function renderDashboardTopSections() {
       <h2><span class="role-dot setter"></span>Obiettivi Setter${renderMonthPace('setter')}</h2>
       ${setterFunnel}
     </section>
-    <section class="card goals-section">
+    ${LeadCRM.isOn() ? `<section class="card goals-section">
       <h2><span class="role-dot venditore"></span>Obiettivi Venditore${renderMonthPace('venditore')}</h2>
       ${venditoreFunnel}
-    </section>
+    </section>` : ''}
     ${commKpi}
   `;
 }
@@ -2850,6 +2861,7 @@ function rescheduleAppointment(apt, when) {
   fresh.notes = (apt.notes || []).map(n => Object.assign({}, n)); // storico note Venditore
   fresh.nextFollowUpDate = apt.nextFollowUpDate;
   fresh.rescheduledFromId = apt.id;
+  if (apt.leadId) fresh.leadId = apt.leadId; // stesso lead (parte Venditore, lead.js)
 
   if (apt.role === 'venditore') {
     apt.dealStage = 'spostato';
@@ -3312,6 +3324,7 @@ function applyDealStage(apt, stageKey) {
 
 function renderVenditoreAppuntamenti() {
   uiState.venditoreTab = 'appuntamenti';
+  if (LeadCRM.ensureLeads()) persist(); // ogni appuntamento Venditore ha il suo lead (lead.js)
   const filter = uiState.crmVenditoreFilter || 'all'; // 'all' | 'trattativa' | 'no_show' | 'perso'
   const search = uiState.crmVenditoreSearch || '';
   let rows = db.appointments.filter(a => a.role === 'venditore');
@@ -3380,6 +3393,7 @@ function renderVenditoreApptRow(a) {
           <button class="crm-copy-phone-btn" data-copy-phone="${a.id}" title="Copia numero">⧉</button>
         </div>
         ${rescheduleBadgesHtml(a)}
+        ${LeadCRM.apptRowExtraHtml(a)}
       </td>
       <td class="crm-cell-center"><input type="datetime-local" class="crm-inline-input crm-datetime-input" data-scheduled-input="${a.id}" value="${(a.scheduledAt || '').slice(0, 16)}"></td>
       <td class="crm-cell-center">
@@ -3414,6 +3428,8 @@ function wireVenditoreAppuntamentiEvents() {
       if (!apt) return;
       apt.clientName = input.value;
       persist();
+      LeadCRM.onApptNameChanged(apt); // il lead segue il nome (lead.js)
+      renderVenditoreAppuntamenti();
     });
   });
 
@@ -3448,6 +3464,9 @@ function wireVenditoreAppuntamentiEvents() {
     });
   });
 
+  // Scheda lead e "Com'è finita?" sotto il nome (lead.js).
+  LeadCRM.wireRowButtons(appRoot);
+
   appRoot.querySelectorAll('[data-set-stage]').forEach(sel => {
     sel.addEventListener('change', () => {
       const apt = db.appointments.find(x => x.id === sel.dataset.setStage);
@@ -3460,6 +3479,7 @@ function wireVenditoreAppuntamentiEvents() {
         return;
       }
       applyDealStage(apt, sel.value || null);
+      LeadCRM.onDealStageChanged(apt); // il lead segue (chiuso -> Cliente, ...)
       renderVenditoreAppuntamenti();
     });
   });
@@ -3820,6 +3840,8 @@ function renderVenditoreStatistiche() {
         <div class="bar-row"><div class="bar-label">Non in target</div><div class="bar-track"><div class="bar-fill" style="width:${pct(stats.nonInTarget, stats.assegnati || 1)}%"></div></div><div class="bar-value">${stats.nonInTarget}</div></div>
       </div>
     </section>
+
+    ${LeadCRM.renderNewStatsSection(range)}
   `;
 
   wireSubTabsBar('venditore');
@@ -5744,12 +5766,14 @@ function openAccountModal() {
     <h3>Account</h3>
     <p>Sei entrato come <strong>${escapeHtml(email)}</strong>.</p>
     <p class="text-dim" style="font-size:0.85rem;">I dati sono salvati online e anche in questo browser.</p>
+    <div class="lead-modal">${LeadCRM.accountToggleHtml()}</div>
     <div class="modal-actions">
       <button class="btn-ghost" data-close-modal="1">Chiudi</button>
       <button class="btn-primary" id="btnLogout">Esci</button>
     </div>
   `);
   modalRoot.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', closeModal));
+  LeadCRM.wireAccountToggle();
   document.getElementById('btnLogout').addEventListener('click', logoutAction);
 }
 

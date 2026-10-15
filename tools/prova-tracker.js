@@ -13,6 +13,8 @@
  * Playwright), così la prova non tocca i dati veri e non serve una password.
  * I dati entrano come "dati della versione senza login" e il tool li carica al
  * primo accesso, come farà con Hamza.
+ * Con SENZA_TABELLA_LEAD=1 il database finto non ha la tabella "lead" (come
+ * prima di lanciare supabase/lead.sql): i lead restano nella riga "stato".
  *
  * Playwright: usa quello installato (require('playwright')); se non lo trova prova
  * il percorso globale dei container cloud. Chromium: PLAYWRIGHT_CHROMIUM o
@@ -47,7 +49,8 @@ function loadPlaywright() {
   }
 
   // Supabase finto: login sempre valido, tabelle in memoria.
-  const fake = { stato: [], appuntamenti: [], sessioni: [] };
+  const fake = { stato: [], appuntamenti: [], sessioni: [], lead: [] };
+  const noLeadTable = process.env.SENZA_TABELLA_LEAD === '1';
   await ctx.route(/supabase\.co\//, async route => {
     const req = route.request();
     const url = new URL(req.url());
@@ -56,6 +59,7 @@ function loadPlaywright() {
       return reply(200, { access_token: 't', refresh_token: 'r', expires_in: 3600, user: { id: 'prova', email: 'prova@example.com' } });
     }
     const table = url.pathname.split('/').pop();
+    if (table === 'lead' && noLeadTable) return reply(404, { code: 'PGRST205', message: "Could not find the table 'public.lead'" });
     if (req.method() === 'GET') return reply(200, url.searchParams.get('select') === 'data' ? fake[table].map(r => ({ data: r.data })) : fake[table]);
     if (req.method() === 'POST') {
       JSON.parse(req.postData()).forEach(r => {
@@ -92,7 +96,7 @@ function loadPlaywright() {
 
   const outDir = '/tmp/prova-tracker';
   fs.mkdirSync(outDir, { recursive: true });
-  const routes = ['#/dashboard', '#/setting-appuntamenti', '#/sessioni', '#/setting-statistiche', '#/venditore-appuntamenti', '#/venditore-statistiche', '#/impostazioni'];
+  const routes = ['#/oggi', '#/venditore-lead', '#/dashboard', '#/setting-appuntamenti', '#/sessioni', '#/setting-statistiche', '#/venditore-appuntamenti', '#/venditore-statistiche', '#/impostazioni'];
   for (const r of routes) {
     await page.evaluate(h => { location.hash = h; renderRoute(); }, r);
     await page.waitForTimeout(400);
@@ -105,6 +109,7 @@ function loadPlaywright() {
     return {
       sessioni: db.sessions.length,
       appuntamenti: db.appointments.length,
+      lead: (db.leads || []).length,
       meseCorrente: { chiamate: st.totalCalls, lead: st.totalLeads, risposta: st.responseRate + '%' },
       setter: computeSetterStats(db, rg),
       venditore: computeVenditoreStats(db, rg)

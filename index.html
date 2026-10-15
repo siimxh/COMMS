@@ -19,9 +19,10 @@
   <header id="topbar">
     <div class="brand">Chiamate Tracker</div>
     <nav id="mainNav">
+      <button class="navlink" data-route="oggi" data-venditore-only>Oggi</button>
       <button class="navlink" data-route="dashboard">Dashboard</button>
       <button class="navlink" data-route="setting">Setting</button>
-      <button class="navlink" data-route="venditore">Venditore</button>
+      <button class="navlink" data-route="venditore" data-venditore-only>Venditore</button>
     </nav>
     <div class="topbar-actions">
       <span id="syncStatus" class="sync-status" style="display:none;"></span>
@@ -60,6 +61,7 @@
   <script src="utils.js"></script>
   <script src="supabase-config.js"></script>
   <script src="cloud-sync.js"></script>
+  <script src="lead.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

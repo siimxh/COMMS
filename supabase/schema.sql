@@ -10,6 +10,8 @@
 --   sessioni      una riga per sessione di chiamate, con le chiamate dentro
 --   stato         un blocco unico per utente: pipeline, sessione in corso,
 --                 da richiamare, Round Recupero, obiettivi, tema, ...
+--   lead          una riga per lead della parte Venditore (lead.js): stato,
+--                 prossima azione, cose promesse, storico (tutto in "data")
 --
 -- Due tabelle di sicurezza (solo lettura per l'utente, le scrive il database):
 --   foto_giornaliere   copia completa dei dati di ogni utente, ogni notte,
@@ -122,12 +124,29 @@ create trigger stato_updated_at
   for each row execute function public.tocca_updated_at();
 
 -- ---------------------------------------------------------------------------
+-- lead (parte Venditore, una riga per lead). Gli appuntamenti puntano qui con
+-- extra->>'leadId'. I soldi restano sugli appuntamenti.
+-- ---------------------------------------------------------------------------
+create table if not exists public.lead (
+  user_id     uuid        not null default auth.uid() references auth.users(id) on delete cascade,
+  id          text        not null,           -- id del tool (lead_...)
+  data        jsonb       not null default '{}'::jsonb, -- il lead, come nel tool
+  updated_at  timestamptz not null default now(),
+  primary key (user_id, id)
+);
+
+drop trigger if exists lead_updated_at on public.lead;
+create trigger lead_updated_at
+  before update on public.lead
+  for each row execute function public.tocca_updated_at();
+
+-- ---------------------------------------------------------------------------
 -- foto_giornaliere (copia di sicurezza notturna, 14 giorni)
 -- ---------------------------------------------------------------------------
 create table if not exists public.foto_giornaliere (
   user_id     uuid        not null references auth.users(id) on delete cascade,
   giorno      date        not null,
-  data        jsonb       not null,   -- { stato, appuntamenti: [...], sessioni: [...] }
+  data        jsonb       not null,   -- { stato, appuntamenti: [...], sessioni: [...], lead: [...] }
   created_at  timestamptz not null default now(),
   primary key (user_id, giorno)
 );
@@ -182,6 +201,11 @@ create trigger appuntamenti_storico
   after update or delete on public.appuntamenti
   for each row execute function public.registra_modifica();
 
+drop trigger if exists lead_storico on public.lead;
+create trigger lead_storico
+  after update or delete on public.lead
+  for each row execute function public.registra_modifica();
+
 -- ---------------------------------------------------------------------------
 -- Regole di accesso (RLS): ognuno solo le sue righe. Chi non ha fatto login
 -- (ruolo anon) non vede niente.
@@ -189,17 +213,18 @@ create trigger appuntamenti_storico
 alter table public.appuntamenti      enable row level security;
 alter table public.sessioni          enable row level security;
 alter table public.stato             enable row level security;
+alter table public.lead              enable row level security;
 alter table public.foto_giornaliere  enable row level security;
 alter table public.storico_modifiche enable row level security;
 
-revoke all on public.appuntamenti, public.sessioni, public.stato,
+revoke all on public.appuntamenti, public.sessioni, public.stato, public.lead,
               public.foto_giornaliere, public.storico_modifiche from anon;
 
 -- Tabelle di lavoro: lettura e scrittura delle proprie righe.
 do $$
 declare t text;
 begin
-  foreach t in array array['appuntamenti', 'sessioni', 'stato'] loop
+  foreach t in array array['appuntamenti', 'sessioni', 'stato', 'lead'] loop
     execute format('drop policy if exists "solo le mie righe" on public.%I', t);
     execute format(
       'create policy "solo le mie righe" on public.%I for all to authenticated
@@ -238,12 +263,14 @@ begin
          jsonb_build_object(
            'stato',        (select s.data from public.stato s where s.user_id = u.user_id),
            'appuntamenti', coalesce((select jsonb_agg(to_jsonb(a)) from public.appuntamenti a where a.user_id = u.user_id), '[]'::jsonb),
-           'sessioni',     coalesce((select jsonb_agg(to_jsonb(x)) from public.sessioni x where x.user_id = u.user_id), '[]'::jsonb)
+           'sessioni',     coalesce((select jsonb_agg(to_jsonb(x)) from public.sessioni x where x.user_id = u.user_id), '[]'::jsonb),
+           'lead',         coalesce((select jsonb_agg(to_jsonb(l)) from public.lead l where l.user_id = u.user_id), '[]'::jsonb)
          )
   from (
     select user_id from public.stato
     union select user_id from public.appuntamenti
     union select user_id from public.sessioni
+    union select user_id from public.lead
   ) u
   on conflict (user_id, giorno) do update set data = excluded.data, created_at = now();
 

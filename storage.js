@@ -95,6 +95,7 @@ function defaultSettings() {
     glowLevel: 'none',
     readableV1: true, // vedi migrazione in mergeWithDefaults
     cashDayThreshold: 500,
+    venditoreOn: true, // interruttore "Parte Venditore" in 👤 Account (Oggi, tab Venditore, obiettivi venditore)
     toggles: {
       grindMode: false,
       animatedNumbers: false,
@@ -127,6 +128,10 @@ function defaultData() {
     // dalle sessioni/pipeline di chiamata outbound qui sopra. Vedi struttura riga
     // in app.js (newAppointment) e le regole di calcolo commissioni in utils.js.
     appointments: [],
+    // --- Lead della parte Venditore (lead.js): una scheda per persona, con stato,
+    // prossima azione, cose promesse e storico. Gli appuntamenti Venditore puntano qui
+    // con apt.leadId. I soldi restano sugli appuntamenti.
+    leads: [],
     goals: defaultGoals(),
     settings: defaultSettings(),
 
@@ -280,6 +285,7 @@ function mergeWithDefaults(parsed) {
 
   out.pipelines = ensureDefaultOutcomesOnPipelines(out.pipelines);
   out.appointments = (parsed.appointments || []).map(migrateAppointment);
+  out.leads = Array.isArray(parsed.leads) ? parsed.leads : [];
   out.callRecordings = Array.isArray(parsed.callRecordings) ? parsed.callRecordings : [];
   out.recoveryRound = Array.isArray(parsed.recoveryRound) ? parsed.recoveryRound : [];
   out.recoveryRoundActive = !!parsed.recoveryRoundActive;

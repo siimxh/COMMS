@@ -84,7 +84,7 @@ Si toccano solo "Simo Privato" (personale) e "Calendario Simone" (delicato: lo v
 
 ## 3. File
 
-Ordine di caricamento in `index.html`: `storage.js` → `utils.js` → `supabase-config.js` → `cloud-sync.js` → `app.js`. Tutto è globale (niente moduli): una funzione di `utils.js` si usa direttamente in `app.js`.
+Ordine di caricamento in `index.html`: `storage.js` → `utils.js` → `supabase-config.js` → `cloud-sync.js` → `lead.js` → `app.js`. Tutto è globale (niente moduli): una funzione di `utils.js` si usa direttamente in `app.js`.
 
 | File | Cosa contiene |
 |---|---|
@@ -94,6 +94,8 @@ Ordine di caricamento in `index.html`: `storage.js` → `utils.js` → `supabase
 | `supabase-config.js` | URL e chiave pubblica (anon) di Supabase |
 | `cloud-sync.js` | Login e salvataggio sul database Supabase (senza librerie: fetch diretto alle API) |
 | `supabase/schema.sql` | Tabelle, regole RLS, foto notturna, storico modifiche. Si lancia dal SQL Editor di Supabase |
+| `supabase/lead.sql` | Solo la tabella `lead` (per un database che ha già lo schema) |
+| `lead.js` | Parte Venditore a lead: Oggi, lista Lead, scheda lead, "Com'è finita?", Fatto/Sposta, numeri nuovi. Tutto dentro `LeadCRM` |
 | `app.js` | Tutta l'interfaccia: routing, render, eventi, modali (~5.600 righe) |
 | `style.css` | Stile e temi |
 | `aggiornamenti/` | Screenshot delle mail a Hamza, una cartella per rilascio |
@@ -113,7 +115,8 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 - `renderRoute()` decide cosa mostrare da `location.hash`. Route (piatte, con trattino):
   - `#/dashboard`
   - Setting: `#/setting-appuntamenti`, `#/sessioni` (dettaglio: `#/sessioni/<id>`), `#/setting-statistiche`
-  - Venditore: `#/venditore-appuntamenti`, `#/venditore-statistiche`
+  - Oggi (lead.js): `#/oggi`, pagina d'apertura se la parte Venditore è accesa
+  - Venditore: `#/venditore-lead` (scheda: `#/lead/<id>`), `#/venditore-appuntamenti`, `#/venditore-statistiche`
   - Builder tema: `#/impostazioni`
 - Priorità prima della route: richiamata in corso (`callbackCallActiveId`), sessione attiva non minimizzata, Round Conferme, Round Recupero. Se uno di questi è attivo, la route viene ignorata.
 - Tema: `THEME_PRESETS`, `applyTheme`, pagina Builder (`renderBuilderPage`, tasto 🎨).
@@ -153,6 +156,13 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 - Soldi: `apptTotalSold`, `getEffectiveInstallments` (l'acconto incassato diventa una rata pagata sintetica).
 - Statistiche: `renderSettingStatistiche`, `renderVenditoreStatistiche`. Calendari: `openAppointmentsCalendarModal`, commissioni per giorno `renderCommissioniCalendarSection`.
 
+**Parte Venditore a lead (lead.js, dal 16/10/2026)**
+- `LeadCRM.ensureLeads()` collega ogni appuntamento Venditore a un lead (`apt.leadId`): stesso nome (senza la sigla " - MJ - N") o stesso telefono = stesso lead.
+- `renderOggi`, `renderLeadList`, `renderLead`, `openEsito` ("Com'è finita?"), `openFatto`, `openSposta`, `openSetNext`, `renderNewStatsSection`.
+- Il lead segue i cambi fatti nella tabella Appuntamenti: `onDealStageChanged`, `onApptNameChanged`.
+- Soldi: la scheda Pagamenti scrive sull'ultimo appuntamento chiuso del lead (stesse regole di commissione).
+- Interruttore `db.settings.venditoreOn` in 👤 Account: spento nasconde Oggi, Venditore e obiettivi Venditore.
+
 **Dati**
 - `exportData` / `importData` (backup .json). Importa sostituisce tutto anche online.
 
@@ -163,7 +173,8 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 Tutto sta in un unico oggetto `db`. Struttura completa e commentata in `storage.js` → `defaultData()`.
 
 Dove viene salvato (branch `supabase`, vedi `cloud-sync.js`):
-- Online su Supabase: tabella `appuntamenti` (una riga per appuntamento), `sessioni` (una riga per sessione, chiamate dentro), `stato` (tutto il resto, una riga per utente). Si inviano solo le righe cambiate.
+- Online su Supabase: tabella `appuntamenti` (una riga per appuntamento), `sessioni` (una riga per sessione, chiamate dentro), `lead` (una riga per lead, tutto in `data`), `stato` (tutto il resto, una riga per utente). Si inviano solo le righe cambiate.
+- Se la tabella `lead` non esiste, i lead restano dentro `stato`; al primo caricamento dopo averla creata (`supabase/lead.sql`) passano nella tabella da soli (`CloudSync.leadTable`).
 - Copia locale per utente: localStorage `chiamateTrackerData_v1__<id utente>`.
 - La chiave vecchia `chiamateTrackerData_v1` (versione senza login) non viene mai toccata: al primo login il tool la legge, scarica un backup e la carica online.
 - Date nel database: timestamptz. `scheduledAt`/`presentedAt` restano stringhe locali nel tool e sono convertite come ora italiana solo in `cloud-sync.js`.
@@ -176,6 +187,7 @@ Dove viene salvato (branch `supabase`, vedi `cloud-sync.js`):
   - Setter: `presentedStatus` ∈ `no`, `confirmed24h`, `presented`, `no_show`, `annullato`, `spostato`.
   - Venditore: `dealStage` (vedi `DEAL_STAGES`), `notes[]`, `nextFollowUpDate` (YYYY-MM-DD).
   - Soldi: `cashCollected`, `totalSold`, `installments[]` (`amount`, `paid`, `paidDate`, `dueDate`).
+- `leads[]`: lead della parte Venditore `{ id, name, centro, city, phone, email, setter, stato, next, promises[], history[], fuNoAnswer, wasFollowUp }`. Stati: Nuovo, Trattativa, Follow-up, Cliente, Perso, Freddo.
 - `callbacks[]`: i "Da richiamare".
 - `recoveryRound[]`: i lead del Round Recupero.
 - `goals`, `settings`, `callRecordings[]`.
@@ -213,6 +225,12 @@ Prima di cambiarne una, chiedi a Simone.
 - Venditore: 10% dell'**incassato**: cash collected + rate spuntate come pagate. Le rate future contano solo quando vengono spuntate.
 - Data della commissione: l'acconto va al giorno della presentazione (`appointmentCashDate`), ogni rata al giorno in cui è stata pagata. Mai al giorno in cui la riga viene segnata "chiuso".
 - "Totale venduto" in dashboard somma Setter + Venditore: va bene così.
+
+**Lead (parte Venditore)**
+- Numero dell'appuntamento (1°, 2°…): solo appuntamenti svolti (presentati, anche non in target). Spostati senza numero.
+- Follow-up = "no chiaro per adesso". Dopo 6 follow-up senza risposta il lead diventa Freddo.
+- Nessun lead aperto senza prossima azione (se manca compare in rosso in Oggi).
+- "Chiuso?": Sì, ha pagato (Chiuso) / Sì, contratto firmato / No.
 
 **Obiettivi e pace**
 - Giorno = ore 9-19. Settimana e mese = solo giorni lun-ven.
