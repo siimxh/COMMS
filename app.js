@@ -23,7 +23,7 @@ let uiState = {
   settingStatsTimeframe: 'mese_corrente', // timeframe attivo per la pagina Statistiche Setting
   settingStatsCustomFrom: null,
   settingStatsCustomTo: null,
-  andamentoTimeframe: 'mese_corrente', // timeframe dei grafici a linea "Andamento generale" in dashboard
+  andamentoTimeframe: 'mese_corrente', // periodo UNICO della dashboard (barra in cima, Simone 2026-10-15): vale per Obiettivi e Andamento generale
   andamentoCustomFrom: null,
   andamentoCustomTo: null,
   andamentoCommRole: 'all',    // 'all' | 'setter' | 'venditore' — filtro ruolo solo per il grafico Commissioni
@@ -633,18 +633,16 @@ function renderDashboard() {
  * La logica di eventi (wiring) è in wireDashboardTopSectionEvents().
  */
 function renderDashboardTopSections() {
+  const periodBarHtml = renderDashboardPeriodBar();
   const eyebrowsHtml = renderEyebrows();
-  const modeToggleHtml = renderGoalsPeriodModeToggle();
-  const tabsHtml = renderGoalsTimeframeTabs();
   const bestCaptionHtml = renderBestPeriodCaption();
   const setterFunnel = renderFunnelSection('setter', 'Obiettivi Setter', FUNNEL_STEPS_SETTER);
   const venditoreFunnel = renderFunnelSection('venditore', 'Obiettivi Venditore', FUNNEL_STEPS_VENDITORE);
   const commKpi = renderCommissionKpiSection();
 
   return `
+    ${periodBarHtml}
     ${eyebrowsHtml}
-    ${modeToggleHtml}
-    ${tabsHtml}
     ${bestCaptionHtml}
     <section class="card goals-section">
       <h2><span class="role-dot setter"></span>Obiettivi Setter${renderMonthPace('setter')}</h2>
@@ -747,42 +745,68 @@ const FUNNEL_STEPS_VENDITORE = [
 ];
 
 const TIMEFRAME_KEYS = ['day', 'week', 'month'];
-const TIMEFRAME_CARD_LABELS = { day: 'Giorno', week: 'Settimana', month: 'Mese' };
 const BEST_PERIOD_LABELS = { day: 'Miglior giorno', week: 'Migliore settimana', month: 'Miglior mese' };
 
-/**
- * Range effettivo per le card Obiettivi (Setter/Venditore), in base al timeframe
- * (day/week/month — granularità) E alla modalità (uiState.goalsPeriodMode):
- * - 'current' (default): il giorno/settimana/mese corrente, come sempre.
- * - 'best': il giorno/settimana/mese con le commissioni totali più alte in assoluto su
- *   tutto lo storico (vedi findBestPeriod in utils.js) — richiesto esplicitamente
- *   dall'utente per vedere subito "com'era andata" nel loro periodo migliore di sempre,
- *   con tutte le card Obiettivi che si aggiornano di conseguenza. Se non ci sono ancora
- *   commissioni registrate, ricade sul periodo corrente (vedi renderBestPeriodCaption
- *   per l'avviso mostrato in quel caso).
+/* ---------- Periodo unico della dashboard (Simone, 2026-10-15) ----------
+ * Una sola barra in cima (Oggi / Ieri / 7 giorni / 30 giorni / 90 giorni / Mese corrente /
+ * Mese scorso / Personalizzato + "🏆 Migliore di sempre") che vale per TUTTA la dashboard:
+ * Obiettivi Setter, Obiettivi Venditore e Andamento generale. Regole decise da Simone:
+ * - Oggi / Ieri -> obiettivo del giorno; 7 giorni -> della settimana; 30 giorni / Mese
+ *   corrente / Mese scorso -> del mese; 90 giorni / Personalizzato -> numeri senza barra
+ *   obiettivo.
+ * - "Migliore di sempre": il giorno/settimana/mese con più commissioni (scelta Giorno /
+ *   Settimana / Mese visibile solo in quella modalità), usato da tutta la dashboard.
+ * - Pace mese e calendario commissioni restano sul mese, come prima.
  */
-function getGoalsPeriodRange(tf) {
+const DASH_GOAL_TF = { oggi: 'day', ieri: 'day', '7g': 'week', '30g': 'month', mese_corrente: 'month', mese_scorso: 'month' };
+
+/** Range del periodo scelto nella barra della dashboard. */
+function getDashboardRange() {
   if (uiState.goalsPeriodMode === 'best') {
-    const best = findBestPeriod(db, tf);
+    const best = findBestPeriod(db, uiState.goalsTimeframe);
     if (best) return best.range;
+    return currentPeriodRanges()[uiState.goalsTimeframe];
   }
-  return currentPeriodRanges()[tf];
+  return getTimeframeRange(uiState.andamentoTimeframe || 'mese_corrente', uiState.andamentoCustomFrom, uiState.andamentoCustomTo);
+}
+
+/** Quale obiettivo (day/week/month) usare per il periodo scelto; null = nessuno. */
+function getDashboardGoalTf() {
+  if (uiState.goalsPeriodMode === 'best') return uiState.goalsTimeframe;
+  return DASH_GOAL_TF[uiState.andamentoTimeframe || 'mese_corrente'] || null;
 }
 
 function renderFunnelSection(role, title, steps) {
-  const tf = uiState.goalsTimeframe;
-  return renderFunnelCard(role, tf, steps, getGoalsPeriodRange(tf));
+  return renderFunnelCard(role, getDashboardGoalTf(), steps, getDashboardRange());
 }
 
-/** Toggle "Periodo corrente / Migliore di sempre" per le card Obiettivi — mostrato sopra
- * i tab Giorno/Settimana/Mese, condiviso da entrambi i funnel (Setter e Venditore). */
-function renderGoalsPeriodModeToggle() {
-  const mode = uiState.goalsPeriodMode || 'current';
+/** Barra del periodo in cima alla dashboard. */
+function renderDashboardPeriodBar() {
+  const best = uiState.goalsPeriodMode === 'best';
+  const tf = uiState.andamentoTimeframe || 'mese_corrente';
+  const range = getDashboardRange();
+  const pills = Object.keys(TIMEFRAME_LABELS).filter(k => k !== 'custom').map(k =>
+    `<button class="pill ${!best && tf === k ? 'active' : ''}" data-andamento-tf="${k}">${TIMEFRAME_LABELS[k]}</button>`
+  ).join('');
+  const bestTabs = best ? `
+      <div class="tf-tabs">
+        ${TIMEFRAME_KEYS.map(k => `<button class="tf-tab ${uiState.goalsTimeframe === k ? 'active' : ''}" data-goals-tf="${k}">${BEST_PERIOD_LABELS[k]}</button>`).join('')}
+      </div>` : '';
   return `
-    <div class="tf-tabs" style="margin-bottom:-2px;">
-      <button class="tf-tab ${mode === 'current' ? 'active' : ''}" data-goals-period-mode="current">Periodo corrente</button>
-      <button class="tf-tab ${mode === 'best' ? 'active' : ''}" data-goals-period-mode="best">🏆 Migliore di sempre</button>
-    </div>`;
+    <section class="card filters-bar dash-period-bar">
+      <div class="timeframe-pills">
+        ${pills}
+        <button class="pill ${!best && tf === 'custom' ? 'active' : ''}" data-andamento-tf="custom">Personalizzato</button>
+        <button class="pill ${best ? 'active' : ''}" data-goals-period-mode="best">🏆 Migliore di sempre</button>
+      </div>
+      ${!best && tf === 'custom' ? `
+      <div class="custom-range">
+        <label>dal <input type="date" id="andamentoDateFrom" value="${uiState.andamentoCustomFrom ? uiState.andamentoCustomFrom : dateInputValue(range.start)}"></label>
+        <label>al <input type="date" id="andamentoDateTo" value="${uiState.andamentoCustomTo ? uiState.andamentoCustomTo : dateInputValue(range.end)}"></label>
+        <button class="btn-ghost" id="btnAndamentoApplyRange">Applica</button>
+      </div>` : ''}
+      ${bestTabs}
+    </section>`;
 }
 
 /** Quando la modalità è "Migliore di sempre", mostra QUALE giorno/settimana/mese esatto
@@ -800,18 +824,10 @@ function renderBestPeriodCaption() {
   return `<div class="eyebrow">🏆 ${BEST_PERIOD_LABELS[tf]}: ${label} — €${best.total} di commissioni</div>`;
 }
 
-/** Tab Giorno/Settimana/Mese condivisi da entrambi i funnel (Setter e Venditore
- * cambiano vista insieme) — resi una sola volta sopra le due sezioni Obiettivi. */
-function renderGoalsTimeframeTabs() {
-  const tabsHtml = TIMEFRAME_KEYS.map(tf => `
-    <button class="tf-tab ${uiState.goalsTimeframe === tf ? 'active' : ''}" data-goals-tf="${tf}">${TIMEFRAME_CARD_LABELS[tf]}</button>
-  `).join('');
-  return `<div class="tf-tabs">${tabsHtml}</div>`;
-}
-
 function renderFunnelCard(role, timeframe, steps, range) {
   const values = computeFunnelValues(db, role, range);
-  const goalSet = db.goals[role][timeframe];
+  // timeframe null (90 giorni / Personalizzato): numeri senza obiettivo.
+  const goalSet = timeframe ? db.goals[role][timeframe] : null;
   const heroStep = steps[0];
   const miniSteps = steps.slice(1);
   const heroHtml = renderFunnelHero(role, timeframe, heroStep, values, goalSet);
@@ -847,6 +863,15 @@ function renderFunnelHero(role, timeframe, step, values, goalSet) {
       </div>`;
   }
 
+  if (!goalSet) {
+    return `
+      <div class="hero-main ${role}">
+        <div class="hero-label">${escapeHtml(step.label)}</div>
+        <div class="hero-num" data-kpi-num="${current}" data-kpi-money="${isMoney ? '1' : '0'}" data-kpi-display="${fmtVal(current)}">${fmtVal(current)}</div>
+        <div class="hero-of">nessun obiettivo per questo periodo</div>
+      </div>`;
+  }
+
   const target = goalSet[step.key] || 0;
   const progressPct = target > 0 ? Math.min(100, pct(current, target)) : 0;
   const complete = target > 0 && current >= target;
@@ -874,7 +899,7 @@ function renderFunnelHero(role, timeframe, step, values, goalSet) {
  * sempre") vale 1.
  */
 function goalElapsedFraction(timeframe) {
-  const range = getGoalsPeriodRange(timeframe);
+  const range = getDashboardRange();
   const now = new Date();
   if (now > range.end) return 1;
   if (now < range.start) return 0;
@@ -914,6 +939,13 @@ function renderFunnelMini(role, timeframe, step, values, goalSet, range) {
   const current = values[step.key] || 0;
   const isMoney = step.money;
   const fmtVal = (n) => isMoney ? `€${round2(n)}` : String(n);
+  if (!goalSet) {
+    return `
+    <div class="mini ${role}">
+      <div class="mini-label">${escapeHtml(step.label)}</div>
+      <div class="mini-num" data-kpi-num="${current}" data-kpi-money="${isMoney ? '1' : '0'}" data-kpi-display="${fmtVal(current)}">${fmtVal(current)}</div>
+    </div>`;
+  }
   const target = goalSet[step.key] || 0;
   const progressPct = target > 0 ? Math.min(100, pct(current, target)) : 0;
   const complete = target > 0 && current >= target;
@@ -941,7 +973,7 @@ function wireDashboardTopSectionEvents() {
   });
   appRoot.querySelectorAll('[data-goals-period-mode]').forEach(btn => {
     btn.addEventListener('click', () => {
-      uiState.goalsPeriodMode = btn.dataset.goalsPeriodMode;
+      uiState.goalsPeriodMode = 'best';
       renderDashboard();
     });
   });
@@ -974,6 +1006,7 @@ function wireDashboardTopSectionEvents() {
   appRoot.querySelectorAll('[data-andamento-tf]').forEach(btn => {
     btn.addEventListener('click', () => {
       uiState.andamentoTimeframe = btn.dataset.andamentoTf;
+      uiState.goalsPeriodMode = 'current';
       if (btn.dataset.andamentoTf !== 'custom') { uiState.andamentoCustomFrom = null; uiState.andamentoCustomTo = null; }
       renderDashboard();
     });
@@ -1009,7 +1042,7 @@ function wireDashboardTopSectionEvents() {
 
 function renderCommissionKpiSection() {
   const tf = uiState.andamentoTimeframe || 'mese_corrente';
-  const range = getTimeframeRange(tf, uiState.andamentoCustomFrom, uiState.andamentoCustomTo);
+  const range = getDashboardRange();
   const summary = computeCommissionSummary(db, range);
   const pace = db.settings.toggles.closingPace ? renderClosingPaceNote() : '';
   const personalBest = db.settings.toggles.personalBest ? renderPersonalBestBadge() : '';
@@ -1023,21 +1056,6 @@ function renderCommissionKpiSection() {
 
   return `
     <div class="section-separator"><span class="eyebrow">Andamento generale</span></div>
-
-    <section class="card filters-bar">
-      <div class="timeframe-pills">
-        ${Object.keys(TIMEFRAME_LABELS).filter(k => k !== 'custom').map(k =>
-          `<button class="pill ${tf === k ? 'active' : ''}" data-andamento-tf="${k}">${TIMEFRAME_LABELS[k]}</button>`
-        ).join('')}
-        <button class="pill ${tf === 'custom' ? 'active' : ''}" data-andamento-tf="custom">Personalizzato</button>
-      </div>
-      ${tf === 'custom' ? `
-      <div class="custom-range">
-        <label>dal <input type="date" id="andamentoDateFrom" value="${uiState.andamentoCustomFrom ? uiState.andamentoCustomFrom : dateInputValue(range.start)}"></label>
-        <label>al <input type="date" id="andamentoDateTo" value="${uiState.andamentoCustomTo ? uiState.andamentoCustomTo : dateInputValue(range.end)}"></label>
-        <button class="btn-ghost" id="btnAndamentoApplyRange">Applica</button>
-      </div>` : ''}
-    </section>
 
     ${renderMonthPaceBox()}
 

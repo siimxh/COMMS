@@ -343,7 +343,7 @@ function inRange(dateVal, range) {
 /**
  * Trova il giorno/settimana/mese con le commissioni totali più alte in assoluto su
  * tutto lo storico registrato — usato dal toggle "Migliore di sempre" delle card
- * Obiettivi in dashboard (vedi renderGoalsPeriodModeToggle/getGoalsPeriodRange in
+ * Obiettivi in dashboard (vedi renderDashboardPeriodBar/getDashboardRange in
  * app.js). Raggruppa ogni evento di commissione (allCommissionEvents) nel periodo a cui
  * appartiene (giorno esatto / settimana lun-dom / mese) e ritorna il range con il
  * totale più alto. Ritorna null se non ci sono ancora commissioni registrate (es. tool
