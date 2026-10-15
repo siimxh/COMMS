@@ -121,7 +121,7 @@ const LABELS = {
     ['chiusure', 'N° chiusure'], ['contrattualizzato', 'Contrattualizzato (€)'], ['incassato', 'Incassato (€)']
   ]
 };
-const fmt = v => v.toLocaleString('it-IT', { maximumFractionDigits: 2 }); // 3000 -> "3.000"
+const fmt = v => v.toLocaleString('it-IT', { maximumFractionDigits: 2, useGrouping: 'always' }); // 3000 -> "3.000"
 
 function section(title, values, labels) {
   const rows = labels.filter(([k]) => values[k]).map(([k, l]) => `• ${l}: ${fmt(values[k])}`);
