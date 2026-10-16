@@ -1718,7 +1718,7 @@ function renderSessioniList() {
         </div>
         <div class="session-card-stats">
           <span>${fmtDuration(duration)}</span>
-          <span>${totalCalls} chiamate</span>
+          <span>${totalCalls} ${totalCalls === 1 ? 'chiamata' : 'chiamate'}</span>
           <span>${totalLeads} lead</span>
         </div>
       </div>`;

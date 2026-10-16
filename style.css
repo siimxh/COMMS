@@ -304,6 +304,9 @@ p { margin: 0 0 8px; }
 .btn-danger-ghost { color: var(--danger); border-color: var(--danger); background: transparent; opacity: 0.85; }
 .btn-danger-ghost:hover { background: var(--danger); color: #fff; opacity: 1; }
 
+/* Barra del periodo unica: la riga "Periodo: ..." staccata dai tasti. */
+.period-bar > p { margin-top: 10px !important; }
+
 /* 👤 Account: aspetto, esporta e importa (prima erano in topbar). */
 .account-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
 .account-tools label.btn-ghost { display: inline-flex; align-items: center; cursor: pointer; }
