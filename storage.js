@@ -283,6 +283,16 @@ function mergeWithDefaults(parsed) {
   }
   delete out.settings.skin;
 
+  // Migrazione una tantum (Simone, 16/10, lettera I): il 🎨 semplice tiene solo 4 effetti
+  // (Numeri che contano, Countdown fine mese, Giorni di fila, Ritmo di chiusura). Gli altri
+  // 12 interruttori spariscono e si spengono.
+  if (!out.settings.simpleBuilderV1) {
+    const keep = ['animatedNumbers', 'monthCountdown', 'dailyStreak', 'closingPace'];
+    Object.keys(out.settings.toggles).forEach(k => { if (keep.indexOf(k) === -1) out.settings.toggles[k] = false; });
+    out.settings.simpleBuilderV1 = true;
+  }
+  if (out.settings.textSize !== 'large') out.settings.textSize = 'normal';
+
   out.pipelines = ensureDefaultOutcomesOnPipelines(out.pipelines);
   out.appointments = (parsed.appointments || []).map(migrateAppointment);
   out.leads = Array.isArray(parsed.leads) ? parsed.leads : [];

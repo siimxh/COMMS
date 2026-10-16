@@ -4,7 +4,7 @@ let db = defaultData();
 let uiState = {
   pipelineFilter: 'all',
   sessioniPipelineFilter: 'all',
-  crmSetterFilter: 'all',      // 'all' | 'no_show' — tabella Appuntamenti Setter
+  crmSetterFilter: 'aperti',   // 'aperti' | 'all' | 'no_show' — tabella Appuntamenti Setter
   crmSetterSearch: '',         // testo ricerca per nome/telefono — tabella Appuntamenti Setter
   crmVenditoreFilter: 'all',   // 'all' | 'trattativa' | 'no_show' | 'perso' — tabella Appuntamenti Venditore
   crmVenditoreSearch: '',      // testo ricerca per nome/telefono — tabella Appuntamenti Venditore
@@ -12,8 +12,8 @@ let uiState = {
   editingGoal: null,           // { role, timeframe, step } quando un target obiettivo è in modifica inline
   goalsTimeframe: 'month',     // timeframe attivo (day|week|month) per le card Obiettivi (stile Hero + Sparkline)
   goalsPeriodMode: 'current',  // 'current' (giorno/settimana/mese corrente) | 'best' (il migliore di sempre per commissioni) per le card Obiettivi
-  settingTab: 'appuntamenti',  // sotto-tab attiva dentro la sezione Setting: 'appuntamenti' | 'sessioni' | 'statistiche'
-  venditoreTab: 'lead',        // sotto-tab attiva dentro la sezione Venditore: 'lead' | 'appuntamenti' | 'statistiche'
+  settingTab: 'appuntamenti',  // sotto-tab attiva dentro la sezione Setting: 'appuntamenti' | 'sessioni'
+  venditoreTab: 'lead',        // sotto-tab attiva dentro la sezione Venditore: 'lead' | 'appuntamenti'
   period: null,                // periodo UNICO (Dashboard, Sessioni, Statistiche): vedi getPeriod()
   andamentoCommRole: 'all',    // 'all' | 'setter' | 'venditore' — filtro ruolo solo per il grafico Commissioni
   sessionMinimized: false      // true quando l'utente è "uscito" dalla sessione attiva per navigare altrove, senza terminarla (vedi renderActiveSessionIndicator)
@@ -199,6 +199,8 @@ function applyTheme(settings) {
   // Colori degli stati (No Show, Spostato, ...) chiari o scuri in base allo SFONDO del
   // tema scelto, non alla modalità chiara/scura del sistema (vedi fondo di style.css).
   if (c.bg) root.setAttribute('data-tone', isDarkColor(c.bg) ? 'dark' : 'light');
+  // Grandezza del testo (🎨 semplice, 16/10): "Grande" ingrandisce tutto il tool.
+  root.style.fontSize = settings.textSize === 'large' ? '134%' : '';
   if (c.setterColor) root.style.setProperty('--setter-color', c.setterColor);
   if (c.venditoreColor) root.style.setProperty('--venditore-color', c.venditoreColor);
   if (c.success) root.style.setProperty('--success', c.success);
@@ -423,8 +425,8 @@ function isCashDay(dayTotal) {
 // (richiesto esplicitamente dall'utente: un solo "Setting" e un solo "Venditore" in nav,
 // con la scelta Appuntamenti/Sessioni (Setting) o Appuntamenti/Statistiche (Venditore)
 // fatta DENTRO la schermata tramite sotto-tab, non con più voci di nav separate).
-const SETTING_SUBROUTES = { appuntamenti: 'setting-appuntamenti', sessioni: 'sessioni', statistiche: 'setting-statistiche' };
-const VENDITORE_SUBROUTES = { lead: 'venditore-lead', appuntamenti: 'venditore-appuntamenti', statistiche: 'venditore-statistiche' };
+const SETTING_SUBROUTES = { appuntamenti: 'setting-appuntamenti', sessioni: 'sessioni' };
+const VENDITORE_SUBROUTES = { lead: 'venditore-lead', appuntamenti: 'venditore-appuntamenti' };
 
 function renderRoute() {
   // Indicatore fisso "sessione in corso" + etichetta del tasto "+ Nuova sessione" — vanno
@@ -486,13 +488,11 @@ function renderRoute() {
   if (route === 'sessioni' && parts[1]) { uiState.settingTab = 'sessioni'; renderSessioneDetail(parts[1]); }
   else if (route === 'sessioni') { uiState.settingTab = 'sessioni'; renderSettingPage(); }
   else if (route === 'setting-appuntamenti') { uiState.settingTab = 'appuntamenti'; renderSettingPage(); }
-  else if (route === 'setting-statistiche') { uiState.settingTab = 'statistiche'; renderSettingPage(); }
   else if (route === 'setting') renderSettingPage();
   else if (route === 'oggi') LeadCRM.renderOggi();
   else if (route === 'lead' && parts[1]) LeadCRM.renderLead(parts[1]);
   else if (route === 'venditore-lead') { uiState.venditoreTab = 'lead'; renderVenditorePage(); }
   else if (route === 'venditore-appuntamenti') { uiState.venditoreTab = 'appuntamenti'; renderVenditorePage(); }
-  else if (route === 'venditore-statistiche') { uiState.venditoreTab = 'statistiche'; renderVenditorePage(); }
   else if (route === 'venditore') renderVenditorePage();
   else if (route === 'impostazioni') renderBuilderPage();
   else renderDashboard();
@@ -553,7 +553,6 @@ function renderSubTabsBar(kind, active) {
         <div class="sub-tabs">
           <button class="tf-tab ${active === 'appuntamenti' ? 'active' : ''}" data-setting-tab="appuntamenti">Appuntamenti</button>
           <button class="tf-tab ${active === 'sessioni' ? 'active' : ''}" data-setting-tab="sessioni">Sessioni</button>
-          <button class="tf-tab ${active === 'statistiche' ? 'active' : ''}" data-setting-tab="statistiche">Statistiche</button>
         </div>
       </section>`;
   }
@@ -562,7 +561,6 @@ function renderSubTabsBar(kind, active) {
       <div class="sub-tabs">
         <button class="tf-tab ${active === 'lead' ? 'active' : ''}" data-venditore-tab="lead">Lead</button>
         <button class="tf-tab ${active === 'appuntamenti' ? 'active' : ''}" data-venditore-tab="appuntamenti">Appuntamenti</button>
-        <button class="tf-tab ${active === 'statistiche' ? 'active' : ''}" data-venditore-tab="statistiche">Statistiche</button>
       </div>
     </section>`;
 }
@@ -572,8 +570,7 @@ function wireSubTabsBar(kind) {
     appRoot.querySelectorAll('[data-setting-tab]').forEach(btn => {
       btn.addEventListener('click', () => {
         uiState.settingTab = btn.dataset.settingTab;
-        location.hash = uiState.settingTab === 'sessioni' ? '#/sessioni'
-          : (uiState.settingTab === 'statistiche' ? '#/setting-statistiche' : '#/setting-appuntamenti');
+        location.hash = uiState.settingTab === 'sessioni' ? '#/sessioni' : '#/setting-appuntamenti';
       });
     });
   } else {
@@ -590,16 +587,14 @@ function wireSubTabsBar(kind) {
 function renderSettingPage() {
   const tab = uiState.settingTab || 'appuntamenti';
   if (tab === 'sessioni') renderSessioniList();
-  else if (tab === 'statistiche') renderSettingStatistiche();
   else renderAppuntamenti();
 }
 
-/** Wrapper "Venditore": sotto-tab Lead/Appuntamenti/Statistiche, scelta dentro la schermata.
+/** Wrapper "Venditore": sotto-tab Lead/Appuntamenti, scelta dentro la schermata.
  * "Lead" (lead.js) è la prima: la parte Venditore a lead approvata da Simone il 15/10/2026. */
 function renderVenditorePage() {
   const tab = uiState.venditoreTab || 'lead';
-  if (tab === 'statistiche') renderVenditoreStatistiche();
-  else if (tab === 'appuntamenti') renderVenditoreAppuntamenti();
+  if (tab === 'appuntamenti') renderVenditoreAppuntamenti();
   else LeadCRM.renderLeadList(renderSubTabsBar('venditore', 'lead'));
 }
 
@@ -647,13 +642,64 @@ function renderDashboardTopSections() {
     <section class="card goals-section">
       <h2><span class="role-dot setter"></span>Obiettivi Setter${renderMonthPace('setter')}</h2>
       ${setterFunnel}
+      ${renderSetterRatesRow()}
     </section>
     ${LeadCRM.isOn() ? `<section class="card goals-section">
       <h2><span class="role-dot venditore"></span>Obiettivi Venditore${renderMonthPace('venditore')}</h2>
       ${venditoreFunnel}
+      ${renderVenditoreRatesRow()}
     </section>` : ''}
     ${commKpi}
   `;
+}
+
+/* Lettera D (Simone, 16/10): le tab Statistiche di Setting e Venditore sono sparite.
+ * I numeri che c'erano solo lì (tassi, media fissati, numeri dei lead, esiti) stanno
+ * in una riga sotto ogni card Obiettivi e seguono il periodo scelto in cima. */
+function dashboardStatsRange() {
+  // "Tutto" (range null) non esiste in dashboard: si usa sempre il periodo della dashboard.
+  return getDashboardRange();
+}
+
+function rateCell(value, label, sub) {
+  return `<div class="rate-cell"><div class="rate-val">${value}</div><div class="rate-lab">${escapeHtml(label)}</div>${sub ? `<div class="rate-sub">${sub}</div>` : ''}</div>`;
+}
+
+function renderSetterRatesRow() {
+  const st = computeSetterStats(db, dashboardStatsRange());
+  return `<div class="rates-row">
+    ${rateCell(st.showUpRate + '%', 'Show rate', `${st.presentatiSvolti} presentati su ${st.svolti} svolti`)}
+    ${rateCell(st.closingRate + '%', 'Closing', 'chiusi su presentati')}
+    ${rateCell(String(st.mediaFissatiGiorno).replace('.', ','), 'Fissati al giorno', 'giorni lun-ven')}
+    ${rateCell(st.svolti, 'Già svolti', 'presentati, no show e annullati')}
+  </div>`;
+}
+
+function renderVenditoreRatesRow() {
+  const range = dashboardStatsRange();
+  const st = computeVenditoreStats(db, range);
+  const ls = LeadCRM.newStatsValues(range);
+  const base = st.assegnati || 1;
+  const bar = (label, n) => `<div class="bar-row"><div class="bar-label">${label}</div><div class="bar-track"><div class="bar-fill" style="width:${pct(n, base)}%"></div></div><div class="bar-value">${n}</div></div>`;
+  return `<div class="rates-row">
+    ${rateCell(st.showRate + '%', 'Show rate', `${st.presentati} presentati su ${st.showRateBase}`)}
+    ${rateCell(st.conversionRate + '%', 'Closing', 'chiusi su presentati in target')}
+    ${rateCell('€' + round2(st.scontrinoMedio), 'Scontrino medio', `${st.chiusi} chiusi`)}
+    ${rateCell(ls.show2 + '%', 'Show rate 2° app.', `${ls.p2} presentati · ${ls.n2} no show`)}
+    ${rateCell(ls.pctFu + '%', 'Chiuse in follow-up', `${ls.cFu} su ${ls.clienti} clienti`)}
+    ${rateCell(`${ls.inT} · <span class="late-tag">${ls.rit}</span>`, 'Follow-up', 'in tempo · in ritardo')}
+  </div>
+  <div class="esiti-box">
+    <div class="rate-lab">Esiti nel periodo (su ${st.assegnati} assegnati)</div>
+    <div class="bar-list">
+      ${bar('Presentati', st.presentati)}
+      ${bar('Chiusi', st.chiusi)}
+      ${bar('Persi', st.persi)}
+      ${bar('No Show', st.noShow)}
+      ${bar('Annullati', st.annullati)}
+      ${bar('Non in target', st.nonInTarget)}
+    </div>
+  </div>`;
 }
 
 /** Pace del mese (richiesto 2026-10-08): a che cifra di commissioni chiudi il mese se
@@ -665,22 +711,6 @@ function renderMonthPace(role) {
     <span class="month-pace-num">€${p.pace}</span>
     <span class="month-pace-sub">finora €${p.soFar} · giorno ${p.elapsed} di ${p.total} (lun-ven)</span>
   </span>`;
-}
-
-/** Riquadro "Pace del mese" (Simone, 2026-10-08) tra il timeframe di Andamento generale
- * e i numeri: solo il TOTALE (Setter + Venditore), snello come le pace accanto ai titoli
- * degli Obiettivi. Sempre sul mese corrente. */
-function renderMonthPaceBox() {
-  const ps = computeMonthPace(db, 'setter');
-  const pv = computeMonthPace(db, 'venditore');
-  return `
-    <section class="card pace-box">
-      <span class="month-pace">
-        <span class="month-pace-label">Pace mese totale</span>
-        <span class="month-pace-num">€${ps.pace + pv.pace}</span>
-        <span class="month-pace-sub">finora €${ps.soFar + pv.soFar} · giorno ${ps.elapsed} di ${ps.total} (lun-ven)</span>
-      </span>
-    </section>`;
 }
 
 function renderEyebrows() {
@@ -912,7 +942,7 @@ function renderFunnelCard(role, timeframe, steps, range) {
   const goalSet = timeframe ? db.goals[role][timeframe] : null;
   const heroStep = steps[0];
   const miniSteps = steps.slice(1);
-  const heroHtml = renderFunnelHero(role, timeframe, heroStep, values, goalSet);
+  const heroHtml = renderFunnelHero(role, timeframe, heroStep, values, goalSet, range);
   const miniHtml = miniSteps.map(step => renderFunnelMini(role, timeframe, step, values, goalSet, range)).join('');
   const rowClass = miniSteps.length <= 2 ? 'v3' : (miniSteps.length === 3 ? 'v4' : (miniSteps.length === 4 ? 'v5' : ''));
   return `
@@ -926,7 +956,7 @@ function renderFunnelCard(role, timeframe, steps, range) {
 
 /** Prima tappa del funnel, resa in grande ("hero") — sempre la tappa "di ingresso"
  * (Appuntamenti Fissati per il setter, Appuntamenti Assegnati — manuale — per il venditore). */
-function renderFunnelHero(role, timeframe, step, values, goalSet) {
+function renderFunnelHero(role, timeframe, step, values, goalSet, range) {
   const current = values[step.key] || 0;
   const isMoney = step.money;
   const fmtVal = (n) => isMoney ? `€${round2(n)}` : String(n);
@@ -935,13 +965,15 @@ function renderFunnelHero(role, timeframe, step, values, goalSet) {
     // Conteggio automatico dal CRM (righe con ruolo Venditore nel periodo) — non più un
     // campo manuale: "current" arriva già da computeFunnelValues come le altre tappe.
     const assigned = current;
-    const presentedPct = assigned > 0 ? pct(values.presentati, assigned) : 0;
+    // Bug 7 (Simone, 16/10): qui c'era "presentati su assegnati" (45%) mentre le Statistiche
+    // davano lo show rate (53%). Ora è lo stesso show rate ovunque (computeVenditoreStats).
+    const presentedPct = computeVenditoreStats(db, range).showRate;
     const closedPct = assigned > 0 ? pct(values.chiusi, assigned) : 0;
     return `
       <div class="hero-main ${role}">
         <div class="hero-label">${escapeHtml(step.label)}</div>
         <div class="hero-num" data-kpi-num="${assigned}" data-kpi-money="0" data-kpi-display="${assigned}">${assigned}</div>
-        <div class="hero-of">${presentedPct}% presentati · ${closedPct}% chiusi (su assegnati)</div>
+        <div class="hero-of">${presentedPct}% show rate · ${closedPct}% chiusi su assegnati</div>
       </div>`;
   }
 
@@ -1120,8 +1152,6 @@ function renderCommissionKpiSection() {
 
   return `
     <div class="section-separator"><span class="eyebrow">Andamento generale</span></div>
-
-    ${renderMonthPaceBox()}
 
     <section class="kpi-grid">
       <div class="card kpi-card accented" data-ticker-anchor="1">
@@ -1697,14 +1727,15 @@ function showReportModal(text, copied, title) {
 
 function renderSessioniList() {
   uiState.settingTab = 'sessioni';
-  const filterId = uiState.sessioniPipelineFilter || 'all';
-  const sessions = [...db.sessions]
+  // Lettera G (Simone, 16/10): un filtro pipeline solo (quello in cima, vale per numeri
+  // ed elenco) e solo le ultime 20 sessioni, con "Mostra altre 20".
+  const filterId = uiState.pipelineFilter || 'all';
+  const allSessions = [...db.sessions]
     .filter(s => filterId === 'all' || s.pipelineId === filterId)
     .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt));
-
-  const pipelineOptions = db.pipelines.map(p =>
-    `<option value="${p.id}" ${filterId === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`
-  ).join('');
+  const shown = uiState.sessioniShown || 20;
+  const sessions = allSessions.slice(0, shown);
+  const remaining = allSessions.length - sessions.length;
 
   const rows = sessions.length ? sessions.map(s => {
     const totalCalls = s.calls.length;
@@ -1729,22 +1760,15 @@ function renderSessioniList() {
   appRoot.innerHTML = `
     ${renderSubTabsBar('setting', 'sessioni')}
     ${activityHtml}
-    <div class="section-separator"><span class="eyebrow">Elenco sessioni</span></div>
-    <section class="card filters-bar">
-      <select id="sessioniPipelineFilter">
-        <option value="all" ${filterId === 'all' ? 'selected' : ''}>Tutte le pipeline</option>
-        ${pipelineOptions}
-      </select>
-    </section>
+    <div class="section-separator"><span class="eyebrow">Elenco sessioni${filterId !== 'all' ? ' · ' + escapeHtml((db.pipelines.find(p => p.id === filterId) || {}).name || '') : ''}</span></div>
     <section class="session-list">${rows}</section>
+    ${remaining > 0 ? `<div class="show-more-wrap"><button class="btn-ghost" id="btnMoreSessions">Mostra altre ${Math.min(20, remaining)} (ne restano ${remaining})</button></div>` : ''}
   `;
 
   wireSubTabsBar('setting');
   wireCallActivitySection();
-  document.getElementById('sessioniPipelineFilter').addEventListener('change', (e) => {
-    uiState.sessioniPipelineFilter = e.target.value;
-    renderSessioniList();
-  });
+  const moreBtn = document.getElementById('btnMoreSessions');
+  if (moreBtn) moreBtn.addEventListener('click', () => { uiState.sessioniShown = shown + 20; renderSessioniList(); });
   appRoot.querySelectorAll('.session-card').forEach(card => {
     card.addEventListener('click', () => { location.hash = '#/sessioni/' + card.dataset.sid; });
   });
@@ -3072,12 +3096,22 @@ function getEffectiveInstallments(apt) {
  */
 function renderAppuntamenti() {
   uiState.settingTab = 'appuntamenti';
-  const filter = uiState.crmSetterFilter || 'all'; // 'all' | 'no_show'
+  // Lettera F (Simone, 16/10): si apre su "Prossimi e da esitare" (prima 51 righe tutte
+  // aperte). Chiuso / Cash / Totale stanno dietro il tasto € di ogni riga.
+  const filter = uiState.crmSetterFilter || 'aperti'; // 'aperti' | 'all' | 'no_show'
   const search = uiState.crmSetterSearch || '';
-  let rows = db.appointments.filter(a => a.role === 'setter');
+  const allSetter = db.appointments.filter(a => a.role === 'setter');
+  let rows = allSetter;
+  if (filter === 'aperti') rows = rows.filter(isSetterApptOpen);
   if (filter === 'no_show') rows = rows.filter(a => a.presentedStatus === 'no_show');
-  if (search.trim()) rows = rows.filter(a => matchesApptSearch(a, search));
-  rows = [...rows].sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
+  if (search.trim()) rows = allSetter.filter(a => matchesApptSearch(a, search)); // la ricerca guarda sempre tutti
+  rows = filter === 'aperti' && !search.trim()
+    ? [...rows].sort((a, b) => {
+        const da = isSetterApptToEsitare(a), dbb = isSetterApptToEsitare(b);
+        if (da !== dbb) return da ? 1 : -1; // prima i prossimi, poi quelli da esitare
+        return da ? new Date(b.scheduledAt) - new Date(a.scheduledAt) : new Date(a.scheduledAt) - new Date(b.scheduledAt);
+      })
+    : [...rows].sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
 
   const rowsHtml = rows.length ? rows.map(renderApptRow).join('') : '';
   const noResults = search.trim() && !rows.length;
@@ -3096,8 +3130,9 @@ function renderAppuntamenti() {
     ${roundLaunchersHtml}
     <section class="card crm-toolbar">
       <div class="crm-filters">
-        <button class="pill ${filter === 'all' ? 'active' : ''}" data-crm-setter-filter="all">Tutti</button>
-        <button class="pill ${filter === 'no_show' ? 'active' : ''}" data-crm-setter-filter="no_show">Solo No Show</button>
+        <button class="pill ${filter === 'aperti' ? 'active' : ''}" data-crm-setter-filter="aperti">Prossimi e da esitare (${allSetter.filter(isSetterApptOpen).length})</button>
+        <button class="pill ${filter === 'all' ? 'active' : ''}" data-crm-setter-filter="all">Tutti (${allSetter.length})</button>
+        <button class="pill ${filter === 'no_show' ? 'active' : ''}" data-crm-setter-filter="no_show">No Show</button>
       </div>
       <div class="crm-search-wrap">
         <input type="search" class="crm-search-input" id="crmSetterSearchInput" placeholder="Cerca per nome o telefono..." value="${escapeHtml(search)}">
@@ -3114,16 +3149,25 @@ function renderAppuntamenti() {
       <table class="crm-table">
         <thead>
           <tr>
-            <th>Nome / Telefono</th><th>Data/Ora</th><th>Presentato</th><th>Chiuso</th>
-            <th>Cash Collected</th><th>Totale Venduto</th><th></th>
+            <th>Nome / Telefono</th><th>Data/Ora</th><th>Presentato</th><th>Soldi</th><th></th>
           </tr>
         </thead>
         <tbody>${rowsHtml}</tbody>
-      </table>` : `<p class="text-dim">${noResults ? 'Nessun appuntamento trovato per questa ricerca.' : 'Nessun appuntamento ancora. Crea il primo con "+ Nuovo Appuntamento".'}</p>`}
+      </table>` : `<p class="text-dim">${noResults ? 'Nessun appuntamento trovato per questa ricerca.' : (filter === 'aperti' && allSetter.length ? 'Nessun appuntamento in arrivo o da esitare. Gli altri sono in "Tutti".' : 'Nessun appuntamento ancora. Crea il primo con "+ Nuovo Appuntamento".')}</p>`}
     </section>
   `;
 
   wireAppuntamentiEvents();
+}
+
+/** Appuntamento Setter passato e ancora senza esito vero ("No" o "Confermato 24h"). */
+function isSetterApptToEsitare(a) {
+  return !!a.scheduledAt && new Date(a.scheduledAt) <= new Date() && (a.presentedStatus === 'no' || a.presentedStatus === 'confirmed24h' || !a.presentedStatus);
+}
+/** "Prossimi e da esitare": in arrivo (non spostati/annullati) oppure passati senza esito. */
+function isSetterApptOpen(a) {
+  if (isSetterApptToEsitare(a)) return true;
+  return !!a.scheduledAt && new Date(a.scheduledAt) > new Date() && a.presentedStatus !== 'spostato' && a.presentedStatus !== 'annullato';
 }
 
 /**
@@ -3201,8 +3245,12 @@ function renderApptRow(a) {
     ? `<span class="badge recov-badge" title="Nato dal Round Recupero Appuntamenti (appuntamento originale da ${a.recoveredFromRole === 'venditore' ? 'Venditore' : 'Setting'})">↻ Recuperato</span>`
     : '';
 
+  const moneyOpen = !!(uiState.setterMoneyOpen && uiState.setterMoneyOpen[a.id]);
+  const hasMoney = a.closed || (a.cashCollected || 0) > 0 || totalSold > 0;
+  const toEsitare = isSetterApptToEsitare(a);
+
   return `
-    <tr data-appt-row="${a.id}" class="${a.presentedStatus === 'spostato' ? 'appt-row-moved' : ''}">
+    <tr data-appt-row="${a.id}" class="${a.presentedStatus === 'spostato' ? 'appt-row-moved' : ''} ${moneyOpen ? 'money-open' : ''}">
       <td>
         <input type="text" class="crm-inline-input crm-name-input" data-name-input="${a.id}" value="${escapeHtml(a.clientName || '')}" placeholder="Nome e cognome">
         <input type="text" class="crm-inline-input crm-phone-input" data-phone-input="${a.id}" value="${escapeHtml(a.phone || '')}" placeholder="Telefono (facoltativo)">
@@ -3210,19 +3258,34 @@ function renderApptRow(a) {
         ${rescheduleBadgesHtml(a)}
         ${linkNote}
       </td>
-      <td class="crm-cell-center"><input type="datetime-local" class="crm-inline-input crm-datetime-input" data-scheduled-input="${a.id}" value="${(a.scheduledAt || '').slice(0, 16)}"></td>
+      <td class="crm-cell-center"><input type="datetime-local" class="crm-inline-input crm-datetime-input" data-scheduled-input="${a.id}" value="${(a.scheduledAt || '').slice(0, 16)}">${toEsitare ? '<div class="to-esitare-tag">da esitare</div>' : ''}</td>
       <td>${presentedChips}</td>
-      <td>${closedChips}</td>
-      <td><input type="number" min="0" step="1" class="assigned-edit-input" data-cash-input="${a.id}" value="${a.cashCollected || 0}" style="width:90px;"></td>
-      <td class="crm-cell-center"><button class="crm-amount-link" data-open-installments="${a.id}">€${round2(totalSold)}</button></td>
+      <td class="crm-cell-center"><button class="money-btn ${hasMoney ? 'has-money' : ''} ${moneyOpen ? 'open' : ''}" data-toggle-money="${a.id}" title="Chiuso, cash collected e totale venduto" aria-expanded="${moneyOpen}">€${hasMoney ? ` ${round2(totalSold)}` : ''}</button></td>
       <td class="crm-row-actions"><button class="crm-row-del" data-del-appt="${a.id}" title="Elimina">×</button></td>
-    </tr>`;
+    </tr>
+    ${moneyOpen ? `<tr class="money-row" data-money-row="${a.id}">
+      <td colspan="5">
+        <div class="money-panel">
+          <label class="money-field"><span>Chiuso</span>${closedChips}</label>
+          <label class="money-field"><span>Cash collected</span><input type="number" min="0" step="1" class="assigned-edit-input" data-cash-input="${a.id}" value="${a.cashCollected || 0}" style="width:110px;"></label>
+          <label class="money-field"><span>Totale venduto</span><button class="crm-amount-link" data-open-installments="${a.id}">€${round2(totalSold)}</button></label>
+        </div>
+      </td>
+    </tr>` : ''}`;
 }
 
 function wireAppuntamentiEvents() {
   wireSubTabsBar('setting');
   appRoot.querySelectorAll('[data-crm-setter-filter]').forEach(btn => {
     btn.addEventListener('click', () => { uiState.crmSetterFilter = btn.dataset.crmSetterFilter; renderAppuntamenti(); });
+  });
+  appRoot.querySelectorAll('[data-toggle-money]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      uiState.setterMoneyOpen = uiState.setterMoneyOpen || {};
+      const id = btn.dataset.toggleMoney;
+      uiState.setterMoneyOpen[id] = !uiState.setterMoneyOpen[id];
+      renderAppuntamenti();
+    });
   });
   wireCrmSearchInput('crmSetterSearchInput', 'crmSetterSearch', renderAppuntamenti);
   document.getElementById('btnNewAppt').addEventListener('click', () => {
@@ -3444,6 +3507,7 @@ function renderVenditoreAppuntamenti() {
       <div style="display:flex; gap:8px;">
         <button class="btn-ghost" id="btnApptCalendarVnd">📅 Calendario</button>
         <button class="btn-ghost" id="btnApptReportVnd">Report</button>
+        <button class="btn-ghost" id="btnCallRecordings">🎙️ Registrazioni (${(db.callRecordings || []).length})</button>
         <button class="btn-primary" id="btnNewApptVnd">+ Nuovo Appuntamento</button>
       </div>
     </section>
@@ -3461,7 +3525,6 @@ function renderVenditoreAppuntamenti() {
         </table>` : `<p class="text-dim">${noResults ? 'Nessun appuntamento trovato per questa ricerca.' : 'Nessun appuntamento ancora. Crea il primo con "+ Nuovo Appuntamento".'}</p>`}
       </section>
     </div>
-    ${renderCallRecordingsSection()}
   `;
 
   wireVenditoreAppuntamentiEvents();
@@ -3605,7 +3668,7 @@ function wireVenditoreAppuntamentiEvents() {
     });
   });
 
-  wireCallRecordingsEvents();
+  document.getElementById('btnCallRecordings').addEventListener('click', openCallRecordingsModal);
 }
 
 /**
@@ -3656,62 +3719,50 @@ function openNotesEditor(holder, leadName, onClose) {
  * (non persistito: si riapre chiuso ad ogni refresh, comportamento voluto per un widget
  * di utilità secondaria).
  */
-function renderCallRecordingsSection() {
+/* Registrazioni call (lettera J, Simone 16/10): prima un riquadro fisso in basso a destra
+ * che copriva la tabella. Ora un tasto "🎙️ Registrazioni (n)" nella barra apre questa
+ * finestra con l'elenco e "Aggiungi link". Dati invariati: db.callRecordings. */
+function openCallRecordingsModal() {
   const recs = [...(db.callRecordings || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const rowsHtml = recs.length ? recs.map(r => `
     <div class="call-rec-row">
       <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(r.label || r.url)}</a>
+      <span class="text-dim" style="font-size:0.74rem;">${r.createdAt ? fmtDate(r.createdAt) : ''}</span>
       <button class="crm-row-del" data-del-rec="${r.id}" title="Elimina">×</button>
     </div>`).join('') : '<p class="text-dim">Nessuna registrazione ancora.</p>';
 
-  const open = !!uiState.callRecOpen;
-
-  return `
-    <div class="call-rec-widget ${open ? 'is-open' : ''}">
-      <button class="call-rec-toggle" id="btnToggleRec">
-        <span>🎙️ Registrazione Call</span>
-        <span class="call-rec-count">${recs.length}</span>
-      </button>
-      <div class="call-rec-panel" ${open ? '' : 'hidden'}>
-        <p class="text-dim" style="font-size:0.78rem;">Incolla qui i link alle registrazioni delle call (Drive, Fathom, ecc.).</p>
-        <div class="call-rec-list">${rowsHtml}</div>
-        <div class="call-rec-add-row">
-          <input type="text" id="newRecLabel" placeholder="Etichetta (es. nome cliente)">
-          <input type="text" id="newRecUrl" placeholder="https://…">
-          <button class="btn-ghost" id="btnAddRec">+ Aggiungi link</button>
-        </div>
-      </div>
-    </div>`;
-}
-
-function wireCallRecordingsEvents() {
-  const btnToggle = document.getElementById('btnToggleRec');
-  if (btnToggle) {
-    btnToggle.addEventListener('click', () => {
-      uiState.callRecOpen = !uiState.callRecOpen;
-      renderVenditoreAppuntamenti();
-    });
-  }
-  const btnAdd = document.getElementById('btnAddRec');
-  if (btnAdd) {
-    btnAdd.addEventListener('click', () => {
-      const labelInput = document.getElementById('newRecLabel');
-      const urlInput = document.getElementById('newRecUrl');
-      const url = urlInput.value.trim();
-      if (!url) { urlInput.focus(); return; }
-      db.callRecordings = db.callRecordings || [];
-      db.callRecordings.push({ id: uid('rec'), label: labelInput.value.trim(), url, createdAt: new Date().toISOString() });
-      persist();
-      uiState.callRecOpen = true;
-      renderVenditoreAppuntamenti();
-    });
-  }
-  appRoot.querySelectorAll('[data-del-rec]').forEach(btn => {
+  openModal(`
+    <h3>🎙️ Registrazioni call</h3>
+    <p class="text-dim" style="font-size:0.82rem;">Incolla il link della registrazione (Drive, Fathom, ecc.) e dagli un nome.</p>
+    <div class="call-rec-add-row">
+      <input type="text" id="newRecLabel" placeholder="Etichetta (es. nome cliente)">
+      <input type="text" id="newRecUrl" placeholder="https://…">
+      <button class="btn-primary" id="btnAddRec">+ Aggiungi link</button>
+    </div>
+    <div class="call-rec-list">${rowsHtml}</div>
+    <div class="modal-actions"><button class="btn-ghost" id="btnCloseRec">Chiudi</button></div>
+  `);
+  const close = () => { closeModal(); renderRoute(); };
+  document.getElementById('btnCloseRec').addEventListener('click', close);
+  const add = () => {
+    const labelInput = document.getElementById('newRecLabel');
+    const urlInput = document.getElementById('newRecUrl');
+    let url = urlInput.value.trim();
+    if (!url) { urlInput.focus(); showToast('Incolla il link della registrazione.', true); return; }
+    if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+    db.callRecordings = db.callRecordings || [];
+    db.callRecordings.push({ id: uid('rec'), label: labelInput.value.trim(), url, createdAt: new Date().toISOString() });
+    persist();
+    showToast('Registrazione salvata.');
+    openCallRecordingsModal();
+  };
+  document.getElementById('btnAddRec').addEventListener('click', add);
+  document.getElementById('newRecUrl').addEventListener('keydown', e => { if (e.key === 'Enter') add(); });
+  modalRoot.querySelectorAll('[data-del-rec]').forEach(btn => {
     btn.addEventListener('click', () => {
       db.callRecordings = (db.callRecordings || []).filter(r => r.id !== btn.dataset.delRec);
       persist();
-      uiState.callRecOpen = true;
-      renderVenditoreAppuntamenti();
+      openCallRecordingsModal();
     });
   });
 }
@@ -3818,92 +3869,8 @@ function renderInstallmentsModal(apt, role) {
   });
 }
 
-/* ============================================================================
- * Statistiche Venditore — conversion rate, show rate, scontrino medio, su diversi
- * timeframe e all time (richiesto esplicitamente dall'utente, sullo stile delle
- * statistiche già mostrate per le sessioni Setter).
- * ==========================================================================*/
-
-function renderVenditoreStatistiche() {
-  uiState.venditoreTab = 'statistiche';
-  const tf = getPeriod().tf;
-  const range = getPeriodRangeOrNull();
-  const stats = computeVenditoreStats(db, range);
-  appRoot.innerHTML = `
-    ${renderSubTabsBar('venditore', 'statistiche')}
-    ${renderPeriodBar({ after: `<p class="text-dim" style="font-size:0.82rem; margin:0;">${tf === 'all' ? 'Tutto lo storico registrato.' : 'Periodo: ' + periodLabelText() + '.'}</p>` })}
-
-    <section class="vnd-stats-grid">
-      <div class="card kpi-card"><div class="kpi-value">${stats.assegnati}</div><div class="kpi-label">Assegnati</div></div>
-      <div class="card kpi-card"><div class="kpi-value">${stats.presentati}</div><div class="kpi-label">Presentati</div></div>
-      <div class="card kpi-card"><div class="kpi-value">${stats.chiusi}</div><div class="kpi-label">Chiusi</div></div>
-      <div class="card kpi-card accented"><div class="kpi-value">€${round2(stats.commissioniTot)}</div><div class="kpi-label">Commissioni</div></div>
-    </section>
-
-    <section class="vnd-stats-grid">
-      <div class="card kpi-card"><div class="kpi-value">${stats.showRate}%</div><div class="kpi-label">Show Rate</div></div>
-      <div class="card kpi-card"><div class="kpi-value">${stats.conversionRate}%</div><div class="kpi-label">Conversion Rate</div></div>
-      <div class="card kpi-card"><div class="kpi-value">€${round2(stats.scontrinoMedio)}</div><div class="kpi-label">Scontrino Medio</div></div>
-      <div class="card kpi-card"><div class="kpi-value">€${round2(stats.totalVenduto)}</div><div class="kpi-label">Totale Venduto</div></div>
-    </section>
-
-    <section class="card">
-      <h3>Esiti nel periodo</h3>
-      <div class="bar-list">
-        <div class="bar-row"><div class="bar-label">Presentati</div><div class="bar-track"><div class="bar-fill" style="width:${pct(stats.presentati, stats.assegnati || 1)}%"></div></div><div class="bar-value">${stats.presentati}</div></div>
-        <div class="bar-row"><div class="bar-label">Chiusi</div><div class="bar-track"><div class="bar-fill" style="width:${pct(stats.chiusi, stats.assegnati || 1)}%"></div></div><div class="bar-value">${stats.chiusi}</div></div>
-        <div class="bar-row"><div class="bar-label">Persi</div><div class="bar-track"><div class="bar-fill" style="width:${pct(stats.persi, stats.assegnati || 1)}%"></div></div><div class="bar-value">${stats.persi}</div></div>
-        <div class="bar-row"><div class="bar-label">No Show</div><div class="bar-track"><div class="bar-fill" style="width:${pct(stats.noShow, stats.assegnati || 1)}%"></div></div><div class="bar-value">${stats.noShow}</div></div>
-        <div class="bar-row"><div class="bar-label">Annullati</div><div class="bar-track"><div class="bar-fill" style="width:${pct(stats.annullati, stats.assegnati || 1)}%"></div></div><div class="bar-value">${stats.annullati}</div></div>
-        <div class="bar-row"><div class="bar-label">Non in target</div><div class="bar-track"><div class="bar-fill" style="width:${pct(stats.nonInTarget, stats.assegnati || 1)}%"></div></div><div class="bar-value">${stats.nonInTarget}</div></div>
-      </div>
-    </section>
-
-    ${LeadCRM.renderNewStatsSection(range)}
-  `;
-
-  wireSubTabsBar('venditore');
-  wirePeriodBar(renderVenditoreStatistiche);
-}
-
-/* ============================================================================
- * Statistiche Setter (dentro Setting) — appuntamenti fissati/presentati, show up rate
- * (sui soli appuntamenti già svolti), media fissati/giorno (feriali) e closing rate sui
- * presentati. Richiesto esplicitamente dall'utente, stessi timeframe delle Statistiche
- * Venditore. Vedi computeSetterStats in utils.js per le regole di calcolo.
- * ==========================================================================*/
-
-function renderSettingStatistiche() {
-  uiState.settingTab = 'statistiche';
-  const tf = getPeriod().tf;
-  const range = getPeriodRangeOrNull();
-  const stats = computeSetterStats(db, range);
-  appRoot.innerHTML = `
-    ${renderSubTabsBar('setting', 'statistiche')}
-    ${renderPeriodBar({ after: `<p class="text-dim" style="font-size:0.82rem; margin:0;">${tf === 'all' ? 'Tutto lo storico registrato.' : 'Periodo: ' + periodLabelText() + '.'}</p>` })}
-
-    <section class="vnd-stats-grid">
-      <div class="card kpi-card"><div class="kpi-value">${stats.fissati}</div><div class="kpi-label">Appuntamenti Fissati</div></div>
-      <div class="card kpi-card"><div class="kpi-value">${stats.presentati}</div><div class="kpi-label">Appuntamenti Presentati</div></div>
-      <div class="card kpi-card"><div class="kpi-value">${stats.showUpRate}%</div><div class="kpi-label">Show Up Rate (su svolti)</div></div>
-      <div class="card kpi-card"><div class="kpi-value">${stats.closingRate}%</div><div class="kpi-label">Closing Rate (su presentati)</div></div>
-    </section>
-
-    <section class="two-col">
-      <div class="card kpi-card accented">
-        <div class="kpi-value">${stats.mediaFissatiGiorno}</div>
-        <div class="kpi-label">Media Fissati / Giorno (feriali, esclusi sab-dom)</div>
-      </div>
-      <div class="card kpi-card">
-        <div class="kpi-value">${stats.svolti}</div>
-        <div class="kpi-label">Appuntamenti Già Svolti nel periodo</div>
-      </div>
-    </section>
-  `;
-
-  wireSubTabsBar('setting');
-  wirePeriodBar(renderSettingStatistiche);
-}
+/* Statistiche Setter e Venditore: tolte il 16/10 (lettera D, Simone). I loro numeri sono in
+ * Dashboard sotto le card Obiettivi (renderSetterRatesRow, renderVenditoreRatesRow). */
 
 /* ============================================================================
  * Commissioni — calendario mensile
@@ -3950,15 +3917,9 @@ function renderCommissioniCalendarSection() {
 
   return `
     <div class="section-separator"><span class="eyebrow">Calendario Commissioni</span></div>
-    <section class="card">
-      <h2>Commissioni — riepilogo mese</h2>
-      <div class="comm-summary-grid kpi-grid">
-        <div class="kpi-card"><div class="kpi-value">€${round2(summary.total)}</div><div class="kpi-label">Totale mese</div></div>
-        <div class="kpi-card"><div class="kpi-value">€${round2(summary.showup)}</div><div class="kpi-label">Show Up (setter)</div></div>
-        <div class="kpi-card"><div class="kpi-value">€${round2(summary.setting)}</div><div class="kpi-label">Chiusure Setting</div></div>
-        <div class="kpi-card"><div class="kpi-value">€${round2(summary.vendita)}</div><div class="kpi-label">Chiusure Vendita</div></div>
-      </div>
-    </section>
+    <!-- Riepilogo commissioni del mese tolto (Simone, 16/10, lettera C): ripeteva i numeri
+         di "Andamento generale". Il pace totale del mese è tolto per lo stesso motivo:
+         restano le due pace accanto ai titoli degli Obiettivi. -->
     <section class="card">
       <div class="cal-nav">
         <button id="calPrev">← Mese prec.</button>
@@ -5339,6 +5300,24 @@ function importData(file) {
  * un modal sarebbe scomodo da scorrere.
  * ==========================================================================*/
 
+/* 🎨 semplice (Simone, 16/10, lettera I): chiaro/scuro, un colore, grandezza del testo,
+ * 4 effetti. Il resto sta in "Personalizza a mano", chiuso. */
+const SIMPLE_ACCENTS = [['#d7a6e8', 'Lilla'], ['#4d7cf0', 'Blu'], ['#2fa36b', 'Verde'], ['#e08a2c', 'Arancio'], ['#e0605a', 'Rosso'], ['#1fa3b5', 'Azzurro']];
+const SIMPLE_TOGGLES = ['animatedNumbers', 'monthCountdown', 'dailyStreak', 'closingPace'];
+const SIMPLE_BASE = {
+  dark: { bg: '#1f1a22', bgElev: '#2a232e', text: '#eee8f0', venditoreColor: '#8ec5ff', success: '#9ed69a', danger: '#ff8a7a' },
+  light: { bg: '#f3efe7', bgElev: '#fbf9f4', text: '#22211e', venditoreColor: '#1985ab', success: '#1f6b2e', danger: '#b3261e' }
+};
+function applySimpleLook(mode, accent) {
+  const s = db.settings;
+  s.colors = Object.assign({}, s.colors, SIMPLE_BASE[mode], { accent, setterColor: accent });
+  s.preset = 'custom';
+  s.simpleMode = mode;
+  persist();
+  applyTheme(s);
+  renderBuilderPage();
+}
+
 const TOGGLE_DEFS = [
   { key: 'grindMode', title: 'Modalità Grind', desc: 'Sotto obiettivo mese = accenti rossi, sopra = lime/verde.' },
   { key: 'animatedNumbers', title: 'Numeri che contano', desc: 'Count-up animato sui KPI ad ogni render.' },
@@ -5390,45 +5369,82 @@ function renderBuilderPage() {
   const glowLabels = { none: 'Nessuno', border: 'Bordo', full: 'Completo' };
   const glowHtml = Object.keys(glowLabels).map(g => `<button class="chip-select ${s.glowLevel === g ? 'active' : ''}" data-glow="${g}">${glowLabels[g]}</button>`).join('');
 
-  const togglesHtml = TOGGLE_DEFS.map(t => `
+
+
+  const dark = isDarkColor(s.colors.bg || '#000000');
+  const accentNow = (s.colors.accent || '').toLowerCase();
+  const swatchesHtml = SIMPLE_ACCENTS.map(([hex, name]) =>
+    `<button class="simple-sw ${accentNow === hex ? 'active' : ''}" style="background:${hex}" data-simple-accent="${hex}" aria-label="${name}" aria-pressed="${accentNow === hex}"></button>`).join('');
+  const simpleTogglesHtml = SIMPLE_TOGGLES.map(k => {
+    const t = TOGGLE_DEFS.find(x => x.key === k);
+    return `
     <div class="toggle-row">
       <div class="toggle-row-text">
         <div class="toggle-row-title">${t.title}</div>
         <div class="toggle-row-desc">${t.desc}</div>
       </div>
       <div class="toggle-row-extra">
-        ${t.hasThreshold ? `<input type="number" min="0" id="cashDayThreshold" value="${s.cashDayThreshold || 0}" title="Soglia €">` : ''}
         <label class="switch">
           <input type="checkbox" data-toggle="${t.key}" ${s.toggles[t.key] ? 'checked' : ''}>
           <span class="switch-track"></span>
         </label>
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   appRoot.innerHTML = `
-    <div class="page-header"><h2>Impostazioni — Personalizzazione</h2></div>
+    <div class="page-header"><h2>🎨 Aspetto</h2></div>
 
     <section class="card builder-section">
+      <h3>1 · Chiaro o scuro?</h3>
+      <div class="chip-select-row">
+        <button class="chip-select big ${!dark ? 'active' : ''}" data-simple-mode="light">☀️ Chiaro</button>
+        <button class="chip-select big ${dark ? 'active' : ''}" data-simple-mode="dark">🌙 Scuro</button>
+      </div>
+    </section>
+
+    <section class="card builder-section">
+      <h3>2 · Colore</h3>
+      <div class="simple-sw-row">${swatchesHtml}</div>
+    </section>
+
+    <section class="card builder-section">
+      <h3>3 · Grandezza del testo</h3>
+      <div class="chip-select-row">
+        <button class="chip-select big ${s.textSize !== 'large' ? 'active' : ''}" data-text-size="normal">Normale</button>
+        <button class="chip-select big ${s.textSize === 'large' ? 'active' : ''}" data-text-size="large">Grande</button>
+      </div>
+    </section>
+
+    <section class="card builder-section">
+      <h3>Effetti</h3>
+      <div class="toggle-list">${simpleTogglesHtml}</div>
+    </section>
+
+    <details class="card builder-section builder-manual">
+      <summary><h3>Personalizza a mano</h3></summary>
+
+    <section class="builder-section">
       <h3>Preset rapidi</h3>
       <div class="preset-row">${presetsHtml}</div>
     </section>
 
-    <section class="card builder-section">
+    <section class="builder-section">
       <h3>Colori custom</h3>
       <div class="color-grid">${colorsHtml}</div>
     </section>
 
-    <section class="card builder-section">
+    <section class="builder-section">
       <h3>Stile angoli</h3>
       <div class="chip-select-row">${radiusHtml}</div>
     </section>
 
-    <section class="card builder-section">
+    <section class="builder-section">
       <h3>Font</h3>
       <div class="chip-select-row">${fontsHtml}</div>
     </section>
 
-    <section class="card builder-section">
+    <section class="builder-section">
       <h3>Saturazione &amp; contrasto</h3>
       <div class="slider-row">
         <label><span>Saturazione accento</span><span>${s.accentSaturation}</span></label>
@@ -5440,25 +5456,37 @@ function renderBuilderPage() {
       </div>
     </section>
 
-    <section class="card builder-section">
+    <section class="builder-section">
       <h3>Livello glow</h3>
       <div class="chip-select-row">${glowHtml}</div>
-    </section>
-
-    <section class="card builder-section">
-      <h3>Opzioni particolari</h3>
-      <div class="toggle-list">${togglesHtml}</div>
     </section>
 
     <div class="builder-actions">
       <button class="btn-ghost" id="btnResetBuilder">Ripristina default</button>
     </div>
+    </details>
   `;
+  if (uiState.builderManualOpen) appRoot.querySelector('.builder-manual').open = true;
 
   wireBuilderEvents();
 }
 
 function wireBuilderEvents() {
+  appRoot.querySelectorAll('[data-simple-mode]').forEach(btn => btn.addEventListener('click', () => {
+    applySimpleLook(btn.dataset.simpleMode, db.settings.colors.accent || SIMPLE_ACCENTS[0][0]);
+  }));
+  appRoot.querySelectorAll('[data-simple-accent]').forEach(btn => btn.addEventListener('click', () => {
+    applySimpleLook(isDarkColor(db.settings.colors.bg || '#000000') ? 'dark' : 'light', btn.dataset.simpleAccent);
+  }));
+  appRoot.querySelectorAll('[data-text-size]').forEach(btn => btn.addEventListener('click', () => {
+    db.settings.textSize = btn.dataset.textSize;
+    persist();
+    applyTheme(db.settings);
+    renderBuilderPage();
+  }));
+  const manual = appRoot.querySelector('.builder-manual');
+  if (manual) manual.addEventListener('toggle', () => { uiState.builderManualOpen = manual.open; });
+
   appRoot.querySelectorAll('[data-preset]').forEach(el => {
     el.addEventListener('click', () => {
       const preset = THEME_PRESETS[el.dataset.preset];

@@ -113,28 +113,30 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 **Base e routing**
 - `persist()` salva nella copia locale e accoda il salvataggio online (`CloudSync.schedule`). Chiamala dopo ogni modifica a `db`.
 - Avvio: `bootApp` → login (`loginSubmitAction`) → `startForUser` → `openUserData` (dati online, o import dei dati del browser al primo login). Account ed Esci: `openAccountModal`, `logoutAction`. Dentro 👤 ci sono anche 🎨 Aspetto, Esporta e Importa (dal 16/10 non sono più in topbar).
-- Periodo **unico** (dal 16/10): Dashboard, Sessioni e le due Statistiche usano la stessa barra (`renderPeriodBar`, `wirePeriodBar`) e lo stesso periodo (`getPeriod`, `setPeriod`, `getPeriodRange`; per le Statistiche `getPeriodRangeOrNull`, null = "Tutto"). Il browser si ricorda la scelta (localStorage `chiamateTracker_periodo`).
+- Periodo **unico** (dal 16/10): Dashboard e Sessioni usano la stessa barra (`renderPeriodBar`, `wirePeriodBar`) e lo stesso periodo (`getPeriod`, `setPeriod`, `getPeriodRange`; `getPeriodRangeOrNull`, null = "Tutto"). Il browser si ricorda la scelta (localStorage `chiamateTracker_periodo`).
 - `renderRoute()` decide cosa mostrare da `location.hash`. Route (piatte, con trattino):
   - `#/dashboard`
-  - Setting: `#/setting-appuntamenti`, `#/sessioni` (dettaglio: `#/sessioni/<id>`), `#/setting-statistiche`
+  - Setting: `#/setting-appuntamenti`, `#/sessioni` (dettaglio: `#/sessioni/<id>`)
   - Oggi (lead.js): `#/oggi`, pagina d'apertura se la parte Venditore è accesa
-  - Venditore: `#/venditore-lead` (scheda: `#/lead/<id>`), `#/venditore-appuntamenti`, `#/venditore-statistiche`
-  - Builder tema: `#/impostazioni`
+  - Venditore: `#/venditore-lead` (scheda: `#/lead/<id>`), `#/venditore-appuntamenti`
+  - 🎨 Aspetto: `#/impostazioni`
+  - Le pagine Statistiche non esistono più (16/10): i vecchi link `#/setting-statistiche` e `#/venditore-statistiche` aprono la Dashboard.
 - Priorità prima della route: richiamata in corso (`callbackCallActiveId`), sessione attiva non minimizzata, Round Conferme, Round Recupero. Se uno di questi è attivo, la route viene ignorata.
-- Tema: `THEME_PRESETS`, `applyTheme`, pagina Builder (`renderBuilderPage`, tasto 🎨).
+- Tema: `THEME_PRESETS`, `applyTheme`, pagina 🎨 Aspetto (`renderBuilderPage`). Dal 16/10 è semplice: Chiaro/Scuro, 6 colori (`SIMPLE_ACCENTS`, `applySimpleLook`), testo Normale/Grande (`settings.textSize`), 4 effetti (`SIMPLE_TOGGLES`). Il resto sta chiuso in "Personalizza a mano". Gli altri 12 effetti sono stati spenti una volta (migrazione `simpleBuilderV1` in storage.js).
 
 **Dashboard**
 - `renderDashboard`, `renderDashboardTopSections`.
 - Obiettivi e funnel: `FUNNEL_STEPS_SETTER`, `FUNNEL_STEPS_VENDITORE`, `renderFunnelSection`, `renderPaceBar` (design "Ritmo": tacca "dove dovresti essere adesso").
 - Andamento generale: `renderCommissionKpiSection`, `buildAndamentoSeries`, `renderLineChart`.
-- Pace del mese: `renderMonthPace`, `renderMonthPaceBox`.
+- Tassi sotto ogni card Obiettivi (al posto delle vecchie pagine Statistiche): `renderSetterRatesRow`, `renderVenditoreRatesRow` (con il riquadro "Esiti nel periodo": Simone vuole quei numeri, l'azienda li controlla).
+- Pace del mese: `renderMonthPace` (il riquadro pace totale e il riepilogo commissioni del mese sono stati tolti il 16/10; il calendario commissioni resta).
 - Report da copiare: `generateSessionReport`, `generateAppointmentsReport`, `generateVenditoreAppointmentsReport`.
 
 **Sessioni di chiamata (Setter)**
 - Nuova sessione: `openNewSessionModal` → `startSessionAction` → `beginPipelineSession` / `createPipelineSession`.
 - Schermata sessione: `renderSessioneAttiva`, `logCallAction` (registra un esito), `skipLeadAction`, `endSessionAction`, `toggleSessionPause`, `undoLastCallAction` (tasto "Annulla ultimo esito").
 - Appuntamento fissato in sessione: `openAppointmentSetModal`, lista sotto gli esiti `renderSessionApptList`.
-- Elenco e dettaglio: `renderSessioniList`, `renderSessioneDetail`.
+- Elenco e dettaglio: `renderSessioniList` (un filtro pipeline, ultime 20 sessioni + "Mostra altre"), `renderSessioneDetail`.
 
 **Da richiamare (callback)**
 - Esito "Da richiamare" → `openCallbackModal`. Lista `openCallbacksListModal`, modifica `openEditCallbackModal`, cestino `removeCallback`.
@@ -154,11 +156,11 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 
 **Appuntamenti (mini-CRM)**
 - Modello: `newAppointment(role)`. Stati Venditore: `DEAL_STAGES`, `dealStageDef`.
-- Setter: `renderAppuntamenti`, `renderApptRow`, `wireAppuntamentiEvents`. Esiti Setter: `SETTER_PRESENTED_LABEL`.
-- Venditore: `renderVenditoreAppuntamenti`, `renderVenditoreApptRow`, `wireVenditoreAppuntamentiEvents`, rate `openInstallmentsModal`, registrazioni call `renderCallRecordingsSection`. Note e follow-up non stanno più qui: sono nella scheda lead (dal 16/10).
+- Setter: `renderAppuntamenti`, `renderApptRow`, `wireAppuntamentiEvents`. Si apre su "Prossimi e da esitare" (`isSetterApptOpen`, `isSetterApptToEsitare`); Chiuso, Cash e Totale stanno dietro il tasto € della riga. Esiti Setter: `SETTER_PRESENTED_LABEL`.
+- Venditore: `renderVenditoreAppuntamenti`, `renderVenditoreApptRow`, `wireVenditoreAppuntamentiEvents`, rate `openInstallmentsModal`, registrazioni call: tasto 🎙️ Registrazioni → `openCallRecordingsModal`. Note e follow-up non stanno più qui: sono nella scheda lead (dal 16/10).
 - Spostato: `openRescheduleModal` → `rescheduleAppointment` crea un appuntamento NUOVO collegato (`rescheduledFromId` / `rescheduledToId`).
 - Soldi: `apptTotalSold`, `getEffectiveInstallments` (l'acconto incassato diventa una rata pagata sintetica).
-- Statistiche: `renderSettingStatistiche`, `renderVenditoreStatistiche`. Calendari: `openAppointmentsCalendarModal`, commissioni per giorno `renderCommissioniCalendarSection`.
+- Calendari: `openAppointmentsCalendarModal`, commissioni per giorno `renderCommissioniCalendarSection`.
 
 **Parte Venditore a lead (lead.js, dal 16/10/2026)**
 - `LeadCRM.ensureLeads()` collega ogni appuntamento Venditore a un lead (`apt.leadId`): stesso nome (senza la sigla " - MJ - N") o stesso telefono = stesso lead.
@@ -225,13 +227,13 @@ Prima di cambiarne una, chiedi a Simone.
 
 **Appuntamenti Setter**
 - Fissati: contati per **data di inserimento** (`createdAt`). Gli spostati non contano come nuovi (`isCountedAsNewBooking`).
-- Show-up rate = Presentati / (Presentati + No Show), solo appuntamenti già passati. Quelli lasciati su "No" o "Confermato24h" non contano.
+- Show rate = Presentati / (Presentati + No Show + Annullati), solo appuntamenti già passati. Spostati fuori. Quelli lasciati su "No" o "Confermato24h" non contano (Simone, 16/10: stessa regola del Venditore).
 
 **Appuntamenti Venditore**
 - Assegnati: contati per **data dell'appuntamento** (`scheduledAt`), spostati esclusi.
-- Show rate = presentati / (presentati + no show).
+- Show rate = presentati / (presentati + no show + annullati). Spostati fuori (Simone, 16/10).
 - Closing rate = chiusi / presentati in target.
-- Annullato e Spostato: fuori da show rate e closing rate.
+- Annullato: conta come "non presentato" nello show rate, fuori dal closing rate. Spostato: fuori da tutti e due.
 - Non in target: conta come show, fuori dal closing rate.
 - Chiusi = Contratto Firmato + Chiuso.
 
@@ -244,6 +246,7 @@ Prima di cambiarne una, chiedi a Simone.
 **Lead (parte Venditore)**
 - No show / annullato: la prossima azione diventa sempre "🔁 Recupero no show". Un tentativo senza risposta conta come un follow-up senza risposta (6 → Freddo).
 - Numero dell'appuntamento (1°, 2°…): solo appuntamenti svolti (presentati, anche non in target). Spostati senza numero.
+- Appuntamento presentato ma lead perso: bollino "Presentato · Perso" (`apBadge` in lead.js).
 - Follow-up = "no chiaro per adesso". Dopo 6 follow-up senza risposta il lead diventa Freddo.
 - Nessun lead aperto senza prossima azione (se manca compare in rosso in Oggi).
 - "Chiuso?": Sì, ha pagato (Chiuso) / Sì, contratto firmato / No.

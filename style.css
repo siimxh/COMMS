@@ -1904,6 +1904,7 @@ body.font-archivo, body.font-archivo h1, body.font-archivo h2, body.font-archivo
 .ap-presentato { color: var(--success); background: var(--tag-conv-bg); }
 .ap-chiuso { color: var(--on-accent); background: var(--success); }
 .ap-no_show { color: var(--warning); background: rgba(240,180,41,.14); }
+.ap-perso { color: var(--danger); background: var(--tag-x2-bg); }
 .ap-annullato { color: var(--text-dim); background: var(--bg-elev); }
 .ap-spostato { color: #8b6fd6; background: rgba(139,111,214,.14); }
 .ap-non_in_target { color: #b07a4f; background: rgba(176,122,79,.14); }
@@ -2047,3 +2048,50 @@ body.font-archivo, body.font-archivo h1, body.font-archivo h2, body.font-archivo
   .inline-add, .prom-edit .pe { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .tog::after { transition: none; } }
+
+/* Lettera D (16/10): riga di tassi sotto le card Obiettivi (ex tab Statistiche) */
+.rates-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-top: 12px; }
+.rate-cell { background: var(--bg-elev2); border: 1px solid var(--border); border-radius: var(--radius-style-amt, 10px); padding: 10px 12px; min-width: 0; }
+.rate-val { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.rate-lab { font-size: 0.78rem; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.rate-sub { font-size: 0.74rem; color: var(--text-dim); margin-top: 2px; }
+.esiti-box { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
+.esiti-box .bar-list { margin-top: 10px; }
+
+/* Lettera F (16/10): tasto € luccicante che apre Chiuso / Cash / Totale */
+.money-btn {
+  position: relative; overflow: hidden; cursor: pointer;
+  min-width: 46px; padding: 7px 14px; border-radius: 999px;
+  font: 800 1rem/1 var(--heading-font, inherit); letter-spacing: 0.02em;
+  color: #3a2a00; border: 1px solid #f5d76e;
+  background: linear-gradient(135deg, #fff1a8 0%, #f7c948 45%, #e0a800 100%);
+  box-shadow: 0 0 0 1px rgba(255, 215, 90, 0.35), 0 2px 10px rgba(247, 201, 72, 0.45);
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+.money-btn::after {
+  content: ""; position: absolute; top: -40%; left: -60%; width: 40%; height: 180%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.85), transparent);
+  transform: rotate(18deg); animation: money-shine 2.8s ease-in-out infinite;
+}
+.money-btn:hover, .money-btn:focus-visible { transform: translateY(-1px) scale(1.06); box-shadow: 0 0 0 2px rgba(255, 215, 90, 0.6), 0 4px 16px rgba(247, 201, 72, 0.65); outline: none; }
+.money-btn.has-money { color: #1d3b12; border-color: #8fe07a; background: linear-gradient(135deg, #d9ffc9 0%, #7fd96a 50%, #3fae2e 100%); box-shadow: 0 0 0 1px rgba(127, 217, 106, 0.4), 0 2px 10px rgba(63, 174, 46, 0.45); }
+.money-btn.open { transform: none; box-shadow: 0 0 0 3px var(--accent); }
+@keyframes money-shine { 0% { left: -60%; } 55%, 100% { left: 130%; } }
+@media (prefers-reduced-motion: reduce) { .money-btn::after { animation: none; display: none; } }
+.money-row td { background: var(--bg-elev2); }
+.money-panel { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-end; padding: 4px 2px; }
+.money-field { display: flex; flex-direction: column; gap: 6px; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); font-weight: 700; }
+.to-esitare-tag { margin-top: 4px; font-size: 0.72rem; font-weight: 700; color: var(--warning); text-transform: uppercase; letter-spacing: 0.04em; }
+.show-more-wrap { display: flex; justify-content: center; margin: 12px 0 24px; }
+
+/* Lettera I (16/10): 🎨 semplice */
+.chip-select.big { font-size: 1rem; padding: 12px 20px; }
+.simple-sw-row { display: flex; flex-wrap: wrap; gap: 12px; }
+.simple-sw { width: 48px; height: 48px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; box-shadow: 0 0 0 1px var(--border); }
+.simple-sw.active { border-color: var(--text); }
+.simple-sw:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.builder-manual > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+.builder-manual > summary::before { content: "▸"; color: var(--text-dim); }
+.builder-manual[open] > summary::before { content: "▾"; }
+.builder-manual > summary h3 { margin: 0; }
+.builder-manual .builder-section { margin-top: 18px; }

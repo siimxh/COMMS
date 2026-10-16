@@ -633,7 +633,9 @@ function computeVenditoreStats(db, range) {
   const chiusiAppts = scoped.filter(a => a.closed);
   const chiusi = chiusiAppts.length;
 
-  const showRateBase = presentati + noShow;
+  // Show rate (Simone, 16/10, bug 7): buoni tutti gli appuntamenti tranne no show e
+  // annullati; gli spostati restano fuori. Stessa regola del Setter (computeSetterStats).
+  const showRateBase = presentati + noShow + annullati;
   const showRate = showRateBase > 0 ? pct(presentati, showRateBase) : 0;
   // "Non in target" conta come presentato (show rate) ma NON entra nel closing rate.
   const presentatiInTarget = scoped.filter(a => a.dealStage && dealStageDef(a.dealStage) && dealStageDef(a.dealStage).isPresented && !dealStageDef(a.dealStage).excludeFromClosing).length;
@@ -647,7 +649,7 @@ function computeVenditoreStats(db, range) {
 
   return {
     assegnati, presentati, chiusi, persi, noShow, annullati, nonInTarget,
-    showRate, conversionRate, totalVenduto, scontrinoMedio, commissioniTot
+    showRate, showRateBase, conversionRate, totalVenduto, scontrinoMedio, commissioniTot
   };
 }
 
@@ -705,11 +707,11 @@ function computeSetterStats(db, range) {
   const fissatiAppts = all.filter(a => isCountedAsNewBooking(a) && inR(a, 'createdAt'));
   const scoped = all.filter(a => inR(a, 'scheduledAt'));
 
-  // "Svolti" = appuntamenti passati con un esito vero: Presentato o No Show (stessa
-  // base dello show rate Venditore). Spostati e annullati non si sono svolti; quelli
-  // passati ma lasciati su "No"/"Confermato24h" non hanno ancora un esito e
-  // abbasserebbero il tasso come se fossero no show (bug 13/10).
-  const svolti = scoped.filter(a => !isMovedAppointment(a) && (a.presentedStatus === 'presented' || a.presentedStatus === 'no_show') && a.scheduledAt && new Date(a.scheduledAt) <= now);
+  // "Svolti" = appuntamenti passati con un esito vero: Presentato, No Show o Annullato
+  // (show rate unico con il Venditore, Simone 16/10: buoni tutti tranne no show e
+  // annullati, spostati fuori). Quelli passati ma lasciati su "No"/"Confermato24h" non
+  // hanno ancora un esito e abbasserebbero il tasso come se fossero no show (bug 13/10).
+  const svolti = scoped.filter(a => !isMovedAppointment(a) && (a.presentedStatus === 'presented' || a.presentedStatus === 'no_show' || a.presentedStatus === 'annullato') && a.scheduledAt && new Date(a.scheduledAt) <= now);
   const presentati = scoped.filter(a => a.presentedStatus === 'presented');
   const presentatiSvolti = svolti.filter(a => a.presentedStatus === 'presented');
 
@@ -734,6 +736,7 @@ function computeSetterStats(db, range) {
     fissati: fissatiAppts.length,
     presentati: presentati.length,
     svolti: svolti.length,
+    presentatiSvolti: presentatiSvolti.length,
     showUpRate,
     closingRate,
     mediaFissatiGiorno,

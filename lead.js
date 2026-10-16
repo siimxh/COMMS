@@ -294,6 +294,10 @@ const LeadCRM = (function () {
   function apBadge(a) {
     if (isPending(a)) return isDue(a) ? '<span class="apstate ap-esitare">Da esitare</span>' : '<span class="apstate ap-attesa">In arrivo</span>';
     if (isClosedAppt(a)) return `<span class="apstate ap-chiuso">${a.dealStage === 'contratto_firmato' ? 'Contratto firmato' : 'Chiuso'}</span>`;
+    // Bug 10 (Simone, 16/10): presentato ma lead perso = "Presentato · Perso", così non
+    // sembra un appuntamento andato bene.
+    const lp = leadById(a.leadId);
+    if (a.dealStage === 'perso' || ((a.dealStage === 'trattativa' || a.dealStage === 'non_in_target') && lp && lp.stato === 'Perso')) return '<span class="apstate ap-perso">Presentato · Perso</span>';
     const key = a.dealStage === 'trattativa' || a.dealStage === 'perso' ? 'presentato' : a.dealStage;
     const d = stageDef(a);
     return `<span class="apstate ap-${key}">${a.dealStage === 'trattativa' || a.dealStage === 'perso' ? 'Presentato' : esc(d ? d.label : a.dealStage)}</span>`;
@@ -948,7 +952,9 @@ const LeadCRM = (function () {
   }
 
   /* ===================== Numeri nuovi (in Venditore → Statistiche) ===================== */
-  function renderNewStatsSection(range) {
+  /** Numeri dei lead nel periodo (show rate 2° appuntamento, chiuse in follow-up,
+   * follow-up in tempo/in ritardo). Dal 16/10 li mostra la Dashboard sotto Obiettivi Venditore. */
+  function newStatsValues(range) {
     if (ensureLeads()) persist();
     const inR = v => !range || (v && inRange(v, range));
     const A = vndAppts().filter(a => a.leadId && leadById(a.leadId) && a.dealStage && a.dealStage !== 'spostato' && inR(a.scheduledAt));
@@ -959,13 +965,19 @@ const LeadCRM = (function () {
     const cFu = clienti.filter(l => l.wasFollowUp).length;
     const pctFu = clienti.length ? Math.round(cFu / clienti.length * 100) : 0;
     const az = leads().flatMap(l => (l.history || []).filter(h => (h.k === 'azione' || h.k === 'late') && h.t !== 'Appuntamento fissato' && inR(h.d)));
-    const inT = az.filter(h => !h.late).length, rit = az.filter(h => h.late).length; const tot = inT + rit || 1;
+    const inT = az.filter(h => !h.late).length, rit = az.filter(h => h.late).length;
+    return { show2, p2, n2, pctFu, cFu, clienti: clienti.length, inT, rit };
+  }
+
+  function renderNewStatsSection(range) {
+    const { show2, p2, n2, pctFu, cFu, clienti, inT, rit } = newStatsValues(range);
+    const tot = inT + rit || 1;
     return `
       <section class="card">
         <h3 class="ld-h3">Numeri dei lead</h3>
         <div class="new-stats">
           <div class="nstat"><span class="lab">Show rate 2° appuntamento</span><span class="val">${show2}%</span><div class="meter"><i class="ok" style="width:${show2}%"></i></div><span class="formula">${p2} presentati ÷ (${p2} presentati + ${n2} no show) dal 2° appuntamento in poi</span></div>
-          <div class="nstat"><span class="lab">Chiuse in follow-up</span><span class="val">${pctFu}%</span><div class="meter"><i style="width:${pctFu}%"></i></div><span class="formula">${cFu} clienti passati da Follow-up ÷ ${clienti.length} clienti</span></div>
+          <div class="nstat"><span class="lab">Chiuse in follow-up</span><span class="val">${pctFu}%</span><div class="meter"><i style="width:${pctFu}%"></i></div><span class="formula">${cFu} clienti passati da Follow-up ÷ ${clienti} clienti</span></div>
           <div class="nstat"><span class="lab">Follow-up in tempo</span><span class="val">${inT} <small>in tempo</small> · <span class="late-tag">${rit}</span> <small>in ritardo</small></span><div class="meter"><i class="ok" style="width:${inT / tot * 100}%"></i><i class="ko" style="width:${rit / tot * 100}%"></i></div><span class="formula">azioni fatte entro il giorno previsto / dopo</span></div>
         </div>
       </section>`;
@@ -1019,7 +1031,7 @@ const LeadCRM = (function () {
   }
 
   return {
-    isOn, applyNav, ensureLeads, renderOggi, renderLeadList, renderLead, renderNewStatsSection,
+    isOn, applyNav, ensureLeads, renderOggi, renderLeadList, renderLead, renderNewStatsSection, newStatsValues,
     apptRowExtraHtml, wireRowButtons, onDealStageChanged, onApptNameChanged, accountToggleHtml, wireAccountToggle,
     parseApptName, handlesRecovery, onApptDeleted, reportInfo
   };

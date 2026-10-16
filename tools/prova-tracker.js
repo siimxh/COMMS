@@ -96,7 +96,7 @@ function loadPlaywright() {
 
   const outDir = '/tmp/prova-tracker';
   fs.mkdirSync(outDir, { recursive: true });
-  const routes = ['#/oggi', '#/venditore-lead', '#/dashboard', '#/setting-appuntamenti', '#/sessioni', '#/setting-statistiche', '#/venditore-appuntamenti', '#/venditore-statistiche', '#/impostazioni'];
+  const routes = ['#/oggi', '#/venditore-lead', '#/dashboard', '#/setting-appuntamenti', '#/sessioni', '#/venditore-appuntamenti', '#/impostazioni'];
   for (const r of routes) {
     await page.evaluate(h => { location.hash = h; renderRoute(); }, r);
     await page.waitForTimeout(400);
