@@ -16,8 +16,9 @@ Due ruoli, nello stesso tool:
 Utenti: Simone (proprietario del tool, fa setter e venditore) e Hamza (collega setter, usa soprattutto la parte Setting e propone fix).
 
 - Repo: `siimxh/CRM-SETTER-VENDITORE`, branch `main`.
-- **Versione in uso (dal 14/10/2026)**: https://comms-wine.vercel.app — login + database Supabase. Vercel (progetto "comms", piano Hobby) pubblica il branch `supabase`: push su `supabase` = online in 1-2 minuti.
-- Versione vecchia senza login: GitHub Pages https://siimxh.github.io/CRM-SETTER-VENDITORE/ dal branch `main`. Non si usa più per registrare (i dati restano solo nel browser).
+- **Versione in uso**: https://comms-wine.vercel.app — login + database Supabase. Vercel (progetto "comms", piano Hobby) pubblica il branch `main`: push su `main` = online in 1-2 minuti.
+- Dal 16/10/2026 c'è **una sola versione del codice**: `main`. Il branch `supabase` è fermo (era il cantiere del login) e non si usa più.
+- GitHub Pages https://siimxh.github.io/CRM-SETTER-VENDITORE/ pubblica anche lui `main` (stesso login, stessi dati). Nessuno lo usa: il link da dare è quello di Vercel.
 - `siimxh/TRACKER-OUTBOUND` è una versione vecchia: non toccarla.
 - Il repo è **pubblico**: niente dati dei lead, indirizzi email o dati personali nei file.
 
@@ -36,7 +37,7 @@ Utenti: Simone (proprietario del tool, fa setter e venditore) e Hamza (collega s
 1. Ascolti la richiesta (da Simone, o da Hamza via mail).
 2. Prepari la modifica su un branch, la testi (vedi sezione 7).
 3. Mandi a Simone in chat lo schema di cosa cambia, con screenshot, e chiedi l'ok.
-4. **Solo dopo il suo ok**: push sul branch pubblicato (oggi `supabase`, su Vercel).
+4. **Solo dopo il suo ok**: merge e push su `main` (Vercel lo mette online).
 5. Controlli che il deploy sia andato a buon fine (chiedi a Simone di aprire il link se dal cloud non si raggiunge).
 6. Mail di aggiornamento a Hamza (vedi sotto), a meno che Simone dica "no mail".
 
@@ -172,7 +173,7 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 
 Tutto sta in un unico oggetto `db`. Struttura completa e commentata in `storage.js` → `defaultData()`.
 
-Dove viene salvato (branch `supabase`, vedi `cloud-sync.js`):
+Dove viene salvato (vedi `cloud-sync.js`):
 - Online su Supabase: tabella `appuntamenti` (una riga per appuntamento), `sessioni` (una riga per sessione, chiamate dentro), `lead` (una riga per lead, tutto in `data`), `stato` (tutto il resto, una riga per utente). Si inviano solo le righe cambiate.
 - Se la tabella `lead` non esiste, i lead restano dentro `stato`; al primo caricamento dopo averla creata (`supabase/lead.sql`) passano nella tabella da soli (`CloudSync.leadTable`).
 - Copia locale per utente: localStorage `chiamateTrackerData_v1__<id utente>`.
@@ -193,6 +194,15 @@ Dove viene salvato (branch `supabase`, vedi `cloud-sync.js`):
 - `goals`, `settings`, `callRecordings[]`.
 
 **Date**: gli input `datetime-local` salvano stringhe locali senza fuso (`2026-10-14T15:30`). Per i valori di default usa sempre `localDateTimeValue(new Date())` e `dateInputValue(new Date())` (utils.js). **Mai** `toISOString().slice(...)`: dà l'ora UTC, 2 ore indietro in Italia (bug corretto il 13/10).
+
+### Chiave service_role (accesso admin al database)
+
+- Sta nella variabile d'ambiente `SUPABASE_SERVICE_KEY`. **Mai** stamparla, metterla nel repo o scriverla in chat.
+- REST: `https://<progetto>.supabase.co/rest/v1/<tabella>` con header `apikey` e `Authorization: Bearer`. Filtri su `user_id` sempre con `eq.<uuid completo>`.
+- Non crea tabelle (niente SQL via REST): per un cambio di schema dai il codice a Simone, che lo lancia in Supabase → SQL Editor.
+- Ogni modifica fatta con la chiave finisce in `storico_modifiche` con `origine = 'admin'`.
+- Dopo una modifica ai dati, chiedi a chi ha il tool aperto di **ricaricarlo**: la sua copia locale potrebbe rimandare la versione vecchia della riga.
+- I dati di un utente si toccano solo con il suo ok (quelli di Hamza: mai senza l'ok esplicito di Simone).
 
 ---
 
@@ -263,7 +273,7 @@ Per gli screenshot da mandare a Simone: viewport 1440×900, salva PNG fuori dal 
 - Lavora su un branch, merge su `main` solo dopo l'ok di Simone.
 - Messaggi di commit in italiano, con il "cosa" visibile all'utente: `Sessione: tasto Annulla ultimo esito (richiesta di Hamza)`.
 - Se la richiesta viene da Hamza, scrivilo nel messaggio.
-- Dopo il push controlla l'ultima run del workflow "pages build and deployment" (deve essere `success` sul commit giusto).
+- Dopo il push controlla lo stato del commit su GitHub: context "Vercel" deve essere `success` sul commit giusto. Dal cloud `*.vercel.app` non si raggiunge: per vedere il sito chiedi a Simone di aprirlo.
 
 ---
 
@@ -283,8 +293,6 @@ Per gli screenshot da mandare a Simone: viewport 1440×900, salva PNG fuori dal 
 
 Decisione di Simone (14/10/2026): **login + database Supabase**, il prima possibile, con il tool pubblicato su **Vercel (piano Hobby)**.
 
-- Lavori in corso sul branch `supabase` (login, salvataggio online, Firebase tolto). `main` resta la versione senza login finché Simone non dà l'ok al passaggio.
-- Prima della migrazione: date tutte nello stesso formato con fuso Europe/Rome.
-- Hamza non deve fermarsi: la versione nuova si costruisce e si prova a un indirizzo separato, mentre lui continua sul link GitHub Pages. Passa solo alla fine, al primo login il tool carica i dati che ha già nel browser.
+- Fatto: login e database online dal 14/10, `main` portato alla versione nuova il 16/10.
 - Chiavi Supabase: nel codice solo la chiave pubblica (anon) con le regole RLS attive. La chiave `service_role` mai nel repo.
 - Dopo il database: **gestione appuntamenti del venditore via chat** (Simone scrive cosa è successo, Claude aggiorna esito, nota, follow-up, calendario e promemoria). Dettagli e domande aperte nel file di passaggio.
