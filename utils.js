@@ -732,7 +732,20 @@ function computeSetterStats(db, range) {
   const weekdays = countWeekdays(spanStart, spanEnd);
   const mediaFissatiGiorno = weekdays > 0 ? round1(fissatiAppts.length / weekdays) : 0;
 
+  // Esiti nel periodo (Simone 16/10: servono anche per il Setter), per data appuntamento.
+  const esiti = {
+    totale: scoped.length,
+    presentati: presentati.length,
+    chiusi: presentati.filter(a => a.closed).length,
+    noShow: scoped.filter(a => a.presentedStatus === 'no_show').length,
+    annullati: scoped.filter(a => a.presentedStatus === 'annullato').length,
+    spostati: scoped.filter(isMovedAppointment).length,
+    daEsitare: scoped.filter(a => !isMovedAppointment(a) && a.scheduledAt && new Date(a.scheduledAt) <= now && (!a.presentedStatus || a.presentedStatus === 'no' || a.presentedStatus === 'confirmed24h')).length,
+    inArrivo: scoped.filter(a => !isMovedAppointment(a) && a.scheduledAt && new Date(a.scheduledAt) > now && a.presentedStatus !== 'annullato' && a.presentedStatus !== 'spostato').length
+  };
+
   return {
+    esiti,
     fissati: fissatiAppts.length,
     presentati: presentati.length,
     svolti: svolti.length,
