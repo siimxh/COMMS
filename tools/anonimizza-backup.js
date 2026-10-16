@@ -43,6 +43,17 @@ const fakeNotes = notes => (Array.isArray(notes) ? notes.map((n, i) => Object.as
   c.leadName = fakeName(c.leadName);
   c.phone = fakePhone(c.phone);
 });
+// Lead della parte Venditore: dal 16/10 le note stanno nel loro storico.
+(data.leads || []).forEach(l => {
+  l.name = fakeName(l.name);
+  l.phone = fakePhone(l.phone);
+  l.email = l.email ? 'lead@example.com' : l.email;
+  l.centro = l.centro ? 'Centro di prova' : l.centro;
+  l.city = l.city ? 'Città' : l.city;
+  if (l.next && l.next.note) l.next.note = 'Nota di prova';
+  (l.promises || []).forEach((p, i) => { p.text = 'Cosa promessa ' + (i + 1); });
+  (l.history || []).forEach(h => { if (h.s) h.s = 'Dettaglio di prova'; });
+});
 (data.callRecordings || []).forEach((r, i) => {
   r.label = 'Registrazione ' + (i + 1);
   r.url = 'https://example.com/registrazione-' + (i + 1);

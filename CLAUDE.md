@@ -89,7 +89,7 @@ Ordine di caricamento in `index.html`: `storage.js` → `utils.js` → `supabase
 
 | File | Cosa contiene |
 |---|---|
-| `index.html` | Guscio della pagina, topbar (Dashboard / Setting / Venditore), contenitore `#app` |
+| `index.html` | Guscio della pagina, topbar (Oggi / Dashboard / Setting / Venditore, a destra solo "Salvato", 👤 e "+ Nuova sessione"), contenitore `#app` |
 | `storage.js` | Chiave localStorage, `defaultData()`, esiti di default, migrazioni (`migrateAppointment`, `mergeWithDefaults`) |
 | `utils.js` | Date e periodi, statistiche (`computeStats`, `computeFunnelValues`, `computeSetterStats`, `computeVenditoreStats`), commissioni, pace |
 | `supabase-config.js` | URL e chiave pubblica (anon) di Supabase |
@@ -112,7 +112,8 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 
 **Base e routing**
 - `persist()` salva nella copia locale e accoda il salvataggio online (`CloudSync.schedule`). Chiamala dopo ogni modifica a `db`.
-- Avvio: `bootApp` → login (`loginSubmitAction`) → `startForUser` → `openUserData` (dati online, o import dei dati del browser al primo login). Account ed Esci: `openAccountModal`, `logoutAction`.
+- Avvio: `bootApp` → login (`loginSubmitAction`) → `startForUser` → `openUserData` (dati online, o import dei dati del browser al primo login). Account ed Esci: `openAccountModal`, `logoutAction`. Dentro 👤 ci sono anche 🎨 Aspetto, Esporta e Importa (dal 16/10 non sono più in topbar).
+- Periodo **unico** (dal 16/10): Dashboard, Sessioni e le due Statistiche usano la stessa barra (`renderPeriodBar`, `wirePeriodBar`) e lo stesso periodo (`getPeriod`, `setPeriod`, `getPeriodRange`; per le Statistiche `getPeriodRangeOrNull`, null = "Tutto"). Il browser si ricorda la scelta (localStorage `chiamateTracker_periodo`).
 - `renderRoute()` decide cosa mostrare da `location.hash`. Route (piatte, con trattino):
   - `#/dashboard`
   - Setting: `#/setting-appuntamenti`, `#/sessioni` (dettaglio: `#/sessioni/<id>`), `#/setting-statistiche`
@@ -149,11 +150,12 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 **Round Recupero Appuntamenti**
 - Unico round fisso per no show e annullati, sia Setter sia Venditore: `addToRecoveryRound`, `renderRecoveryRoundScreen`, `applyRecoveryOutcome`.
 - Le chiamate del round contano nell'attività del giorno (dal 16/10): vanno nella sessione aperta se c'è, altrimenti nella sessione automatica del giorno "Recupero" (`logRecoveryCall`, `appendRecoveryCallToSession`). "Posticipato" e "Rimuovi" non sono chiamate.
+- No show Venditore (dal 16/10): **un posto solo**. Se il lead è aperto, il no show NON compare nel round (`visibleRecoveryEntries`, `LeadCRM.handlesRecovery`) ma in Oggi, come prossima azione "🔁 Recupero no show". "Fatto" su quella azione è una chiamata di recupero (conta nell'attività del giorno) e, se non risponde, vale come un follow-up senza risposta: dopo 6 il lead diventa Freddo. La voce del round resta nei dati e si chiude quando il lead risponde o esce dal giro.
 
 **Appuntamenti (mini-CRM)**
 - Modello: `newAppointment(role)`. Stati Venditore: `DEAL_STAGES`, `dealStageDef`.
 - Setter: `renderAppuntamenti`, `renderApptRow`, `wireAppuntamentiEvents`. Esiti Setter: `SETTER_PRESENTED_LABEL`.
-- Venditore: `renderVenditoreAppuntamenti`, `renderVenditoreApptRow`, `wireVenditoreAppuntamentiEvents`, note `openNotesModal`, follow-up `openFollowUpModal`, rate `openInstallmentsModal`, registrazioni call `renderCallRecordingsSection`.
+- Venditore: `renderVenditoreAppuntamenti`, `renderVenditoreApptRow`, `wireVenditoreAppuntamentiEvents`, rate `openInstallmentsModal`, registrazioni call `renderCallRecordingsSection`. Note e follow-up non stanno più qui: sono nella scheda lead (dal 16/10).
 - Spostato: `openRescheduleModal` → `rescheduleAppointment` crea un appuntamento NUOVO collegato (`rescheduledFromId` / `rescheduledToId`).
 - Soldi: `apptTotalSold`, `getEffectiveInstallments` (l'acconto incassato diventa una rata pagata sintetica).
 - Statistiche: `renderSettingStatistiche`, `renderVenditoreStatistiche`. Calendari: `openAppointmentsCalendarModal`, commissioni per giorno `renderCommissioniCalendarSection`.
@@ -161,7 +163,8 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 **Parte Venditore a lead (lead.js, dal 16/10/2026)**
 - `LeadCRM.ensureLeads()` collega ogni appuntamento Venditore a un lead (`apt.leadId`): stesso nome (senza la sigla " - MJ - N") o stesso telefono = stesso lead.
 - `renderOggi`, `renderLeadList`, `renderLead`, `openEsito` ("Com'è finita?"), `openFatto`, `openSposta`, `openSetNext`, `renderNewStatsSection`.
-- Il lead segue i cambi fatti nella tabella Appuntamenti: `onDealStageChanged`, `onApptNameChanged`.
+- Il lead segue i cambi fatti nella tabella Appuntamenti: `onDealStageChanged`, `onApptNameChanged`. Appuntamento cancellato: se il lead resta senza appuntamenti sparisce anche lui (`onApptDeleted`).
+- Note: solo nello storico della scheda lead (`k: 'nota'`). Le vecchie note degli appuntamenti e la data di follow-up della tabella passano nel lead da sole (`moveApptExtras`, dentro `ensureLeads`).
 - Soldi: la scheda Pagamenti scrive sull'ultimo appuntamento chiuso del lead (stesse regole di commissione).
 - Interruttore `db.settings.venditoreOn` in 👤 Account: spento nasconde Oggi, Venditore e obiettivi Venditore.
 
@@ -190,6 +193,7 @@ Dove viene salvato (vedi `cloud-sync.js`):
   - Venditore: `dealStage` (vedi `DEAL_STAGES`), `notes[]`, `nextFollowUpDate` (YYYY-MM-DD).
   - Soldi: `cashCollected`, `totalSold`, `installments[]` (`amount`, `paid`, `paidDate`, `dueDate`).
 - `leads[]`: lead della parte Venditore `{ id, name, centro, city, phone, email, setter, stato, next, promises[], history[], fuNoAnswer, wasFollowUp }`. Stati: Nuovo, Trattativa, Follow-up, Cliente, Perso, Freddo.
+  - **Nomi identici:** due persone diverse con lo stesso nome identico finiscono in un lead solo (stesso nome = stesso lead, `ensureLeads`). Succede di rado e non c'è un controllo automatico. Se lo noti (dati, mail, appuntamenti dettati da Simone, due telefoni diversi nello stesso lead), **dillo a Simone** prima di toccare qualcosa: decide lui se separarli.
 - `callbacks[]`: i "Da richiamare".
 - `recoveryRound[]`: i lead del Round Recupero.
 - `goals`, `settings`, `callRecordings[]`.
@@ -238,6 +242,7 @@ Prima di cambiarne una, chiedi a Simone.
 - "Totale venduto" in dashboard somma Setter + Venditore: va bene così.
 
 **Lead (parte Venditore)**
+- No show / annullato: la prossima azione diventa sempre "🔁 Recupero no show". Un tentativo senza risposta conta come un follow-up senza risposta (6 → Freddo).
 - Numero dell'appuntamento (1°, 2°…): solo appuntamenti svolti (presentati, anche non in target). Spostati senza numero.
 - Follow-up = "no chiaro per adesso". Dopo 6 follow-up senza risposta il lead diventa Freddo.
 - Nessun lead aperto senza prossima azione (se manca compare in rosso in Oggi).

@@ -17,6 +17,14 @@
  * - "Fissare appuntamento" come prossima azione: ha data e ora; segnandola fatta si crea
  *   l'appuntamento Venditore del lead.
  * - Interruttore "Parte Venditore" in 👤 Account (db.settings.venditoreOn, per utente).
+ * - Note e follow-up stanno SOLO nella scheda lead (Simone, 16/10): la tabella Appuntamenti
+ *   non ha più i tasti Note e 📅 Follow-up. Le note che c'erano passano nello storico del
+ *   lead, la data di follow-up diventa la prossima azione (vedi moveApptExtras).
+ * - No show / annullato (Simone, 16/10): la prossima azione è SEMPRE il recupero, e il lead
+ *   compare in un posto solo: in Oggi, come prossima azione. Non compare più anche nel
+ *   Round Recupero (vedi handlesRecovery). Segnare "Fatto" sul recupero è una chiamata di
+ *   recupero: conta nell'attività del giorno e, se non risponde, vale come un follow-up
+ *   senza risposta (dopo 6 il lead diventa Freddo).
  *
  * Dati: db.leads[] (vedi storage.js) e apt.leadId sugli appuntamenti Venditore. Salvati
  * online nella tabella "lead" (o nella riga "stato" finché la tabella non c'è, vedi
@@ -36,7 +44,7 @@ const LeadCRM = (function () {
   const AZIONI = {
     chiamata: { i: '📞', l: 'Chiamata' }, whatsapp: { i: '💬', l: 'Messaggio WhatsApp' }, audio: { i: '🎧', l: 'Audio WhatsApp' },
     contratto: { i: '📄', l: 'Mandare contratto' }, contenuto: { i: '🎬', l: 'Mandare contenuto' }, appuntamento: { i: '📅', l: 'Fissare appuntamento' },
-    recupero: { i: '🔁', l: 'Recupero (Round Recupero)' }
+    recupero: { i: '🔁', l: 'Recupero no show' }
   };
   const ESITI = { presentato: 'Presentato', no_show: 'No show', annullato: 'Annullato', spostato: 'Spostato', non_in_target: 'Non in target' };
   const FREDDO_DOPO = 6;
@@ -192,7 +200,69 @@ const LeadCRM = (function () {
       changed = true;
     });
     created.forEach(initialStateFromAppts);
+    if (moveApptExtras()) changed = true;
+    if (syncRecoveryNext()) changed = true;
     return changed;
+  }
+
+  /** Note e follow-up degli appuntamenti -> scheda lead (una volta sola, poi restano vuoti). */
+  function moveApptExtras() {
+    let changed = false;
+    vndAppts().forEach(a => {
+      const l = a.leadId && leadById(a.leadId); if (!l) return;
+      (a.notes || []).forEach(n => {
+        if (!n || !String(n.text || '').trim()) return;
+        addHistory(l, { k: 'nota', t: 'Nota', s: String(n.text).trim(), d: n.createdAt ? localDateTimeValue(new Date(n.createdAt)) : String(a.scheduledAt || NOWV()).slice(0, 16) });
+      });
+      if ((a.notes || []).length) { a.notes = []; changed = true; }
+      if (a.nextFollowUpDate) {
+        const d = a.nextFollowUpDate;
+        if (isOpen(l) && !l.next && !pendingAppt(l)) {
+          l.next = { type: 'chiamata', date: d, time: '', note: 'Follow-up (dalla tabella appuntamenti)' };
+          addHistory(l, { k: 'stato', t: 'Follow-up per ' + fmtShort(d), s: 'dalla tabella appuntamenti' });
+        } else addHistory(l, { k: 'nota', t: 'Follow-up segnato in tabella per ' + fmtShort(d), s: l.next ? 'la prossima azione era già impostata, non l\'ho cambiata' : '' });
+        a.nextFollowUpDate = null; changed = true;
+      }
+    });
+    return changed;
+  }
+
+  /* ---------- Recupero collegato al lead ---------- */
+  /** Voce attiva del Round Recupero nata da un appuntamento Venditore di questo lead. */
+  function recoveryEntryFor(l) {
+    return (db.recoveryRound || []).find(r => r.status === 'active' && r.sourceRole === 'venditore' && (() => {
+      const a = db.appointments.find(x => x.id === r.sourceAppointmentId); return a && a.leadId === l.id;
+    })()) || null;
+  }
+  /** true = questa voce del round la gestisce il lead (prossima azione in Oggi), quindi il
+   * Round Recupero non la mostra: un no show si vede in un posto solo. */
+  function handlesRecovery(entry) {
+    if (!isOn() || !entry || entry.sourceRole !== 'venditore') return false;
+    const a = db.appointments.find(x => x.id === entry.sourceAppointmentId);
+    const l = a && a.leadId && leadById(a.leadId);
+    return !!(l && isOpen(l));
+  }
+  /** Un lead aperto con un no show da recuperare ha sempre una prossima azione. */
+  function syncRecoveryNext() {
+    let changed = false;
+    leads().forEach(l => {
+      if (isOpen(l) && !l.next && !pendingAppt(l) && recoveryEntryFor(l)) { l.next = recoveryNext(); changed = true; }
+    });
+    return changed;
+  }
+  const recoveryNext = () => ({ type: 'recupero', date: TODAY(), time: '', note: 'Richiamare per fissare di nuovo' });
+  /** Il lead è uscito dal giro (cliente, perso, freddo, nuovo appuntamento): la voce del round si chiude. */
+  function closeRecovery(l, status, apptId) {
+    const r = recoveryEntryFor(l); if (!r) return;
+    r.status = status || 'removed';
+    if (apptId) r.resolvedAppointmentId = apptId;
+    r.lastInteractionAt = new Date().toISOString();
+  }
+  /** No show / annullato su un appuntamento del lead: si riparte dal recupero. */
+  function startRecovery(l) {
+    if (!isOpen(l)) { if (l.stato === 'Cliente') return; addHistory(l, { k: 'stato', t: 'Stato: Nuovo', s: 'riaperto dopo il no show' }); l.stato = 'Nuovo'; }
+    l.next = recoveryNext();
+    l.fuNoAnswer = 0;
   }
 
   /** Da chiamare quando cambia lo stato di un appuntamento dalla tabella Appuntamenti:
@@ -205,7 +275,8 @@ const LeadCRM = (function () {
     if (st === 'chiuso' || st === 'contratto_firmato') { if (l.stato !== 'Cliente') addHistory(l, { k: 'stato', t: 'Stato: Cliente', s: 'dalla tabella appuntamenti' }); l.stato = 'Cliente'; l.next = null; }
     else if (st === 'perso' || st === 'non_in_target') { if (isOpen(l)) { addHistory(l, { k: 'stato', t: 'Stato: Perso', s: 'dalla tabella appuntamenti' }); l.stato = 'Perso'; l.next = null; } }
     else if (st === 'trattativa') { if (l.stato === 'Nuovo') l.stato = 'Trattativa'; }
-    else if (st === 'no_show' || st === 'annullato') { if (isOpen(l)) l.next = { type: 'recupero', date: TODAY(), time: '', note: 'Richiamare per fissare di nuovo' }; }
+    else if (st === 'no_show' || st === 'annullato') startRecovery(l);
+    if (!isOpen(l) && st !== 'no_show' && st !== 'annullato') closeRecovery(l);
     persist();
   }
 
@@ -315,7 +386,7 @@ const LeadCRM = (function () {
       const n = l.next;
       return `
         <div class="orow ${cls}"><span class="ico">${actDef(n).i}</span>
-          ${head}<div class="what">${actDef(n).l}${n.type === 'appuntamento' && n.apptAt ? ' · per ' + fmtDT(n.apptAt) : ''}${n.time ? ' · ore ' + n.time : ''}${cls === 'r-late' ? ` · <span class="late-tag">${relDay(n.date)}</span>` : ''}${n.note ? ` · <q>${esc(n.note)}</q>` : ''}</div></div>
+          ${head}<div class="what">${actDef(n).l}${recoveryEntryFor(l) && l.fuNoAnswer ? ` · <b>${l.fuNoAnswer} di ${FREDDO_DOPO}</b> senza risposta` : ''}${n.type === 'appuntamento' && n.apptAt ? ' · per ' + fmtDT(n.apptAt) : ''}${n.time ? ' · ore ' + n.time : ''}${cls === 'r-late' ? ` · <span class="late-tag">${relDay(n.date)}</span>` : ''}${n.note ? ` · <q>${esc(n.note)}</q>` : ''}</div></div>
           <div class="row-btns"><button class="btn-primary" data-done="${l.id}">Fatto</button><button class="btn-ghost" data-move="${l.id}">Sposta</button></div></div>`;
     };
   }
@@ -343,8 +414,8 @@ const LeadCRM = (function () {
   function nextBlockHtml(prefix, opts) {
     opts = opts || {};
     const def = opts.def || {};
-    const types = Object.keys(AZIONI).filter(k => k !== 'recupero');
-    const t0 = def.type && def.type !== 'recupero' ? def.type : 'chiamata';
+    const types = Object.keys(AZIONI).filter(k => k !== 'recupero' || opts.recupero);
+    const t0 = def.type && types.includes(def.type) ? def.type : 'chiamata';
     return `
       <div class="mblock" id="${prefix}NextWrap">
         <span class="mlabel">Prossima azione</span>
@@ -447,7 +518,7 @@ const LeadCRM = (function () {
             <p class="mhint">Resta nello storico della scheda lead. Non conta nel numero dell'appuntamento.</p>`;
           saveBtn.disabled = false;
         } else if (st.esito === 'no_show' || st.esito === 'annullato') {
-          step2.innerHTML = `<p class="mhint">Il lead va nel <b>Round Recupero</b> e la prossima azione diventa "Recupero" per oggi.</p>`; saveBtn.disabled = false;
+          step2.innerHTML = `<p class="mhint">La prossima azione diventa <b>🔁 Recupero no show</b> per oggi: la trovi in Oggi. Se non risponde conta come un follow-up (dopo ${FREDDO_DOPO} diventa Freddo).</p>`; saveBtn.disabled = false;
         } else if (st.esito === 'non_in_target') {
           step2.innerHTML = `<p class="mhint">Conta come presentato, fuori dal closing rate. Il lead diventa <b>Perso</b> (non in target).</p>`; saveBtn.disabled = false;
         } else { step2.innerHTML = ''; saveBtn.disabled = true; }
@@ -460,7 +531,7 @@ const LeadCRM = (function () {
         if (st.esito === 'presentato' && (st.chiuso === 'chiuso' || st.chiuso === 'contratto_firmato')) {
           applyDealStage(a, st.chiuso);
           if (l.stato !== 'Cliente') addHistory(l, { k: 'stato', t: 'Stato: Cliente', s: l.wasFollowUp ? 'Chiuso in follow-up' : '' });
-          l.stato = 'Cliente'; l.next = null;
+          l.stato = 'Cliente'; l.next = null; closeRecovery(l);
           persist(); closeModal(); ui.leadTab = 'pagamenti';
           location.hash = '#/lead/' + l.id; renderRoute();
           showToast('Cliente! Segna incassato e rate qui.');
@@ -475,7 +546,7 @@ const LeadCRM = (function () {
           }
           const note = box.querySelector('#eCallNote').value.trim();
           applyDealStage(a, st.stato === 'Perso' ? 'perso' : 'trattativa');
-          if (note) { a.notes = a.notes || []; a.notes.push({ id: uid('note'), text: note, author: 'venditore', createdAt: new Date().toISOString() }); }
+          if (note) addHistory(l, { k: 'nota', t: 'Nota della call', s: note });
           if (st.stato !== l.stato) addHistory(l, { k: 'stato', t: 'Stato: ' + STATO_LABEL[st.stato], s: st.stato === 'Follow-up' ? 'No chiaro per adesso' : '' });
           if (st.stato === 'Follow-up' && l.stato !== 'Follow-up') { l.wasFollowUp = true; l.fuNoAnswer = 0; }
           l.stato = st.stato;
@@ -485,12 +556,13 @@ const LeadCRM = (function () {
           const fresh = rescheduleAppointment(a, v); fresh.leadId = l.id;
         } else if (st.esito === 'no_show' || st.esito === 'annullato') {
           applyDealStage(a, st.esito);
-          if (isOpen(l)) l.next = { type: 'recupero', date: TODAY(), time: '', note: 'Richiamare per fissare di nuovo' };
+          startRecovery(l);
         } else if (st.esito === 'non_in_target') {
           applyDealStage(a, 'non_in_target');
           addHistory(l, { k: 'stato', t: 'Stato: Perso', s: 'Non in target' });
           l.stato = 'Perso'; l.next = null;
         }
+        if (!isOpen(l) && st.esito !== 'no_show' && st.esito !== 'annullato') closeRecovery(l);
         persist(); rerender(); showToast('Esito salvato.');
       });
     });
@@ -499,22 +571,24 @@ const LeadCRM = (function () {
   /* ===================== Fatto (azione completata) ===================== */
   function openFatto(leadId) {
     const l = leadById(leadId); if (!l || !l.next) return;
-    const n = l.next; const isFU = l.stato === 'Follow-up';
+    const n = l.next;
+    const rec = recoveryEntryFor(l); // no show da recuperare: questa è una chiamata di recupero
+    const isFU = l.stato === 'Follow-up' || !!rec; // il recupero conta come un follow-up su 6
     const isAppt = n.type === 'appuntamento';
-    const st = { risposta: null, stato: l.stato === 'Nuovo' && n.type !== 'recupero' ? 'Trattativa' : l.stato };
+    const st = { risposta: null, stato: l.stato === 'Nuovo' && !rec && n.type !== 'recupero' ? 'Trattativa' : l.stato };
     const late = n.date < TODAY();
     modal(`
       <h3>${leadName(l)} · e adesso?</h3>
-      <p class="modal-sub">Fatto: ${actLabel(n)}${late ? ` · <span class="late-tag">in ritardo, era per ${fmtShort(n.date)}</span>` : ' · in tempo'}</p>
+      <p class="modal-sub">Fatto: ${actLabel(rec ? { type: 'recupero' } : n)}${late ? ` · <span class="late-tag">in ritardo, era per ${fmtShort(n.date)}</span>` : ' · in tempo'}</p>
       <span class="mlabel">Ha risposto?</span>
       <div class="choice big" id="fRisp"><button type="button" class="yes" data-v="1">Sì</button><button type="button" class="no" data-v="0">No</button></div>
       ${isFU ? `<div class="counter-line" id="fCount"></div>` : ''}
       ${isAppt ? `<label class="mblock" id="fApptWrap" style="display:block"><span class="mlabel">Appuntamento fissato per</span><input type="datetime-local" class="ld-input" id="fApptAt" value="${n.apptAt || ''}">
         <span class="mhint">Si crea l'appuntamento Venditore di questo lead. Lascia vuoto se non l'hai fissato.</span></label>` : ''}
-      <label class="mblock" style="display:block"><span class="mlabel">Nota (facoltativa)</span><input type="text" class="ld-input" id="fNote" placeholder="Es. ne parla col socio, la richiamo giovedì"></label>
+      <label class="mblock" style="display:block"><span class="mlabel">Nota (facoltativa)</span><input type="text" class="ld-input" id="fCallNote" placeholder="Es. ne parla col socio, la richiamo giovedì"></label>
       <span class="mlabel">Stato del lead</span>
       <div class="choice" id="fStato">${['Nuovo', 'Trattativa', 'Follow-up', 'Cliente', 'Perso', 'Freddo'].filter(s => s !== 'Nuovo' || l.stato === 'Nuovo').map(s => `<button type="button" data-v="${s}">${s === 'Cliente' ? 'Cliente (ha firmato)' : STATO_LABEL[s]}</button>`).join('')}</div>
-      <div id="fNext">${nextBlockHtml('f', { def: { type: n.type === 'recupero' || isAppt ? 'chiamata' : n.type, date: workDay(2) } })}</div>
+      <div id="fNext">${nextBlockHtml('f', { recupero: !!rec, def: { type: rec ? 'recupero' : (n.type === 'recupero' || isAppt ? 'chiamata' : n.type), date: rec ? workDay(1) : workDay(2), note: rec ? recoveryNext().note : '' } })}</div>
       <div class="mwarn" id="fWarn"></div>
       <div class="modal-actions"><button class="btn-ghost" id="fCancel">Annulla</button><button class="btn-primary" id="fSave">Salva</button></div>
     `, box => {
@@ -531,7 +605,7 @@ const LeadCRM = (function () {
       const drawCount = () => {
         if (!countEl) return;
         const c = (l.fuNoAnswer || 0) + (st.risposta === false ? 1 : 0);
-        countEl.innerHTML = `Follow-up senza risposta: <b>${c} di ${FREDDO_DOPO}</b><span class="dots6">${Array.from({ length: FREDDO_DOPO }, (_, i) => `<i class="${i < c ? 'on' : ''}"></i>`).join('')}</span>${c >= FREDDO_DOPO ? ' · <b class="late-tag">diventa Freddo</b>' : ''}`;
+        countEl.innerHTML = `${rec ? 'Recupero' : 'Follow-up'} senza risposta: <b>${c} di ${FREDDO_DOPO}</b><span class="dots6">${Array.from({ length: FREDDO_DOPO }, (_, i) => `<i class="${i < c ? 'on' : ''}"></i>`).join('')}</span>${c >= FREDDO_DOPO ? ' · <b class="late-tag">diventa Freddo</b>' : ''}`;
         if (c >= FREDDO_DOPO) st.stato = 'Freddo';
       };
       box.querySelectorAll('#fRisp button').forEach(b => b.addEventListener('click', () => {
@@ -550,8 +624,10 @@ const LeadCRM = (function () {
           if (!r.next.date) { warn.textContent = 'Scegli il giorno della prossima azione.'; return; }
           if (r.next.type === 'appuntamento' && !r.next.apptAt) { warn.textContent = 'Scegli data e ora dell\'appuntamento.'; return; }
         }
-        const note = box.querySelector('#fNote').value.trim();
-        addHistory(l, { k: late ? 'late' : 'azione', t: actDef(n).l + ' · ' + (st.risposta ? 'ha risposto' : 'non ha risposto') + (late ? ' · in ritardo' : ' · in tempo'), s: note, late, lateBy: late ? workDaysBetween(n.date, TODAY()) : 0 });
+        // #fCallNote: prima era #fNote come il "Cosa fare" della prossima azione (stesso id
+        // del blocco 'f'), e la riga della prossima azione prendeva questa nota (bug 16/10).
+        const note = box.querySelector('#fCallNote').value.trim();
+        addHistory(l, { k: late ? 'late' : 'azione', t: (rec ? AZIONI.recupero.l : actDef(n).l) + ' · ' + (st.risposta ? 'ha risposto' : 'non ha risposto') + (late ? ' · in ritardo' : ' · in tempo'), s: note, late, lateBy: late ? workDaysBetween(n.date, TODAY()) : 0 });
         if (isFU) l.fuNoAnswer = st.risposta ? 0 : (l.fuNoAnswer || 0) + 1;
         const auto = isFU && l.fuNoAnswer >= FREDDO_DOPO;
         if (auto) st.stato = 'Freddo';
@@ -559,7 +635,16 @@ const LeadCRM = (function () {
         if (st.stato === 'Follow-up' && l.stato !== 'Follow-up') { l.wasFollowUp = true; l.fuNoAnswer = 0; }
         l.stato = st.stato;
         if (r) { l.next = r.next; l.promises = (l.promises || []).concat(r.proms); } else l.next = null;
-        if (apptAt) createApptForLead(l, apptAt);
+        if (rec) {
+          // Chiamata di recupero: conta nell'attività del giorno (sessione aperta o "Recupero").
+          const out = !st.risposta ? 'non_risposto' : apptAt ? 'appuntamento_fissato' : (st.stato === 'Perso' || st.stato === 'Freddo') ? 'non_interessato' : 'da_richiamare';
+          logRecoveryCall(rec, out);
+          rec.callCount = (rec.callCount || 0) + 1;
+          rec.lastInteractionAt = new Date().toISOString();
+          // Ha risposto (o è uscito dal giro): il recupero è finito, si va avanti col lead.
+          if (st.risposta || !APERTI.includes(st.stato)) rec.status = apptAt ? 'resolved' : 'removed';
+        }
+        if (apptAt) { const na = createApptForLead(l, apptAt); if (rec) rec.resolvedAppointmentId = na.id; }
         persist(); rerender();
         showToast(auto ? `${l.name}: ${FREDDO_DOPO}° follow-up senza risposta, ora è Freddo.` : apptAt ? 'Salvato. Appuntamento creato per ' + fmtDT(apptAt) + '.' : 'Salvato.');
       });
@@ -739,7 +824,7 @@ const LeadCRM = (function () {
               <button class="tf-tab ${tab === 'storico' ? 'active' : ''}" data-ltab="storico">Storico</button>
               <button class="tf-tab ${tab === 'pagamenti' ? 'active' : ''}" data-ltab="pagamenti">Pagamenti</button>
             </div>
-            ${tab === 'pagamenti' ? payHtml(l) : histHtml(l)}
+            ${tab === 'pagamenti' ? payHtml(l) : `<div class="inline-add ld-note-add"><input type="text" class="ld-input" id="leadNoteText" placeholder="Scrivi una nota su questo lead"><button class="btn-ghost" id="leadNoteAdd">+ Nota</button></div>${histHtml(l)}`}
           </section>
         </div>
       </div>`;
@@ -757,7 +842,7 @@ const LeadCRM = (function () {
       const v = e.target.value;
       addHistory(l, { k: 'stato', t: 'Stato: ' + STATO_LABEL[v], s: 'cambiato a mano' });
       if (v === 'Follow-up' && l.stato !== 'Follow-up') { l.wasFollowUp = true; l.fuNoAnswer = 0; }
-      l.stato = v; if (!APERTI.includes(v)) l.next = null;
+      l.stato = v; if (!APERTI.includes(v)) { l.next = null; closeRecovery(l); }
       persist(); renderLead(id);
       if (missingNext(l)) openSetNext(l.id);
     });
@@ -772,6 +857,16 @@ const LeadCRM = (function () {
       persist(); renderLead(id);
     });
     if (tab === 'pagamenti') wirePay(l);
+    else {
+      const noteInput = document.getElementById('leadNoteText');
+      const addNote = () => {
+        const t = noteInput.value.trim(); if (!t) { noteInput.focus(); return; }
+        addHistory(l, { k: 'nota', t: 'Nota', s: t });
+        persist(); renderLead(id); showToast('Nota salvata.');
+      };
+      document.getElementById('leadNoteAdd').addEventListener('click', addNote);
+      noteInput.addEventListener('keydown', e => { if (e.key === 'Enter') addNote(); });
+    }
   }
 
   /** Storico: appuntamenti (calcolati dalla tabella, sempre aggiornati) + azioni, stati, soldi. */
@@ -884,6 +979,25 @@ const LeadCRM = (function () {
     return `<div class="ld-apt-extra">${num}<button class="who ld-small-link" data-lead="${l.id}">Scheda lead →</button>${isDue(a) ? `<button class="btn-primary ld-esita-mini" data-esita="${a.id}">Com'è finita?</button>` : ''}</div>`;
   }
 
+  /* ===================== Appuntamento cancellato (bug 16/10) ===================== */
+  /** Da chiamare DOPO aver tolto l'appuntamento da db.appointments: se il lead non ha più
+   * appuntamenti, sparisce anche lui (prima restava un lead "a 0 appuntamenti"). */
+  function onApptDeleted(apt) {
+    if (!apt || apt.role !== 'venditore' || !apt.leadId) return;
+    const l = leadById(apt.leadId); if (!l) return;
+    if (!apptsOf(l).length) db.leads = leads().filter(x => x.id !== l.id);
+  }
+
+  /** Per il report Appuntamenti Venditore: prossima azione e ultima nota del lead. */
+  function reportInfo(a) {
+    const l = a.leadId && leadById(a.leadId); if (!l) return {};
+    const notes = (l.history || []).filter(h => h.k === 'nota' && h.s);
+    return {
+      next: l.next ? actDef(l.next).l + ' · ' + fmtShort(l.next.date) + (l.next.time ? ' ' + l.next.time : '') : '',
+      lastNote: notes.length ? notes[notes.length - 1].s : ''
+    };
+  }
+
   /* ===================== 👤 Account: interruttore Parte Venditore ===================== */
   function accountToggleHtml() {
     const on = isOn();
@@ -907,6 +1021,6 @@ const LeadCRM = (function () {
   return {
     isOn, applyNav, ensureLeads, renderOggi, renderLeadList, renderLead, renderNewStatsSection,
     apptRowExtraHtml, wireRowButtons, onDealStageChanged, onApptNameChanged, accountToggleHtml, wireAccountToggle,
-    parseApptName
+    parseApptName, handlesRecovery, onApptDeleted, reportInfo
   };
 })();

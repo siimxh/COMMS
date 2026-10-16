@@ -304,7 +304,9 @@ p { margin: 0 0 8px; }
 .btn-danger-ghost { color: var(--danger); border-color: var(--danger); background: transparent; opacity: 0.85; }
 .btn-danger-ghost:hover { background: var(--danger); color: #fff; opacity: 1; }
 
-#importLabel { display: inline-flex; align-items: center; }
+/* 👤 Account: aspetto, esporta e importa (prima erano in topbar). */
+.account-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
+.account-tools label.btn-ghost { display: inline-flex; align-items: center; cursor: pointer; }
 
 .sync-status { font-family: var(--mono); font-size: 0.72rem; color: var(--text-dim); white-space: nowrap; }
 .sync-status[data-status="pending"] { color: var(--danger); font-weight: 700; }
@@ -1247,7 +1249,9 @@ tr.appt-row-moved > td { opacity: 0.6; }
   background: var(--stage-spostato-bg, rgba(124,92,196,0.16));
   font-size: 0.62rem;
 }
-.crm-row-actions { display: flex; gap: 6px; align-items: flex-start; padding-top: 14px; }
+/* Niente display:flex sulle celle: una <td> flex esce dalla tabella e finisce sotto la riga
+   (bug 16/10: la × staccata dalla sua riga). Il flex sta nel div dentro la cella. */
+.crm-row-actions { padding-top: 14px; white-space: nowrap; width: 1%; }
 .crm-row-del { background: transparent; border: none; color: var(--text-dim); cursor: pointer; font-size: 1.05rem; line-height: 1; padding: 2px 4px; }
 .crm-row-del:hover { color: var(--danger); }
 .crm-link-note { font-family: var(--mono); font-size: 0.62rem; color: var(--text-dim); margin-top: 3px; }
@@ -1350,15 +1354,6 @@ tr.appt-row-moved > td { opacity: 0.6; }
 .deal-stage-select[data-stage="spostato"] { color: var(--stage-spostato); background: var(--stage-spostato-bg); border-color: var(--stage-spostato); }
 .deal-stage-select[data-stage="non_in_target"] { color: var(--stage-non_in_target); background: var(--stage-non_in_target-bg); border-color: var(--stage-non_in_target); }
 
-.vnd-actions-cell { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
-.vnd-note-btn, .vnd-followup-btn {
-  background: var(--bg-elev2); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  color: var(--text-dim); cursor: pointer; padding: 6px 10px; font-family: var(--mono); font-size: 0.68rem;
-  font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; white-space: nowrap;
-}
-.vnd-note-btn:hover, .vnd-followup-btn:hover { border-color: var(--accent); color: var(--accent); }
-.vnd-note-btn.has-notes { border-color: var(--venditore-color); color: var(--venditore-color); }
-.vnd-followup-btn.has-date { border-color: var(--warning); color: var(--warning); }
 
 /* Modale Note — ispirato allo screenshot fornito: lista scrollabile di note passate,
    più recenti in cima, ognuna con autore e data; textarea + tasto per aggiungerne una. */
@@ -1962,6 +1957,8 @@ body.font-archivo, body.font-archivo h1, body.font-archivo h2, body.font-archivo
 .ev .mk i.k-late { background: var(--danger); border-color: var(--danger); }
 .ev .mk i.k-stato { border-color: var(--accent); }
 .ev .mk i.k-soldi { background: var(--warning); border-color: var(--warning); }
+.ev .mk i.k-nota { background: var(--bg-elev2); border-color: var(--text-dim); }
+.ld-note-add { margin: 4px 0 14px; }
 .ev .tx { font-size: 0.93rem; min-width: 0; }
 .ev .tx .s { display: block; color: var(--text-dim); font-size: 0.84rem; }
 

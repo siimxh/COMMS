@@ -2,30 +2,19 @@
 // I dati veri arrivano dopo il login (openUserData, in fondo al file).
 let db = defaultData();
 let uiState = {
-  timeframe: 'oggi',
-  customFrom: null,
-  customTo: null,
   pipelineFilter: 'all',
   sessioniPipelineFilter: 'all',
   crmSetterFilter: 'all',      // 'all' | 'no_show' — tabella Appuntamenti Setter
   crmSetterSearch: '',         // testo ricerca per nome/telefono — tabella Appuntamenti Setter
   crmVenditoreFilter: 'all',   // 'all' | 'trattativa' | 'no_show' | 'perso' — tabella Appuntamenti Venditore
   crmVenditoreSearch: '',      // testo ricerca per nome/telefono — tabella Appuntamenti Venditore
-  vndStatsTimeframe: 'mese_corrente', // timeframe attivo per la pagina Statistiche Venditore
-  vndStatsCustomFrom: null,
-  vndStatsCustomTo: null,
   calMonthOffset: 0,           // scostamento in mesi dal mese corrente, per la navigazione del calendario
   editingGoal: null,           // { role, timeframe, step } quando un target obiettivo è in modifica inline
   goalsTimeframe: 'month',     // timeframe attivo (day|week|month) per le card Obiettivi (stile Hero + Sparkline)
   goalsPeriodMode: 'current',  // 'current' (giorno/settimana/mese corrente) | 'best' (il migliore di sempre per commissioni) per le card Obiettivi
   settingTab: 'appuntamenti',  // sotto-tab attiva dentro la sezione Setting: 'appuntamenti' | 'sessioni' | 'statistiche'
   venditoreTab: 'lead',        // sotto-tab attiva dentro la sezione Venditore: 'lead' | 'appuntamenti' | 'statistiche'
-  settingStatsTimeframe: 'mese_corrente', // timeframe attivo per la pagina Statistiche Setting
-  settingStatsCustomFrom: null,
-  settingStatsCustomTo: null,
-  andamentoTimeframe: 'mese_corrente', // periodo UNICO della dashboard (barra in cima, Simone 2026-10-15): vale per Obiettivi e Andamento generale
-  andamentoCustomFrom: null,
-  andamentoCustomTo: null,
+  period: null,                // periodo UNICO (Dashboard, Sessioni, Statistiche): vedi getPeriod()
   andamentoCommRole: 'all',    // 'all' | 'setter' | 'venditore' — filtro ruolo solo per il grafico Commissioni
   sessionMinimized: false      // true quando l'utente è "uscito" dalla sessione attiva per navigare altrove, senza terminarla (vedi renderActiveSessionIndicator)
 };
@@ -701,7 +690,7 @@ function renderEyebrows() {
     const now = new Date();
     const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     const daysLeft = lastDay - now.getDate();
-    parts.push(`<div class="eyebrow">⏳ ${daysLeft} giorni al termine del mese</div>`);
+    parts.push(`<div class="eyebrow">⏳ ${daysLeft} ${daysLeft === 1 ? 'giorno' : 'giorni'} al termine del mese</div>`);
   }
   if (t.dailyQuote) {
     const quotes = motivationalQuotes();
@@ -709,7 +698,8 @@ function renderEyebrows() {
     parts.push(`<div class="eyebrow">"${escapeHtml(quotes[idx])}"</div>`);
   }
   if (t.dailyStreak) {
-    parts.push(`<div class="eyebrow streak-eyebrow">🔥 ${computeStreak()} giorni di fila</div>`);
+    const streak = computeStreak();
+    parts.push(`<div class="eyebrow streak-eyebrow">🔥 ${streak} ${streak === 1 ? 'giorno' : 'giorni'} di fila</div>`);
   }
   if (!parts.length) return '';
   return `<section class="card" style="display:flex; flex-direction:column; gap:6px;">${parts.join('')}</section>`;
@@ -771,6 +761,102 @@ const BEST_PERIOD_LABELS = { day: 'Miglior giorno', week: 'Migliore settimana', 
  */
 const DASH_GOAL_TF = { oggi: 'day', ieri: 'day', '7g': 'week', '30g': 'month', mese_corrente: 'month', mese_scorso: 'month' };
 
+/* ---------- Periodo unico (Simone, 16/10) ----------
+ * Prima Dashboard, Sessioni e le due Statistiche avevano quattro selettori diversi e,
+ * cambiando pagina, il periodo cambiava. Ora la barra è una sola, uguale ovunque, e il
+ * browser si ricorda la scelta (localStorage: solo comodità, se manca si parte dal mese). */
+const PERIOD_KEYS = ['oggi', 'ieri', '7g', '30g', '90g', 'mese_corrente', 'mese_scorso', 'all'];
+const PERIOD_LABELS = Object.assign({}, TIMEFRAME_LABELS, { all: 'Tutto', custom: 'Personalizzato' });
+const PERIOD_STORE_KEY = 'chiamateTracker_periodo';
+
+function getPeriod() {
+  if (!uiState.period) {
+    let p = null;
+    try { p = JSON.parse(localStorage.getItem(PERIOD_STORE_KEY) || 'null'); } catch (e) { p = null; }
+    const ok = p && (PERIOD_KEYS.includes(p.tf) || (p.tf === 'custom' && p.from && p.to));
+    uiState.period = ok ? { tf: p.tf, from: p.from || null, to: p.to || null } : { tf: 'mese_corrente', from: null, to: null };
+  }
+  return uiState.period;
+}
+
+function setPeriod(tf, from, to) {
+  uiState.period = { tf, from: from || null, to: to || null };
+  try { localStorage.setItem(PERIOD_STORE_KEY, JSON.stringify(uiState.period)); } catch (e) { /* solo comodità */ }
+}
+
+/** Range del periodo scelto. "Tutto" = dal primo dato registrato a oggi. */
+function getPeriodRange() {
+  const p = getPeriod();
+  if (p.tf === 'all') {
+    const dates = [];
+    (db.sessions || []).forEach(x => { if (x.startedAt) dates.push(new Date(x.startedAt)); });
+    (db.appointments || []).forEach(a => { [a.createdAt, a.scheduledAt].forEach(v => { if (v) dates.push(new Date(v)); }); });
+    const valid = dates.filter(d => !isNaN(d));
+    const first = valid.length ? new Date(Math.min(...valid)) : new Date();
+    return { start: startOfDay(first), end: endOfDay(new Date()) };
+  }
+  return getTimeframeRange(p.tf, p.from, p.to);
+}
+
+/** Per le Statistiche: null = tutto lo storico (come prima con "All time"). */
+function getPeriodRangeOrNull() {
+  return getPeriod().tf === 'all' ? null : getPeriodRange();
+}
+
+function periodLabelText() {
+  const p = getPeriod();
+  if (p.tf === 'custom') { const r = getPeriodRange(); return `dal ${fmtDate(r.start)} al ${fmtDate(r.end)}`; }
+  return PERIOD_LABELS[p.tf] || p.tf;
+}
+
+/** La barra del periodo, uguale in tutte le pagine. extraPills: tasti in più (dashboard). */
+function renderPeriodBar(opts) {
+  opts = opts || {};
+  const p = getPeriod();
+  const off = !!opts.inactive; // es. dashboard in "Migliore di sempre"
+  const pills = PERIOD_KEYS.map(k => `<button class="pill ${!off && p.tf === k ? 'active' : ''}" data-period="${k}">${PERIOD_LABELS[k]}</button>`).join('');
+  const range = getPeriodRange();
+  return `
+    <section class="card filters-bar period-bar">
+      <div class="timeframe-pills">
+        ${pills}
+        <button class="pill ${!off && p.tf === 'custom' ? 'active' : ''}" data-period="custom">Personalizzato</button>
+        ${opts.extraPills || ''}
+      </div>
+      ${!off && p.tf === 'custom' ? `
+      <div class="custom-range">
+        <label>dal <input type="date" id="periodFrom" value="${p.from || dateInputValue(range.start)}"></label>
+        <label>al <input type="date" id="periodTo" value="${p.to || dateInputValue(range.end)}"></label>
+        <button class="btn-ghost" id="btnPeriodApply">Applica</button>
+      </div>` : ''}
+      ${opts.after || ''}
+    </section>`;
+}
+
+/** Eventi della barra: rerender ridisegna la pagina, onPick (facoltativo) gira prima. */
+function wirePeriodBar(rerender, onPick) {
+  appRoot.querySelectorAll('[data-period]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const tf = btn.dataset.period;
+      const cur = getPeriod();
+      if (tf === 'custom') {
+        const r = getPeriodRange();
+        setPeriod('custom', cur.tf === 'custom' ? cur.from : dateInputValue(r.start), cur.tf === 'custom' ? cur.to : dateInputValue(r.end));
+      } else setPeriod(tf);
+      if (onPick) onPick(tf);
+      rerender();
+    });
+  });
+  const apply = document.getElementById('btnPeriodApply');
+  if (apply) apply.addEventListener('click', () => {
+    const from = document.getElementById('periodFrom').value;
+    const to = document.getElementById('periodTo').value;
+    if (!from || !to) return;
+    setPeriod('custom', from, to);
+    rerender();
+  });
+}
+
 /** Range del periodo scelto nella barra della dashboard. */
 function getDashboardRange() {
   if (uiState.goalsPeriodMode === 'best') {
@@ -778,46 +864,31 @@ function getDashboardRange() {
     if (best) return best.range;
     return currentPeriodRanges()[uiState.goalsTimeframe];
   }
-  return getTimeframeRange(uiState.andamentoTimeframe || 'mese_corrente', uiState.andamentoCustomFrom, uiState.andamentoCustomTo);
+  return getPeriodRange();
 }
 
 /** Quale obiettivo (day/week/month) usare per il periodo scelto; null = nessuno. */
 function getDashboardGoalTf() {
   if (uiState.goalsPeriodMode === 'best') return uiState.goalsTimeframe;
-  return DASH_GOAL_TF[uiState.andamentoTimeframe || 'mese_corrente'] || null;
+  return DASH_GOAL_TF[getPeriod().tf] || null;
 }
 
 function renderFunnelSection(role, title, steps) {
   return renderFunnelCard(role, getDashboardGoalTf(), steps, getDashboardRange());
 }
 
-/** Barra del periodo in cima alla dashboard. */
+/** Barra del periodo in cima alla dashboard: la barra unica + "Migliore di sempre". */
 function renderDashboardPeriodBar() {
   const best = uiState.goalsPeriodMode === 'best';
-  const tf = uiState.andamentoTimeframe || 'mese_corrente';
-  const range = getDashboardRange();
-  const pills = Object.keys(TIMEFRAME_LABELS).filter(k => k !== 'custom').map(k =>
-    `<button class="pill ${!best && tf === k ? 'active' : ''}" data-andamento-tf="${k}">${TIMEFRAME_LABELS[k]}</button>`
-  ).join('');
   const bestTabs = best ? `
       <div class="tf-tabs">
         ${TIMEFRAME_KEYS.map(k => `<button class="tf-tab ${uiState.goalsTimeframe === k ? 'active' : ''}" data-goals-tf="${k}">${BEST_PERIOD_LABELS[k]}</button>`).join('')}
       </div>` : '';
-  return `
-    <section class="card filters-bar dash-period-bar">
-      <div class="timeframe-pills">
-        ${pills}
-        <button class="pill ${!best && tf === 'custom' ? 'active' : ''}" data-andamento-tf="custom">Personalizzato</button>
-        <button class="pill ${best ? 'active' : ''}" data-goals-period-mode="best">🏆 Migliore di sempre</button>
-      </div>
-      ${!best && tf === 'custom' ? `
-      <div class="custom-range">
-        <label>dal <input type="date" id="andamentoDateFrom" value="${uiState.andamentoCustomFrom ? uiState.andamentoCustomFrom : dateInputValue(range.start)}"></label>
-        <label>al <input type="date" id="andamentoDateTo" value="${uiState.andamentoCustomTo ? uiState.andamentoCustomTo : dateInputValue(range.end)}"></label>
-        <button class="btn-ghost" id="btnAndamentoApplyRange">Applica</button>
-      </div>` : ''}
-      ${bestTabs}
-    </section>`;
+  return renderPeriodBar({
+    inactive: best,
+    extraPills: `<button class="pill ${best ? 'active' : ''}" data-goals-period-mode="best">🏆 Migliore di sempre</button>`,
+    after: bestTabs
+  });
 }
 
 /** Quando la modalità è "Migliore di sempre", mostra QUALE giorno/settimana/mese esatto
@@ -1014,25 +1085,7 @@ function wireDashboardTopSectionEvents() {
     goalInput.addEventListener('blur', commit);
   }
 
-  appRoot.querySelectorAll('[data-andamento-tf]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      uiState.andamentoTimeframe = btn.dataset.andamentoTf;
-      uiState.goalsPeriodMode = 'current';
-      if (btn.dataset.andamentoTf !== 'custom') { uiState.andamentoCustomFrom = null; uiState.andamentoCustomTo = null; }
-      renderDashboard();
-    });
-  });
-  const btnAndamentoApply = document.getElementById('btnAndamentoApplyRange');
-  if (btnAndamentoApply) {
-    btnAndamentoApply.addEventListener('click', () => {
-      const from = document.getElementById('andamentoDateFrom').value;
-      const to = document.getElementById('andamentoDateTo').value;
-      if (!from || !to) return;
-      uiState.andamentoCustomFrom = from;
-      uiState.andamentoCustomTo = to;
-      renderDashboard();
-    });
-  }
+  wirePeriodBar(renderDashboard, () => { uiState.goalsPeriodMode = 'current'; });
   appRoot.querySelectorAll('[data-andamento-comm-role]').forEach(btn => {
     btn.addEventListener('click', () => {
       uiState.andamentoCommRole = btn.dataset.andamentoCommRole;
@@ -1052,7 +1105,7 @@ function wireDashboardTopSectionEvents() {
  * ==========================================================================*/
 
 function renderCommissionKpiSection() {
-  const tf = uiState.andamentoTimeframe || 'mese_corrente';
+  const tf = getPeriod().tf;
   const range = getDashboardRange();
   const summary = computeCommissionSummary(db, range);
   const pace = db.settings.toggles.closingPace ? renderClosingPaceNote() : '';
@@ -1432,13 +1485,11 @@ function buildSessionReportText(stats, periodLabel, pipelineLabel) {
 }
 
 async function generateSessionReport() {
-  const range = getTimeframeRange(uiState.timeframe, uiState.customFrom, uiState.customTo);
+  const range = getPeriodRange();
   const filteredSessions = getFilteredSessions(db, range, uiState.pipelineFilter);
   const stats = computeStats(filteredSessions);
 
-  const periodLabel = uiState.timeframe === 'custom'
-    ? `dal ${fmtDate(range.start)} al ${fmtDate(range.end)}`
-    : TIMEFRAME_LABELS[uiState.timeframe];
+  const periodLabel = periodLabelText();
   const pipeline = uiState.pipelineFilter !== 'all' ? db.pipelines.find(p => p.id === uiState.pipelineFilter) : null;
   const pipelineLabel = pipeline ? pipeline.name : 'Tutte le pipeline';
 
@@ -1548,15 +1599,15 @@ function buildVenditoreAppointmentsReportText(rows, filterLabel) {
     totalCommission += commission;
     if (a.closed) totalChiusi += 1;
 
-    const lastNote = (a.notes || []).length ? a.notes[a.notes.length - 1].text : null;
+    const info = LeadCRM.reportInfo(a); // note e prossima azione stanno nella scheda lead
 
     lines.push(`${a.clientName || '(senza nome)'} — Venditore`);
     lines.push(`  Data/ora: ${a.scheduledAt ? fmtDateTime(a.scheduledAt) : '—'}`);
     lines.push(`  Stato trattativa: ${stageLabel}`);
     lines.push(`  Cash collected: €${round2(cash)} · Totale venduto: €${round2(sold)}`);
     lines.push(`  Commissione: €${round2(commission)}`);
-    if (a.nextFollowUpDate) lines.push(`  Prossimo follow-up: ${fmtDate(a.nextFollowUpDate)}`);
-    if (lastNote) lines.push(`  Ultima nota: ${lastNote}`);
+    if (info.next) lines.push(`  Prossima azione: ${info.next}`);
+    if (info.lastNote) lines.push(`  Ultima nota: ${info.lastNote}`);
     lines.push('');
   });
 
@@ -1705,11 +1756,11 @@ function renderSessioniList() {
  * andamento vs periodo precedente, esiti nel periodo, confronto pipeline, produttività) —
  * SPOSTATO dalla Dashboard qui in Setting > Sessioni su richiesta esplicita dell'utente
  * ("non deve esserci la sezione attività di chiamata [in dashboard], quella và nella parte
- * setting"). Logica invariata, solo la posizione è cambiata; usa sempre uiState.timeframe/
- * uiState.pipelineFilter (stesso stato di prima, non duplicato).
+ * setting"). Logica invariata, solo la posizione è cambiata; usa il periodo unico
+ * (getPeriod) e uiState.pipelineFilter.
  */
 function renderCallActivitySection() {
-  const range = getTimeframeRange(uiState.timeframe, uiState.customFrom, uiState.customTo);
+  const range = getPeriodRange();
   const filteredSessions = getFilteredSessions(db, range, uiState.pipelineFilter);
   const stats = computeStats(filteredSessions);
 
@@ -1756,17 +1807,7 @@ function renderCallActivitySection() {
   return `
     <div class="section-separator"><span class="eyebrow">Attività di chiamata</span></div>
 
-    <section class="card filters-bar">
-      <div class="timeframe-pills">
-        ${Object.keys(TIMEFRAME_LABELS).filter(k => k !== 'custom').map(k =>
-          `<button class="pill ${uiState.timeframe === k ? 'active' : ''}" data-tf="${k}">${TIMEFRAME_LABELS[k]}</button>`
-        ).join('')}
-      </div>
-      <div class="custom-range">
-        <label>dal <input type="date" id="dateFrom" value="${uiState.customFrom ? uiState.customFrom : dateInputValue(range.start)}"></label>
-        <label>al <input type="date" id="dateTo" value="${uiState.customTo ? uiState.customTo : dateInputValue(range.end)}"></label>
-        <button class="btn-ghost" id="btnApplyRange">Applica</button>
-      </div>
+    ${renderPeriodBar({ after: `
       <div class="pipeline-filter">
         <select id="pipelineFilter">
           <option value="all" ${uiState.pipelineFilter === 'all' ? 'selected' : ''}>Tutte le pipeline</option>
@@ -1775,8 +1816,7 @@ function renderCallActivitySection() {
       </div>
       <div class="filters-bar-actions">
         <button class="btn-ghost" id="btnSessionReport">Report Sessione</button>
-      </div>
-    </section>
+      </div>` })}
 
     <section class="kpi-grid">
       <div class="card kpi-card"><div class="kpi-value">${stats.totalCalls}</div><div class="kpi-label">Chiamate totali</div></div>
@@ -1823,23 +1863,7 @@ function renderCallActivitySection() {
 }
 
 function wireCallActivitySection() {
-  appRoot.querySelectorAll('[data-tf]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      uiState.timeframe = btn.dataset.tf;
-      uiState.customFrom = null;
-      uiState.customTo = null;
-      renderSessioniList();
-    });
-  });
-  document.getElementById('btnApplyRange').addEventListener('click', () => {
-    const from = document.getElementById('dateFrom').value;
-    const to = document.getElementById('dateTo').value;
-    if (!from || !to) return;
-    uiState.timeframe = 'custom';
-    uiState.customFrom = from;
-    uiState.customTo = to;
-    renderSessioniList();
-  });
+  wirePeriodBar(renderSessioniList);
   document.getElementById('pipelineFilter').addEventListener('change', (e) => {
     uiState.pipelineFilter = e.target.value;
     renderSessioniList();
@@ -1961,9 +1985,16 @@ function deactivateRecoveryEntryForAppointment(apt) {
   });
 }
 
+/** Voci del round da mostrare qui. I no show Venditore con un lead aperto NON ci sono:
+ * stanno in Oggi come prossima azione del lead (Simone, 16/10: "un posto solo"). Restano
+ * attive nei dati, così "Fatto" in Oggi le aggiorna (LeadCRM.handlesRecovery). */
+function visibleRecoveryEntries() {
+  return (db.recoveryRound || []).filter(l => l.status === 'active' && !LeadCRM.handlesRecovery(l));
+}
+
 /** Vedi commento algoritmo sopra la sezione. */
 function pickNextRecoveryLead() {
-  const active = (db.recoveryRound || []).filter(l => l.status === 'active');
+  const active = visibleRecoveryEntries();
   if (!active.length) return null;
   const neverShown = active.filter(l => !l.lastInteractionAt);
   if (neverShown.length) return neverShown[Math.floor(Math.random() * neverShown.length)];
@@ -1977,12 +2008,12 @@ function pickNextRecoveryLead() {
  * Setting > Sessioni, su richiesta esplicita dell'utente per renderla più visibile.
  */
 function renderRecoveryRoundEntryCard() {
-  const waiting = (db.recoveryRound || []).filter(l => l.status === 'active').length;
+  const waiting = visibleRecoveryEntries().length;
   return `
     <section class="card recov-entry-card">
       <div class="recov-entry-info">
         <h3>🔁 Round Recupero Appuntamenti</h3>
-        <p class="text-dim" style="font-size:0.84rem;">Richiama i lead che hanno fatto no-show o hanno annullato (da Setting o da Venditore), un lead a caso alla volta, finché tutti non sono stati sentiti almeno una volta.</p>
+        <p class="text-dim" style="font-size:0.84rem;">Richiama i lead che hanno fatto no-show o hanno annullato, un lead a caso alla volta, finché tutti non sono stati sentiti almeno una volta.${LeadCRM.isOn() ? ' I no show del Venditore li trovi in Oggi, come prossima azione del lead.' : ''}</p>
       </div>
       <div class="recov-entry-action">
         <div class="recov-entry-count">${waiting}</div>
@@ -2014,7 +2045,7 @@ function renderRecoveryRoundScreen() {
   db.recoveryRound = db.recoveryRound || [];
 
   let lead = db.recoveryRoundCurrentLeadId
-    ? db.recoveryRound.find(l => l.id === db.recoveryRoundCurrentLeadId && l.status === 'active')
+    ? visibleRecoveryEntries().find(l => l.id === db.recoveryRoundCurrentLeadId)
     : null;
   if (!lead) {
     lead = pickNextRecoveryLead();
@@ -2841,8 +2872,8 @@ function renderConfirmAlertBanner() {
  * Split Setter/Venditore: presentedStatus/presentedAt restano il modello del Setter
  * (invariato). Il Venditore usa invece dealStage (vedi DEAL_STAGES) — uno stato
  * trattativa a scelta singola che sostituisce sia "presentato" sia "chiuso" per quel
- * ruolo; note[] e nextFollowUpDate sono campi aggiuntivi usati solo lato Venditore
- * (vedi renderVenditoreApptRow/openNotesModal).
+ * ruolo; note[] e nextFollowUpDate sono campi vecchi del Venditore: dal 16/10 note e
+ * follow-up stanno nella scheda lead e lead.js li sposta lì (LeadCRM, moveApptExtras).
  */
 function newAppointment(role) {
   return {
@@ -3423,7 +3454,7 @@ function renderVenditoreAppuntamenti() {
           <thead>
             <tr>
               <th>Nome / Telefono</th><th>Data/Ora</th><th>Stato trattativa</th>
-              <th>Cash Collected</th><th>Totale Venduto</th><th>Note / Follow-up</th><th></th>
+              <th>Cash Collected</th><th>Totale Venduto</th><th></th>
             </tr>
           </thead>
           <tbody>${rowsHtml}</tbody>
@@ -3443,8 +3474,6 @@ function renderVenditoreApptRow(a) {
   const currentStage = a.dealStage || '';
 
   const totalSold = apptTotalSold(a);
-  const noteCount = (a.notes || []).length;
-  const followUpLabel = a.nextFollowUpDate ? fmtDate(a.nextFollowUpDate) : 'Nessuna';
 
   return `
     <tr data-appt-row="${a.id}" class="${a.dealStage === 'spostato' ? 'appt-row-moved' : ''}">
@@ -3466,10 +3495,6 @@ function renderVenditoreApptRow(a) {
       </td>
       <td><input type="number" min="0" step="1" class="assigned-edit-input" data-cash-input="${a.id}" value="${a.cashCollected || 0}" style="width:90px;"></td>
       <td class="crm-cell-center"><button class="crm-amount-link" data-open-installments="${a.id}">€${round2(totalSold)}</button></td>
-      <td class="vnd-actions-cell">
-        <button class="vnd-note-btn ${noteCount ? 'has-notes' : ''}" data-open-notes="${a.id}">Note ${noteCount ? `(${noteCount})` : ''}</button>
-        <button class="vnd-followup-btn ${a.nextFollowUpDate ? 'has-date' : ''}" data-open-followup="${a.id}" title="Data prossimo follow-up">📅 ${followUpLabel}</button>
-      </td>
       <td class="crm-row-actions"><button class="crm-row-del" data-del-appt-vnd="${a.id}" title="Elimina">×</button></td>
     </tr>`;
 }
@@ -3565,21 +3590,15 @@ function wireVenditoreAppuntamentiEvents() {
     btn.addEventListener('click', () => openInstallmentsModal(btn.dataset.openInstallments, 'venditore'));
   });
 
-  appRoot.querySelectorAll('[data-open-notes]').forEach(btn => {
-    btn.addEventListener('click', () => openNotesModal(btn.dataset.openNotes));
-  });
-
-  appRoot.querySelectorAll('[data-open-followup]').forEach(btn => {
-    btn.addEventListener('click', () => openFollowUpModal(btn.dataset.openFollowup));
-  });
-
   appRoot.querySelectorAll('[data-del-appt-vnd]').forEach(btn => {
     btn.addEventListener('click', () => {
       const apt = db.appointments.find(x => x.id === btn.dataset.delApptVnd);
       if (!apt) return;
       showConfirm(`Eliminare l'appuntamento di "${apt.clientName || '(senza nome)'}"?`, () => {
         unlinkRescheduleOnDelete(apt);
+        deactivateRecoveryEntryForAppointment(apt);
         db.appointments = db.appointments.filter(x => x.id !== apt.id);
+        LeadCRM.onApptDeleted(apt); // lead rimasto senza appuntamenti: sparisce anche lui
         persist();
         renderVenditoreAppuntamenti();
       }, { confirmLabel: 'Elimina' });
@@ -3589,21 +3608,10 @@ function wireVenditoreAppuntamentiEvents() {
   wireCallRecordingsEvents();
 }
 
-/* ---------- Note appuntamento (solo Venditore) ---------- */
-
-function openNotesModal(apptId) {
-  const apt = db.appointments.find(x => x.id === apptId);
-  if (!apt) return;
-  renderNotesModal(apt);
-}
-
-function renderNotesModal(apt) {
-  openNotesEditor(apt, apt.clientName, renderVenditoreAppuntamenti);
-}
-
 /**
- * Sistema di note (quadernino): elenco con data e ora + "Aggiungi nota". Lo usano gli
- * appuntamenti Venditore e i "Da richiamare" (richiesta di Hamza, 2026-10-14).
+ * Sistema di note (quadernino): elenco con data e ora + "Aggiungi nota". Lo usano i
+ * "Da richiamare" (richiesta di Hamza, 2026-10-14). Le note del Venditore stanno nella
+ * scheda lead (lead.js, dal 16/10).
  * `holder` è l'oggetto che contiene l'array `notes`; `onClose` ridisegna la pagina sotto.
  */
 function openNotesEditor(holder, leadName, onClose) {
@@ -3635,41 +3643,6 @@ function openNotesEditor(holder, leadName, onClose) {
     holder.notes.push({ id: uid('nota'), text, createdAt: new Date().toISOString() });
     persist();
     openNotesEditor(holder, leadName, onClose);
-  });
-}
-
-/* ---------- Data prossimo follow-up (solo Venditore) ---------- */
-
-function openFollowUpModal(apptId) {
-  const apt = db.appointments.find(x => x.id === apptId);
-  if (!apt) return;
-  openModal(`
-    <h3>Prossimo follow-up — ${escapeHtml(apt.clientName || '(senza nome)')}</h3>
-    <label class="field">
-      Data da ricontattare
-      <input type="date" id="followUpDateInput" value="${apt.nextFollowUpDate || ''}">
-    </label>
-    <div class="modal-actions" style="justify-content:space-between;">
-      <button class="btn-ghost" id="btnClearFollowUp">Rimuovi data</button>
-      <div style="display:flex; gap:8px;">
-        <button class="btn-ghost" data-close-modal="1">Annulla</button>
-        <button class="btn-primary" id="btnSaveFollowUp">Salva</button>
-      </div>
-    </div>
-  `);
-  modalRoot.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', closeModal));
-  document.getElementById('btnClearFollowUp').addEventListener('click', () => {
-    apt.nextFollowUpDate = null;
-    persist();
-    closeModal();
-    renderVenditoreAppuntamenti();
-  });
-  document.getElementById('btnSaveFollowUp').addEventListener('click', () => {
-    const val = document.getElementById('followUpDateInput').value;
-    apt.nextFollowUpDate = val || null;
-    persist();
-    closeModal();
-    renderVenditoreAppuntamenti();
   });
 }
 
@@ -3851,31 +3824,14 @@ function renderInstallmentsModal(apt, role) {
  * statistiche già mostrate per le sessioni Setter).
  * ==========================================================================*/
 
-const VND_STATS_TIMEFRAMES = ['oggi', '7g', 'mese_corrente', 'all', 'custom'];
-const VND_STATS_TIMEFRAME_LABELS = { oggi: 'Oggi', '7g': '7 giorni', mese_corrente: 'Mese corrente', all: 'All time', custom: 'Personalizzato' };
-
 function renderVenditoreStatistiche() {
   uiState.venditoreTab = 'statistiche';
-  const tf = uiState.vndStatsTimeframe || 'mese_corrente';
-  const range = tf === 'all' ? null : (tf === 'custom' ? getTimeframeRange('custom', uiState.vndStatsCustomFrom, uiState.vndStatsCustomTo) : getTimeframeRange(tf));
+  const tf = getPeriod().tf;
+  const range = getPeriodRangeOrNull();
   const stats = computeVenditoreStats(db, range);
-
-  const tabsHtml = VND_STATS_TIMEFRAMES.map(k =>
-    `<button class="pill ${tf === k ? 'active' : ''}" data-vnd-stats-tf="${k}">${VND_STATS_TIMEFRAME_LABELS[k]}</button>`
-  ).join('');
-
   appRoot.innerHTML = `
     ${renderSubTabsBar('venditore', 'statistiche')}
-    <section class="card">
-      <div class="vnd-timeframe-tabs">${tabsHtml}</div>
-      ${tf === 'custom' ? `
-      <div class="custom-range" style="margin-top:8px;">
-        <label>dal <input type="date" id="vndStatsFrom" value="${uiState.vndStatsCustomFrom ? uiState.vndStatsCustomFrom : dateInputValue(range.start)}"></label>
-        <label>al <input type="date" id="vndStatsTo" value="${uiState.vndStatsCustomTo ? uiState.vndStatsCustomTo : dateInputValue(range.end)}"></label>
-        <button class="btn-ghost" id="btnVndStatsApplyRange">Applica</button>
-      </div>` : ''}
-      <p class="text-dim" style="font-size:0.82rem;">${tf === 'all' ? 'Tutto lo storico registrato.' : (tf === 'custom' ? `Periodo: dal ${fmtDate(range.start)} al ${fmtDate(range.end)}.` : `Periodo: ${TIMEFRAME_LABELS[tf] || tf}.`)}</p>
-    </section>
+    ${renderPeriodBar({ after: `<p class="text-dim" style="font-size:0.82rem; margin:0;">${tf === 'all' ? 'Tutto lo storico registrato.' : 'Periodo: ' + periodLabelText() + '.'}</p>` })}
 
     <section class="vnd-stats-grid">
       <div class="card kpi-card"><div class="kpi-value">${stats.assegnati}</div><div class="kpi-label">Assegnati</div></div>
@@ -3907,20 +3863,7 @@ function renderVenditoreStatistiche() {
   `;
 
   wireSubTabsBar('venditore');
-  appRoot.querySelectorAll('[data-vnd-stats-tf]').forEach(btn => {
-    btn.addEventListener('click', () => { uiState.vndStatsTimeframe = btn.dataset.vndStatsTf; renderVenditoreStatistiche(); });
-  });
-  const btnApplyRange = document.getElementById('btnVndStatsApplyRange');
-  if (btnApplyRange) {
-    btnApplyRange.addEventListener('click', () => {
-      const from = document.getElementById('vndStatsFrom').value;
-      const to = document.getElementById('vndStatsTo').value;
-      if (!from || !to) return;
-      uiState.vndStatsCustomFrom = from;
-      uiState.vndStatsCustomTo = to;
-      renderVenditoreStatistiche();
-    });
-  }
+  wirePeriodBar(renderVenditoreStatistiche);
 }
 
 /* ============================================================================
@@ -3930,31 +3873,14 @@ function renderVenditoreStatistiche() {
  * Venditore. Vedi computeSetterStats in utils.js per le regole di calcolo.
  * ==========================================================================*/
 
-const SETTING_STATS_TIMEFRAMES = ['oggi', '7g', 'mese_corrente', 'all', 'custom'];
-const SETTING_STATS_TIMEFRAME_LABELS = { oggi: 'Oggi', '7g': '7 giorni', mese_corrente: 'Mese corrente', all: 'All time', custom: 'Personalizzato' };
-
 function renderSettingStatistiche() {
   uiState.settingTab = 'statistiche';
-  const tf = uiState.settingStatsTimeframe || 'mese_corrente';
-  const range = tf === 'all' ? null : (tf === 'custom' ? getTimeframeRange('custom', uiState.settingStatsCustomFrom, uiState.settingStatsCustomTo) : getTimeframeRange(tf));
+  const tf = getPeriod().tf;
+  const range = getPeriodRangeOrNull();
   const stats = computeSetterStats(db, range);
-
-  const tabsHtml = SETTING_STATS_TIMEFRAMES.map(k =>
-    `<button class="pill ${tf === k ? 'active' : ''}" data-setting-stats-tf="${k}">${SETTING_STATS_TIMEFRAME_LABELS[k]}</button>`
-  ).join('');
-
   appRoot.innerHTML = `
     ${renderSubTabsBar('setting', 'statistiche')}
-    <section class="card">
-      <div class="vnd-timeframe-tabs">${tabsHtml}</div>
-      ${tf === 'custom' ? `
-      <div class="custom-range" style="margin-top:8px;">
-        <label>dal <input type="date" id="settingStatsFrom" value="${uiState.settingStatsCustomFrom ? uiState.settingStatsCustomFrom : dateInputValue(range.start)}"></label>
-        <label>al <input type="date" id="settingStatsTo" value="${uiState.settingStatsCustomTo ? uiState.settingStatsCustomTo : dateInputValue(range.end)}"></label>
-        <button class="btn-ghost" id="btnSettingStatsApplyRange">Applica</button>
-      </div>` : ''}
-      <p class="text-dim" style="font-size:0.82rem;">${tf === 'all' ? 'Tutto lo storico registrato.' : (tf === 'custom' ? `Periodo: dal ${fmtDate(range.start)} al ${fmtDate(range.end)}.` : `Periodo: ${TIMEFRAME_LABELS[tf] || tf}.`)}</p>
-    </section>
+    ${renderPeriodBar({ after: `<p class="text-dim" style="font-size:0.82rem; margin:0;">${tf === 'all' ? 'Tutto lo storico registrato.' : 'Periodo: ' + periodLabelText() + '.'}</p>` })}
 
     <section class="vnd-stats-grid">
       <div class="card kpi-card"><div class="kpi-value">${stats.fissati}</div><div class="kpi-label">Appuntamenti Fissati</div></div>
@@ -3976,20 +3902,7 @@ function renderSettingStatistiche() {
   `;
 
   wireSubTabsBar('setting');
-  appRoot.querySelectorAll('[data-setting-stats-tf]').forEach(btn => {
-    btn.addEventListener('click', () => { uiState.settingStatsTimeframe = btn.dataset.settingStatsTf; renderSettingStatistiche(); });
-  });
-  const btnApplyRangeSetting = document.getElementById('btnSettingStatsApplyRange');
-  if (btnApplyRangeSetting) {
-    btnApplyRangeSetting.addEventListener('click', () => {
-      const from = document.getElementById('settingStatsFrom').value;
-      const to = document.getElementById('settingStatsTo').value;
-      if (!from || !to) return;
-      uiState.settingStatsCustomFrom = from;
-      uiState.settingStatsCustomTo = to;
-      renderSettingStatistiche();
-    });
-  }
+  wirePeriodBar(renderSettingStatistiche);
 }
 
 /* ============================================================================
@@ -5653,13 +5566,7 @@ document.getElementById('btnNuovaSessione').addEventListener('click', () => {
   }
   openNewSessionModal();
 });
-document.getElementById('btnExport').addEventListener('click', () => exportData());
-document.getElementById('importFile').addEventListener('change', (e) => {
-  if (e.target.files[0]) importData(e.target.files[0]);
-  e.target.value = '';
-});
 document.getElementById('btnAccount').addEventListener('click', openAccountModal);
-document.getElementById('btnBuilder').addEventListener('click', () => { location.hash = '#/impostazioni'; });
 
 document.getElementById('loginForm').addEventListener('submit', loginSubmitAction);
 
@@ -5829,6 +5736,14 @@ function openAccountModal() {
     <p>Sei entrato come <strong>${escapeHtml(email)}</strong>.</p>
     <p class="text-dim" style="font-size:0.85rem;">I dati sono salvati online e anche in questo browser.</p>
     <div class="lead-modal">${LeadCRM.accountToggleHtml()}</div>
+    <div class="account-tools">
+      <button class="btn-ghost" id="btnAccountBuilder">🎨 Aspetto e opzioni</button>
+      <button class="btn-ghost" id="btnExport" title="Scarica un backup dei tuoi dati">⬇ Esporta backup</button>
+      <label class="btn-ghost" title="Ripristina un backup: sostituisce tutti i dati, anche online">
+        ⬆ Importa backup
+        <input type="file" id="importFile" accept="application/json" hidden>
+      </label>
+    </div>
     <div class="modal-actions">
       <button class="btn-ghost" data-close-modal="1">Chiudi</button>
       <button class="btn-primary" id="btnLogout">Esci</button>
@@ -5836,6 +5751,13 @@ function openAccountModal() {
   `);
   modalRoot.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', closeModal));
   LeadCRM.wireAccountToggle();
+  document.getElementById('btnAccountBuilder').addEventListener('click', () => { closeModal(); location.hash = '#/impostazioni'; });
+  document.getElementById('btnExport').addEventListener('click', () => exportData());
+  document.getElementById('importFile').addEventListener('change', (e) => {
+    const f = e.target.files[0];
+    e.target.value = '';
+    if (f) { closeModal(); importData(f); }
+  });
   document.getElementById('btnLogout').addEventListener('click', logoutAction);
 }
 
