@@ -2133,6 +2133,66 @@ function exitRecoveryRound() {
   renderRoute();
 }
 
+/* Chiamate del Round Recupero nell'attività del giorno (richiesta di Simone, 2026-10-16).
+ * Prima il round contava solo i tentativi sul lead (callCount) e le chiamate non finivano
+ * in nessuna sessione: non comparivano in dashboard, statistiche Setting e mail EOD.
+ * Ora funziona come il Round Conferme: se c'è una sessione aperta la chiamata va lì,
+ * altrimenti nella sessione automatica del giorno "Recupero".
+ * Stesso lead chiamato più volte lo STESSO giorno = 1 lead (groupId del giorno);
+ * un altro giorno = lead nuovo. "Posticipato" e "Rimuovi" non sono chiamate: non contano. */
+const RECOVERY_AUTO_PIPELINE_ID = 'recupero-auto';
+const RECOVERY_AUTO_PIPELINE_NAME = 'Recupero';
+const RECOVERY_CALL_LABELS = {
+  non_risposto: { label: 'Non risposto', noAnswer: true, conversion: false },
+  non_interessato: { label: 'Non interessato', noAnswer: false, conversion: false },
+  da_richiamare: { label: 'Da richiamare', noAnswer: false, conversion: false },
+  appuntamento_fissato: { label: 'Appuntamento fissato', noAnswer: false, conversion: true }
+};
+
+function logRecoveryCall(lead, outcome) {
+  const def = RECOVERY_CALL_LABELS[outcome];
+  if (!def) return;
+  const todayKey = dateInputValue(new Date());
+  if (!lead.callGroupId || lead.callGroupDate !== todayKey) {
+    lead.callGroupId = uid('lead');
+    lead.callGroupDate = todayKey;
+  }
+  appendRecoveryCallToSession({
+    id: uid('call'), timestamp: new Date().toISOString(), outcomeId: null, outcomeLabel: def.label,
+    isConversion: def.conversion, isNoAnswer: def.noAnswer, isSecondAttempt: false,
+    groupId: lead.callGroupId, isRecoveryCall: true
+  });
+}
+
+function appendRecoveryCallToSession(callRecord) {
+  if (db.activeSession) {
+    db.activeSession.calls.push(callRecord);
+    return;
+  }
+  const todayKey = dateInputValue(new Date());
+  let autoSession = db.sessions.find(s => s.pipelineId === RECOVERY_AUTO_PIPELINE_ID && dateInputValue(s.startedAt) === todayKey);
+  if (!autoSession) {
+    db.sessionCounter += 1;
+    autoSession = {
+      id: uid('sess'),
+      number: db.sessionCounter,
+      pipelineId: RECOVERY_AUTO_PIPELINE_ID,
+      pipelineName: RECOVERY_AUTO_PIPELINE_NAME,
+      startedAt: new Date().toISOString(),
+      endedAt: new Date().toISOString(),
+      calls: [],
+      skips: 0,
+      retryCallsPending: false,
+      callAttemptsOnLead: 0,
+      pausedAt: null,
+      pausedTotalMs: 0
+    };
+    db.sessions.push(autoSession);
+  }
+  autoSession.calls.push(callRecord);
+  autoSession.endedAt = new Date().toISOString();
+}
+
 /**
  * Applica un esito al lead corrente e passa al prossimo (pickNextRecoveryLead sceglie
  * di nuovo alla prossima renderRecoveryRoundScreen, azzerando recoveryRoundCurrentLeadId).
@@ -2150,6 +2210,7 @@ function applyRecoveryOutcome(leadId, outcome) {
   if (!lead) return;
   const now = new Date().toISOString();
   if (outcome === 'non_risposto' || outcome === 'non_interessato' || outcome === 'da_richiamare') {
+    logRecoveryCall(lead, outcome);
     lead.callCount = (lead.callCount || 0) + 1;
     lead.lastInteractionAt = now;
   } else if (outcome === 'posticipato') {
@@ -2212,6 +2273,7 @@ function openRecoveryAppointmentModal(leadId) {
 
     lead.status = 'resolved';
     lead.resolvedAppointmentId = apt.id;
+    logRecoveryCall(lead, 'appuntamento_fissato');
     lead.callCount = (lead.callCount || 0) + 1;
     lead.lastInteractionAt = new Date().toISOString();
 

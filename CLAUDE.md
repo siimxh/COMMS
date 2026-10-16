@@ -148,6 +148,7 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 
 **Round Recupero Appuntamenti**
 - Unico round fisso per no show e annullati, sia Setter sia Venditore: `addToRecoveryRound`, `renderRecoveryRoundScreen`, `applyRecoveryOutcome`.
+- Le chiamate del round contano nell'attività del giorno (dal 16/10): vanno nella sessione aperta se c'è, altrimenti nella sessione automatica del giorno "Recupero" (`logRecoveryCall`, `appendRecoveryCallToSession`). "Posticipato" e "Rimuovi" non sono chiamate.
 
 **Appuntamenti (mini-CRM)**
 - Modello: `newAppointment(role)`. Stati Venditore: `DEAL_STAGES`, `dealStageDef`.

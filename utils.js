@@ -171,7 +171,7 @@ function countSessionLeads(s, allSessions) {
     if (c.groupId) {
       if (seen.has(c.groupId)) return;
       seen.add(c.groupId);
-      if (c.isCallbackCall || c.isConfirmCall) {
+      if (c.isCallbackCall || c.isConfirmCall || c.isRecoveryCall) {
         const t = new Date(c.timestamp).getTime();
         const countedElsewhere = (allSessions || []).some(o => o !== s && o.id !== s.id &&
           (o.calls || []).some(oc => oc.groupId === c.groupId && new Date(oc.timestamp).getTime() < t));
