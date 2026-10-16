@@ -654,7 +654,7 @@ function renderDashboardTopSections() {
 }
 
 /* Lettera D (Simone, 16/10): le tab Statistiche di Setting e Venditore sono sparite.
- * I numeri che c'erano solo lì (tassi, media fissati, numeri dei lead, esiti) stanno
+ * I numeri che c'erano solo lì (tassi, media fissati, numeri dei lead) stanno
  * in una riga sotto ogni card Obiettivi e seguono il periodo scelto in cima. */
 function dashboardStatsRange() {
   // "Tutto" (range null) non esiste in dashboard: si usa sempre il periodo della dashboard.
@@ -672,21 +672,6 @@ function renderSetterRatesRow() {
     ${rateCell(st.closingRate + '%', 'Closing', 'chiusi su presentati')}
     ${rateCell(String(st.mediaFissatiGiorno).replace('.', ','), 'Fissati al giorno', 'giorni lun-ven')}
     ${rateCell(st.svolti, 'Già svolti', 'presentati, no show e annullati')}
-  </div>
-  ${esitiBox(`Esiti nel periodo (su ${st.esiti.totale} appuntamenti)`, st.esiti.totale, [
-    ['Presentati', st.esiti.presentati], ['Chiusi', st.esiti.chiusi], ['No Show', st.esiti.noShow],
-    ['Annullati', st.esiti.annullati], ['Spostati', st.esiti.spostati], ['Da esitare', st.esiti.daEsitare], ['In arrivo', st.esiti.inArrivo]
-  ])}`;
-}
-
-/** Riquadro "Esiti nel periodo" con le barre (Setter e Venditore). */
-function esitiBox(title, total, rows) {
-  const base = total || 1;
-  return `<div class="esiti-box">
-    <div class="rate-lab">${title}</div>
-    <div class="bar-list">
-      ${rows.map(([label, n]) => `<div class="bar-row"><div class="bar-label">${label}</div><div class="bar-track"><div class="bar-fill" style="width:${pct(n, base)}%"></div></div><div class="bar-value">${n}</div></div>`).join('')}
-    </div>
   </div>`;
 }
 
@@ -701,11 +686,7 @@ function renderVenditoreRatesRow() {
     ${rateCell(ls.show2 + '%', 'Show rate 2° app.', `${ls.p2} presentati · ${ls.n2} no show`)}
     ${rateCell(ls.pctFu + '%', 'Chiuse in follow-up', `${ls.cFu} su ${ls.clienti} clienti`)}
     ${rateCell(`${ls.inT} · <span class="late-tag">${ls.rit}</span>`, 'Follow-up', 'in tempo · in ritardo')}
-  </div>
-  ${esitiBox(`Esiti nel periodo (su ${st.assegnati} assegnati)`, st.assegnati, [
-    ['Presentati', st.presentati], ['Chiusi', st.chiusi], ['Persi', st.persi],
-    ['No Show', st.noShow], ['Annullati', st.annullati], ['Non in target', st.nonInTarget]
-  ])}`;
+  </div>`;
 }
 
 /** Pace del mese (richiesto 2026-10-08): a che cifra di commissioni chiudi il mese se

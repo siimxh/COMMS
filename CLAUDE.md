@@ -128,7 +128,7 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 - `renderDashboard`, `renderDashboardTopSections`.
 - Obiettivi e funnel: `FUNNEL_STEPS_SETTER`, `FUNNEL_STEPS_VENDITORE`, `renderFunnelSection`, `renderPaceBar` (design "Ritmo": tacca "dove dovresti essere adesso").
 - Andamento generale: `renderCommissionKpiSection`, `buildAndamentoSeries`, `renderLineChart`.
-- Tassi sotto ogni card Obiettivi (al posto delle vecchie pagine Statistiche): `renderSetterRatesRow`, `renderVenditoreRatesRow`. Tutti e due hanno il riquadro "Esiti nel periodo" (`esitiBox`, per data appuntamento): Simone vuole quei numeri, l'azienda li controlla.
+- Tassi sotto ogni card Obiettivi (al posto delle vecchie pagine Statistiche): `renderSetterRatesRow`, `renderVenditoreRatesRow`. Niente riquadro "Esiti nel periodo": Simone l'ha provato e non lo vuole (16/10).
 - Pace del mese: `renderMonthPace` (il riquadro pace totale e il riepilogo commissioni del mese sono stati tolti il 16/10; il calendario commissioni resta).
 - Report da copiare: `generateSessionReport`, `generateAppointmentsReport`, `generateVenditoreAppointmentsReport`.
 

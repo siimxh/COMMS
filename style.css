@@ -2055,8 +2055,6 @@ body.font-archivo, body.font-archivo h1, body.font-archivo h2, body.font-archivo
 .rate-val { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .rate-lab { font-size: 0.78rem; color: var(--text-dim); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .rate-sub { font-size: 0.74rem; color: var(--text-dim); margin-top: 2px; }
-.esiti-box { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--border); }
-.esiti-box .bar-list { margin-top: 10px; }
 
 /* Lettera F (16/10): tasto € luccicante che apre Chiuso / Cash / Totale */
 .money-btn {
