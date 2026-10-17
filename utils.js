@@ -155,6 +155,55 @@ function getFilteredSessions(db, range, pipelineId) {
  * modifica) usano il vecchio raggruppamento posizionale isSecondAttempt come fallback.
  */
 /**
+ * Tipi di chiamata del Setting (restyling 17/10/2026, divisione in Setting → Stats).
+ * Una chiamata ha al massimo un flag di tipo; senza flag è di una sessione normale.
+ */
+const CALL_TYPES = [
+  { key: 'normale',   label: 'Sessioni normali' },
+  { key: 'conferme',  label: 'Conferme' },
+  { key: 'richiamate', label: 'Richiamate' },
+  { key: 'recupero',  label: 'Recupero' },
+  { key: 'followup',  label: 'Follow-up Venditore' }
+];
+function callTypeOf(c) {
+  if (c.isConfirmCall) return 'conferme';
+  if (c.isCallbackCall) return 'richiamate';
+  if (c.isRecoveryCall) return 'recupero';
+  if (c.isLeadFollowUpCall) return 'followup';
+  return 'normale';
+}
+
+/**
+ * Chiamate e lead per tipo, nelle sessioni date. Lead: stessa regola di computeStats
+ * (groupId = 1 lead su tutte le sessioni, isSecondAttempt senza groupId = stesso lead
+ * della chiamata prima). Un lead finisce nel tipo della sua PRIMA chiamata, così la
+ * somma dei lead per tipo è uguale ai lead totali di computeStats.
+ */
+function computeCallTypeStats(sessions) {
+  const out = {};
+  CALL_TYPES.forEach(t => { out[t.key] = { calls: 0, leads: 0 }; });
+  const seen = new Set();
+  sessions.forEach(s => {
+    let currentType = null;
+    (s.calls || []).forEach(c => {
+      const t = callTypeOf(c);
+      out[t].calls++;
+      if (c.groupId) {
+        if (seen.has(c.groupId)) return;
+        seen.add(c.groupId);
+        out[t].leads++;
+      } else if (c.isSecondAttempt && currentType) {
+        return;
+      } else {
+        currentType = t;
+        out[t].leads++;
+      }
+    });
+  });
+  return out;
+}
+
+/**
  * Lead "nuovi" contati in UNA sessione (contatori della sessione e della lista sessioni).
  * Un tentativo di richiamo immediato (isSecondAttempt) non è un lead nuovo. Inoltre una
  * chiamata a un lead "Da richiamare" fatta lo stesso giorno riusa il groupId del lead
@@ -171,7 +220,7 @@ function countSessionLeads(s, allSessions) {
     if (c.groupId) {
       if (seen.has(c.groupId)) return;
       seen.add(c.groupId);
-      if (c.isCallbackCall || c.isConfirmCall || c.isRecoveryCall) {
+      if (callTypeOf(c) !== 'normale') {
         const t = new Date(c.timestamp).getTime();
         const countedElsewhere = (allSessions || []).some(o => o !== s && o.id !== s.id &&
           (o.calls || []).some(oc => oc.groupId === c.groupId && new Date(oc.timestamp).getTime() < t));

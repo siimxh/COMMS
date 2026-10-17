@@ -2399,3 +2399,8 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 /* Tasti della barra strumenti delle liste: vanno a capo invece di uscire dallo schermo. */
 .crm-toolbar > div { flex-wrap: wrap; max-width: 100%; }
 a.btn-ghost, a.btn-primary { text-decoration: none; }
+
+/* Setting → Stats: chiamate per tipo (restyling step 4) */
+.call-types .simple-table th.num, .call-types .simple-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.call-types .call-types-note { font-size: 0.85rem; margin: 2px 0 6px; }
+.call-types .simple-table tfoot th { color: var(--text); font-family: inherit; font-size: 0.86rem; font-weight: 600; text-transform: none; letter-spacing: 0; border-top: 1px solid var(--border); border-bottom: none; padding: 10px 8px; }

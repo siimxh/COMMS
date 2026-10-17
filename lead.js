@@ -642,11 +642,23 @@ const LeadCRM = (function () {
         if (rec) {
           // Chiamata di recupero: conta nell'attività del giorno (sessione aperta o "Recupero").
           const out = !st.risposta ? 'non_risposto' : apptAt ? 'appuntamento_fissato' : (st.stato === 'Perso' || st.stato === 'Freddo') ? 'non_interessato' : 'da_richiamare';
+          // Stesso lead, stesso giorno = 1 lead anche tra recupero e follow-up: la voce del
+          // round usa il groupId di oggi del lead (vedi leadCallGroupIdToday in app.js).
+          rec.callGroupId = leadCallGroupIdToday(l); rec.callGroupDate = l.callGroupDate;
           logRecoveryCall(rec, out);
           rec.callCount = (rec.callCount || 0) + 1;
           rec.lastInteractionAt = new Date().toISOString();
           // Ha risposto (o è uscito dal giro): il recupero è finito, si va avanti col lead.
           if (st.risposta || !APERTI.includes(st.stato)) rec.status = apptAt ? 'resolved' : 'removed';
+        }
+        else if (n.type === 'chiamata') {
+          // Follow-up al telefono (restyling 17/10/2026): conta come chiamata di Setting,
+          // sessione aperta o "Follow-up Venditore". Solo le azioni 📞 Chiamata: WhatsApp,
+          // audio, contratto, contenuto non sono telefonate. "Com'è finita?" (openEsito) è
+          // l'esito dell'appuntamento, non una telefonata: non scrive chiamate.
+          const out = !st.risposta ? 'non_risposto' : apptAt ? 'appuntamento_fissato'
+            : st.stato === 'Cliente' ? 'cliente' : (st.stato === 'Perso' || st.stato === 'Freddo') ? 'non_interessato' : 'ha_risposto';
+          logLeadFollowUpCall(l, out);
         }
         if (apptAt) { const na = createApptForLead(l, apptAt); if (rec) rec.resolvedAppointmentId = na.id; }
         persist(); rerender();

@@ -639,8 +639,33 @@ function renderSettingStatistiche() {
         ${rateCell('€' + round2(comm.commissioniChiusure || 0), 'Commissioni venduto', '3% dell\'incassato')}
       </div>
     </section>
+    ${renderCallTypesSection(range)}
   `;
   wirePeriodBar(renderSettingStatistiche);
+}
+
+/**
+ * Setting → Stats: chiamate e lead per tipo nel periodo (restyling 17/10/2026, prompt 5.5).
+ * Tutte le chiamate stanno nelle sessioni (normali o automatiche del giorno), quindi i
+ * totali sono gli stessi di computeStats (Chiamate totali / Lead contattati in Sessioni).
+ * range null = "Tutto".
+ */
+function renderCallTypesSection(range) {
+  const sessions = range ? getFilteredSessions(db, range, 'all') : db.sessions.slice();
+  const byType = computeCallTypeStats(sessions);
+  const tot = computeStats(sessions);
+  const rows = CALL_TYPES.map(t => `
+    <tr><td>${escapeHtml(t.label)}</td><td class="num">${byType[t.key].calls}</td><td class="num">${byType[t.key].leads}</td></tr>`).join('');
+  return `
+    <section class="card call-types">
+      <h3>Chiamate per tipo</h3>
+      <p class="text-dim call-types-note">Stesso lead nello stesso giorno = 1 lead. Il lead conta nel tipo della sua prima chiamata.</p>
+      <table class="simple-table">
+        <thead><tr><th>Tipo</th><th class="num">Chiamate</th><th class="num">Lead</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><th>Totale</th><th class="num">${tot.totalCalls}</th><th class="num">${tot.totalLeads}</th></tr></tfoot>
+      </table>
+    </section>`;
 }
 
 function renderVenditoreStatistiche() {
@@ -2277,19 +2302,29 @@ function logRecoveryCall(lead, outcome) {
 }
 
 function appendRecoveryCallToSession(callRecord) {
+  appendCallToAutoSession(RECOVERY_AUTO_PIPELINE_ID, RECOVERY_AUTO_PIPELINE_NAME, callRecord);
+}
+
+/**
+ * Mette una chiamata "fuori sessione" nell'attività del giorno: nella sessione aperta se
+ * c'è, altrimenti nella sessione automatica del giorno con questo pipelineId (creata alla
+ * prima chiamata, endedAt aggiornato a ogni chiamata). Stesso modello delle sessioni
+ * "Conferme" e "Richiami". I pipelineId automatici non esistono in db.pipelines.
+ */
+function appendCallToAutoSession(pipelineId, pipelineName, callRecord) {
   if (db.activeSession) {
     db.activeSession.calls.push(callRecord);
     return;
   }
   const todayKey = dateInputValue(new Date());
-  let autoSession = db.sessions.find(s => s.pipelineId === RECOVERY_AUTO_PIPELINE_ID && dateInputValue(s.startedAt) === todayKey);
+  let autoSession = db.sessions.find(s => s.pipelineId === pipelineId && dateInputValue(s.startedAt) === todayKey);
   if (!autoSession) {
     db.sessionCounter += 1;
     autoSession = {
       id: uid('sess'),
       number: db.sessionCounter,
-      pipelineId: RECOVERY_AUTO_PIPELINE_ID,
-      pipelineName: RECOVERY_AUTO_PIPELINE_NAME,
+      pipelineId,
+      pipelineName,
       startedAt: new Date().toISOString(),
       endedAt: new Date().toISOString(),
       calls: [],
@@ -2303,6 +2338,44 @@ function appendRecoveryCallToSession(callRecord) {
   }
   autoSession.calls.push(callRecord);
   autoSession.endedAt = new Date().toISOString();
+}
+
+/* Chiamate di follow-up dei lead Venditore nell'attività del giorno (restyling 17/10/2026,
+ * decisione di Simone n. 9: "sono telefonate come quelle del Setter, quindi contano come
+ * chiamate di Setting"). Le scrive lead.js (openFatto) quando la prossima azione fatta è
+ * una 📞 Chiamata. Un recupero no show NON passa di qui: resta chiamata di recupero
+ * (logRecoveryCall), così la stessa telefonata non conta due volte.
+ * Sessione: quella aperta se c'è, altrimenti la sessione automatica "Follow-up Venditore".
+ * Stesso lead lo STESSO giorno = 1 lead (groupId del giorno salvato sul lead,
+ * callGroupId/callGroupDate); un altro giorno = lead nuovo. */
+const LEAD_FU_AUTO_PIPELINE_ID = 'followup-venditore-auto';
+const LEAD_FU_AUTO_PIPELINE_NAME = 'Follow-up Venditore';
+const LEAD_FU_CALL_LABELS = {
+  non_risposto: { label: 'Non risposto', noAnswer: true, conversion: false },
+  ha_risposto: { label: 'Ha risposto', noAnswer: false, conversion: false },
+  non_interessato: { label: 'Non interessato', noAnswer: false, conversion: false },
+  cliente: { label: 'Cliente', noAnswer: false, conversion: false },
+  appuntamento_fissato: { label: 'Appuntamento fissato', noAnswer: false, conversion: true }
+};
+
+/** groupId "di oggi" del lead Venditore: lo crea se manca o se è di un altro giorno. */
+function leadCallGroupIdToday(lead) {
+  const todayKey = dateInputValue(new Date());
+  if (!lead.callGroupId || lead.callGroupDate !== todayKey) {
+    lead.callGroupId = uid('lead');
+    lead.callGroupDate = todayKey;
+  }
+  return lead.callGroupId;
+}
+
+function logLeadFollowUpCall(lead, outcome) {
+  const def = LEAD_FU_CALL_LABELS[outcome];
+  if (!def) return;
+  appendCallToAutoSession(LEAD_FU_AUTO_PIPELINE_ID, LEAD_FU_AUTO_PIPELINE_NAME, {
+    id: uid('call'), timestamp: new Date().toISOString(), outcomeId: null, outcomeLabel: def.label,
+    isConversion: def.conversion, isNoAnswer: def.noAnswer, isSecondAttempt: false,
+    groupId: leadCallGroupIdToday(lead), isLeadFollowUpCall: true
+  });
 }
 
 /**

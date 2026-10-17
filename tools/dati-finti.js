@@ -10,8 +10,8 @@
  *   - 1 pipeline "Prova" con gli esiti di default (come defaultOutcomesList)
  *   - sessioni di chiamata nei giorni lun-ven delle ultime 3 settimane, con tentativi
  *     doppi, appuntamenti fissati e da richiamare; più le sessioni automatiche del giorno
- *     "Conferme", "Richiami" e "Recupero" (chiamate isConfirmCall / isCallbackCall /
- *     isRecoveryCall)
+ *     "Conferme", "Richiami", "Recupero" e "Follow-up Venditore" (chiamate isConfirmCall /
+ *     isCallbackCall / isRecoveryCall / isLeadFollowUpCall)
  *   - appuntamenti Setter con tutti i presentedStatus (no, confermato 24h, presentato,
  *     presentato e chiuso con rate, no show, annullato, spostato + il nuovo collegato),
  *     anche per domani e il prossimo lunedì (Round Conferme)
@@ -228,6 +228,15 @@ autoSession('richiami-auto', 'Richiami', twoDaysAgoWork, '17:30', [
     call(yesterdayWork, '16:00', 0, { label: 'Non risposto', isNoAnswer: true }, g, { isRecoveryCall: true }),
     call(yesterdayWork, '16:40', 0, { label: 'Da richiamare' }, g, { isRecoveryCall: true }),
     call(yesterdayWork, '16:50', 0, { label: 'Non interessato' }, uid('lead'), { isRecoveryCall: true })
+  ]);
+}
+// Follow-up Venditore di ieri: un lead chiamato due volte (= 1 lead), uno una volta
+{
+  const g = uid('lead');
+  autoSession('followup-venditore-auto', 'Follow-up Venditore', yesterdayWork, '12:00', [
+    call(yesterdayWork, '12:00', 0, { label: 'Non risposto', isNoAnswer: true }, g, { isLeadFollowUpCall: true }),
+    call(yesterdayWork, '12:30', 0, { label: 'Ha risposto' }, g, { isLeadFollowUpCall: true }),
+    call(yesterdayWork, '12:40', 0, { label: 'Non interessato' }, uid('lead'), { isLeadFollowUpCall: true })
   ]);
 }
 
