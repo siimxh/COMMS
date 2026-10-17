@@ -1826,6 +1826,10 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 
  .bar-track, .meter { background: var(--neutral-100); border: none; border-radius: var(--radius-pill); }
  .bar-fill { background: var(--accent-500); border-radius: var(--radius-pill); }
+/* Esiti a barre (Sessioni e dettaglio sessione): righe già in ordine decrescente, quindi
+   solo la prima (l'esito più frequente) in accent-500, le altre tenui (guida §7). */
+.bar-list .bar-row .bar-fill { background: var(--accent-300); }
+.bar-list .bar-row:first-child .bar-fill { background: var(--accent-500); }
 
 .meter i { background: var(--accent-500); }
 

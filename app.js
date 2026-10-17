@@ -524,8 +524,8 @@ function renderSettingStatistiche() {
     <section class="kpi-grid">
       <div class="kpi-card"><div class="kpi-value">${st.fissati}</div><div class="kpi-label">Appuntamenti fissati</div></div>
       <div class="kpi-card"><div class="kpi-value">${st.presentati}</div><div class="kpi-label">Presentati</div></div>
-      <div class="kpi-card"><div class="kpi-value">${st.showUpRate}%</div><div class="kpi-label">Show rate · ${st.presentatiSvolti} su ${st.svolti} svolti</div></div>
-      <div class="kpi-card"><div class="kpi-value">${st.closingRate}%</div><div class="kpi-label">Closing · chiusi su presentati</div></div>
+      <div class="kpi-card"><div class="kpi-value">${fmtPctIt(st.showUpRate)}</div><div class="kpi-label">Show rate · ${st.presentatiSvolti} su ${st.svolti} svolti</div></div>
+      <div class="kpi-card"><div class="kpi-value">${fmtPctIt(st.closingRate)}</div><div class="kpi-label">Closing · chiusi su presentati</div></div>
     </section>
     <section class="card">
       <h3>Ritmo e commissioni</h3>
@@ -1187,7 +1187,7 @@ function trendItem(label, t) {
   return `
     <div class="trend-item">
       <div class="trend-label">${label}</div>
-      <div class="trend-value ${cls}">${arrow} ${t.diff}%</div>
+      <div class="trend-value ${cls}">${arrow} ${fmtPctIt(t.diff)}</div>
     </div>`;
 }
 
@@ -2259,8 +2259,8 @@ function renderCallActivitySection() {
     <tr>
       <td>${escapeHtml(p.name)}</td>
       <td>${p.totalLeads}</td>
-      <td>${p.responseRate}%</td>
-      <td>${p.conversionRate}%</td>
+      <td>${fmtPctIt(p.responseRate)}</td>
+      <td>${fmtPctIt(p.conversionRate)}</td>
     </tr>`).join('') : `<tr><td colspan="4" class="text-dim">Nessun dato</td></tr>`;
 
   return `
@@ -2280,8 +2280,8 @@ function renderCallActivitySection() {
     <section class="kpi-grid">
       <div class="card kpi-card"><div class="kpi-value">${stats.totalCalls}</div><div class="kpi-label">Chiamate totali</div></div>
       <div class="card kpi-card"><div class="kpi-value">${stats.totalLeads}</div><div class="kpi-label">Lead contattati</div></div>
-      <div class="card kpi-card"><div class="kpi-value">${stats.responseRate}%</div><div class="kpi-label">Tasso di risposta</div></div>
-      <div class="card kpi-card"><div class="kpi-value">${stats.conversionRate}%</div><div class="kpi-label">Tasso di conversione</div></div>
+      <div class="card kpi-card"><div class="kpi-value">${fmtPctIt(stats.responseRate)}</div><div class="kpi-label">Tasso di risposta</div></div>
+      <div class="card kpi-card"><div class="kpi-value">${fmtPctIt(stats.conversionRate)}</div><div class="kpi-label">Tasso di conversione</div></div>
     </section>
 
     <section class="card trend-row">
