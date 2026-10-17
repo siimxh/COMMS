@@ -4,7 +4,8 @@
  * Approvata da Simone come simulazione il 15/10/2026 ("tutto perfetto") e portata qui.
  * Decisioni di Simone (non cambiarle senza chiedere):
  * - Regola d'oro: nessun lead aperto senza prossima azione (se manca, compare in rosso).
- * - Niente sequenze automatiche: una prossima azione per lead + cose promesse con il giorno.
+ * - Niente sequenze automatiche: una prossima azione per lead. Le "cose promesse" non si
+ *   mostrano più (restyling 5.6): i promises[] già salvati restano nei dati.
  * - Stati lead: Nuovo, In trattativa, Follow-up (= "no chiaro per adesso"), Cliente, Perso,
  *   Freddo. Separati dagli stati dell'appuntamento (DEAL_STAGES in app.js), che restano.
  * - Numero dell'appuntamento (1°, 2°…): conta solo gli appuntamenti SVOLTI (presentati,
@@ -17,9 +18,12 @@
  * - "Fissare appuntamento" come prossima azione: ha data e ora; segnandola fatta si crea
  *   l'appuntamento Venditore del lead.
  * - Interruttore "Parte Venditore" in 👤 Account (db.settings.venditoreOn, per utente).
- * - Note e follow-up stanno SOLO nella scheda lead (Simone, 16/10): la tabella Appuntamenti
- *   non ha più i tasti Note e 📅 Follow-up. Le note che c'erano passano nello storico del
- *   lead, la data di follow-up diventa la prossima azione (vedi moveApptExtras).
+ * - Note e follow-up stanno SOLO nella scheda lead (Simone, 16/10). Le note che c'erano
+ *   sugli appuntamenti passano nello storico del lead, la data di follow-up diventa la
+ *   prossima azione (vedi moveApptExtras).
+ * - Restyling 17/10 (5.6): la tabella Appuntamenti Venditore non c'è più. Tutto si fa
+ *   dalla lista Lead ("+ Nuovo lead", Registrazioni, Report, calendario) e dalla scheda
+ *   (appuntamenti con stato e data, "+ Appuntamento", Pagamenti, 🗑 elimina lead).
  * - No show / annullato (Simone, 16/10): la prossima azione è SEMPRE il recupero, e il lead
  *   compare in un posto solo: nelle Task della Dashboard (prima: Oggi), come prossima azione. Non compare più anche nel
  *   Round Recupero (vedi handlesRecovery). Segnare "Fatto" sul recupero è una chiamata di
@@ -250,27 +254,18 @@ const LeadCRM = (function () {
     l.fuNoAnswer = 0;
   }
 
-  /** Da chiamare quando cambia lo stato di un appuntamento dalla tabella Appuntamenti:
+  /** Da chiamare quando cambia lo stato di un appuntamento (scheda lead → Appuntamenti):
    * il lead segue (chiuso -> Cliente, perso -> Perso, no show -> Recupero...). */
   function onDealStageChanged(apt) {
     if (!apt || apt.role !== 'venditore') return;
     ensureLeads();
     const l = leadById(apt.leadId); if (!l) return;
     const st = apt.dealStage;
-    if (st === 'chiuso' || st === 'contratto_firmato') { if (l.stato !== 'Cliente') addHistory(l, { k: 'stato', t: 'Stato: Cliente', s: 'dalla tabella appuntamenti' }); l.stato = 'Cliente'; l.next = null; }
-    else if (st === 'perso' || st === 'non_in_target') { if (isOpen(l)) { addHistory(l, { k: 'stato', t: 'Stato: Perso', s: 'dalla tabella appuntamenti' }); l.stato = 'Perso'; l.next = null; } }
+    if (st === 'chiuso' || st === 'contratto_firmato') { if (l.stato !== 'Cliente') addHistory(l, { k: 'stato', t: 'Stato: Cliente', s: 'dallo stato dell\'appuntamento' }); l.stato = 'Cliente'; l.next = null; }
+    else if (st === 'perso' || st === 'non_in_target') { if (isOpen(l)) { addHistory(l, { k: 'stato', t: 'Stato: Perso', s: 'dallo stato dell\'appuntamento' }); l.stato = 'Perso'; l.next = null; } }
     else if (st === 'trattativa') { if (l.stato === 'Nuovo') l.stato = 'Trattativa'; }
     else if (st === 'no_show' || st === 'annullato') startRecovery(l);
     if (!isOpen(l) && st !== 'no_show' && st !== 'annullato') closeRecovery(l);
-    persist();
-  }
-
-  /** Nome cambiato in tabella: se il lead ha solo quell'appuntamento, segue il nome. */
-  function onApptNameChanged(apt) {
-    if (!apt || apt.role !== 'venditore') return;
-    const l = apt.leadId && leadById(apt.leadId);
-    if (l && apptsOf(l).length === 1) { const p = parseApptName(apt.clientName); if (p.name) { l.name = p.name; if (p.setter) l.setter = p.setter; } }
-    ensureLeads();
     persist();
   }
 
@@ -353,12 +348,10 @@ const LeadCRM = (function () {
     root.querySelectorAll('[data-move]').forEach(b => b.addEventListener('click', () => openSposta(b.dataset.move)));
     root.querySelectorAll('[data-setnext]').forEach(b => b.addEventListener('click', () => openSetNext(b.dataset.setnext)));
   }
-  function markPromiseDone(l, p) {
-    p.done = true; const late = !!(p.when && p.when < TODAY());
-    addHistory(l, { k: late ? 'late' : 'azione', t: 'Cosa promessa fatta' + (late ? ' · in ritardo' : ' · in tempo'), s: p.text, late, lateBy: late ? workDaysBetween(p.when, TODAY()) : 0 });
-  }
 
-  /* ===================== Blocco "prossima azione + cose promesse" ===================== */
+  /* ===================== Blocco "prossima azione" =====================
+   * Le cose promesse non si chiedono più (restyling 5.6): i promises[] già salvati
+   * restano nei dati, ma non si mostrano. */
   function nextBlockHtml(prefix, opts) {
     opts = opts || {};
     const def = opts.def || {};
@@ -375,14 +368,7 @@ const LeadCRM = (function () {
         <label class="mblock" id="${prefix}ApptWrap" ${t0 === 'appuntamento' ? '' : 'hidden'}><span class="mlabel">Data e ora dell'appuntamento</span><input type="datetime-local" class="ld-input" id="${prefix}ApptAt" value="${def.apptAt || ''}">
           <span class="mhint">Quando segni l'azione come fatta, si crea l'appuntamento Venditore.</span></label>
         <label><span class="mlabel">Cosa fare (una riga)</span><input type="text" class="ld-input" id="${prefix}Note" value="${esc(def.note || '')}" placeholder="Es. chiedile se ne ha parlato col socio"></label>
-      </div>
-      ${opts.promises === false ? '' : `
-      <div class="mblock">
-        <span class="mlabel">Cose promesse</span>
-        <div class="prom-edit" id="${prefix}Prom"></div>
-        <button type="button" class="linkish" id="${prefix}PromAdd">+ Aggiungi cosa promessa</button>
-        <div class="mhint">Es. "Link del webinar" → lunedì mattina. Restano nella scheda lead.</div>
-      </div>`}`;
+      </div>`;
   }
   function wireNextBlock(box, prefix) {
     const apptWrap = box.querySelector('#' + prefix + 'ApptWrap');
@@ -390,12 +376,6 @@ const LeadCRM = (function () {
       box.querySelectorAll('#' + prefix + 'Type button').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
       if (apptWrap) apptWrap.hidden = b.dataset.v !== 'appuntamento';
     }));
-    const add = box.querySelector('#' + prefix + 'PromAdd');
-    if (add) add.addEventListener('click', () => {
-      const w = box.querySelector('#' + prefix + 'Prom'); const row = document.createElement('div'); row.className = 'pe';
-      row.innerHTML = `<input type="text" class="ld-input" placeholder="Cosa hai promesso"><input type="date" class="ld-input" value="${workDay(1)}"><button type="button" title="Togli">×</button>`;
-      row.querySelector('button').addEventListener('click', () => row.remove()); w.appendChild(row); row.querySelector('input').focus();
-    });
   }
   function readNextBlock(box, prefix) {
     const sel = box.querySelector('#' + prefix + 'Type .sel');
@@ -406,10 +386,7 @@ const LeadCRM = (function () {
       note: box.querySelector('#' + prefix + 'Note').value.trim()
     };
     if (next.type === 'appuntamento') next.apptAt = box.querySelector('#' + prefix + 'ApptAt').value || '';
-    const proms = [...box.querySelectorAll('#' + prefix + 'Prom .pe')].map(r => {
-      const i = r.querySelectorAll('input'); return { id: uid('prom'), text: i[0].value.trim(), when: i[1].value, done: false };
-    }).filter(p => p.text);
-    return { next, proms };
+    return { next };
   }
 
   /* ===================== Com'è finita? (esito dell'appuntamento) ===================== */
@@ -508,7 +485,7 @@ const LeadCRM = (function () {
           if (st.stato !== l.stato) addHistory(l, { k: 'stato', t: 'Stato: ' + STATO_LABEL[st.stato], s: st.stato === 'Follow-up' ? 'No chiaro per adesso' : '' });
           if (st.stato === 'Follow-up' && l.stato !== 'Follow-up') { l.wasFollowUp = true; l.fuNoAnswer = 0; }
           l.stato = st.stato;
-          if (r) { l.next = r.next; l.promises = (l.promises || []).concat(r.proms); } else l.next = null;
+          l.next = r ? r.next : null;
         } else if (st.esito === 'spostato') {
           const v = box.querySelector('#eMoved').value; if (!v) { warn.textContent = 'Scegli la nuova data.'; return; }
           const fresh = rescheduleAppointment(a, v); fresh.leadId = l.id;
@@ -592,7 +569,7 @@ const LeadCRM = (function () {
         if (st.stato !== l.stato) addHistory(l, { k: 'stato', t: 'Stato: ' + STATO_LABEL[st.stato] + (auto ? ' (automatico)' : ''), s: auto ? FREDDO_DOPO + '° follow-up senza risposta' : '' });
         if (st.stato === 'Follow-up' && l.stato !== 'Follow-up') { l.wasFollowUp = true; l.fuNoAnswer = 0; }
         l.stato = st.stato;
-        if (r) { l.next = r.next; l.promises = (l.promises || []).concat(r.proms); } else l.next = null;
+        l.next = r ? r.next : null;
         if (rec) {
           // Chiamata di recupero: conta nell'attività del giorno (sessione aperta o "Recupero").
           const out = !st.risposta ? 'non_risposto' : apptAt ? 'appuntamento_fissato' : (st.stato === 'Perso' || st.stato === 'Freddo') ? 'non_interessato' : 'da_richiamare';
@@ -661,7 +638,7 @@ const LeadCRM = (function () {
     modal(`
       <h3>Prossima azione · ${leadName(l)}</h3>
       <p class="modal-sub">Nessun lead aperto senza una prossima azione.</p>
-      ${nextBlockHtml('n', { def: l.next || { type: 'chiamata', date: TODAY() }, promises: false })}
+      ${nextBlockHtml('n', { def: l.next || { type: 'chiamata', date: TODAY() } })}
       <div class="mwarn" id="nWarn"></div>
       <div class="modal-actions"><button class="btn-ghost" id="nCancel">Annulla</button><button class="btn-primary" id="nSave">Salva</button></div>
     `, box => {
@@ -677,14 +654,37 @@ const LeadCRM = (function () {
     });
   }
 
-  /* ===================== Venditore → Lead (lista) ===================== */
-  function renderLeadList(subTabsHtml) {
+  /* ===================== Venditore → Lead (lista) =====================
+   * Restyling 5.6, dall'alto: tasti (🎙️ Registrazioni, Report, "+ Nuovo lead" = l'unico
+   * nero della vista) · filtri dentro una tendina apri/chiudi (ricordata nel browser) ·
+   * lista lead (⋯ a destra: apri, + appuntamento, elimina) · calendario appuntamenti
+   * Venditore. La vecchia tabella Appuntamenti Venditore non c'è più: tutto si fa da qui
+   * e dalla scheda lead. */
+  const LEAD_FILTERS = {
+    aperti: ['Aperti', l => isOpen(l)], 'Nuovo': ['Nuovi', l => l.stato === 'Nuovo'], 'Trattativa': ['In trattativa', l => l.stato === 'Trattativa'],
+    'Follow-up': ['Follow-up', l => l.stato === 'Follow-up'], 'Cliente': ['Clienti', l => l.stato === 'Cliente'], 'Freddo': ['Freddi', l => l.stato === 'Freddo'],
+    'Perso': ['Persi', l => l.stato === 'Perso'], tutti: ['Tutti', () => true]
+  };
+  const FILTERS_OPEN_KEY = 'comms_filtriLeadAperti';
+  function filtersOpen() {
+    if (typeof ui.filtersOpen !== 'boolean') {
+      let v = null;
+      try { v = localStorage.getItem(FILTERS_OPEN_KEY); } catch (e) { /* browser senza memoria: chiusa */ }
+      ui.filtersOpen = v === '1';
+    }
+    return ui.filtersOpen;
+  }
+  function setFiltersOpen(open) {
+    ui.filtersOpen = !!open;
+    try { localStorage.setItem(FILTERS_OPEN_KEY, open ? '1' : '0'); } catch (e) { /* resta in memoria */ }
+  }
+  /** Appuntamenti Venditore senza nome: non hanno lead (ensureLeads li salta). Prima si
+   * vedevano solo nella tabella; ora compaiono in fondo alla lista per poterli eliminare. */
+  const orphanAppts = () => vndAppts().filter(a => !String(a.clientName || '').trim() && !(a.leadId && leadById(a.leadId)));
+
+  function renderLeadList() {
     if (ensureLeads()) persist();
-    const F = {
-      aperti: ['Aperti', l => isOpen(l)], 'Nuovo': ['Nuovi', l => l.stato === 'Nuovo'], 'Trattativa': ['In trattativa', l => l.stato === 'Trattativa'],
-      'Follow-up': ['Follow-up', l => l.stato === 'Follow-up'], 'Cliente': ['Clienti', l => l.stato === 'Cliente'], 'Freddo': ['Freddi', l => l.stato === 'Freddo'],
-      'Perso': ['Persi', l => l.stato === 'Perso'], tutti: ['Tutti', () => true]
-    };
+    const F = LEAD_FILTERS;
     if (!F[ui.leadFilter]) ui.leadFilter = 'aperti';
     const q = normName(ui.search);
     const qPhone = String(ui.search).replace(/\D/g, '');
@@ -696,38 +696,219 @@ const LeadCRM = (function () {
       return '9' + normName(l.name);
     };
     rows.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
+    const open = filtersOpen();
+    const orphans = orphanAppts();
+    const nRec = (db.callRecordings || []).length;
     appRoot.innerHTML = `
-      ${subTabsHtml || ''}
-      <section class="card crm-toolbar"><div class="toolbar-row">
-        <div class="crm-filters">${Object.keys(F).map(k => `<button class="pill ${ui.leadFilter === k ? 'active' : ''}" data-lf="${k}">${F[k][0]}<span class="cnt">${leads().filter(F[k][1]).length}</span></button>`).join('')}</div>
-        <div class="crm-search-wrap"><input type="search" class="crm-search-input" id="leadSearch" placeholder="Cerca per nome, centro o telefono..." value="${esc(ui.search)}"></div>
-      </div></section>
-      <section class="card crm-table-wrap">
-        ${rows.length ? `<table class="crm-table leads-tbl"><thead><tr><th>Lead</th><th>Stato</th><th>Appuntamenti</th><th>Prossima azione</th><th>Quando</th><th>Setter</th></tr></thead><tbody>
+      <section class="card crm-toolbar lead-toolbar">
+        <button class="btn-ghost" id="btnCallRecordings">🎙️ Registrazioni <span class="pill-count">${nRec}</span></button>
+        <div class="lead-toolbar-right">
+          <button class="btn-ghost" id="btnLeadReport" title="Copia il report degli appuntamenti Venditore">Report</button>
+          <button class="btn-primary" id="btnNewLead">+ Nuovo lead</button>
+        </div>
+      </section>
+      <section class="card appt-list-card lead-filters-card ${open ? 'is-open' : ''}">
+        <button class="appt-list-toggle" id="btnToggleLeadFilters" aria-expanded="${open}">
+          <span class="appt-list-title">Filtri</span>
+          <span class="lead-filters-now">${F[ui.leadFilter][0]}${ui.search ? ' · “' + esc(ui.search) + '”' : ''}</span>
+          <span class="appt-list-caret" aria-hidden="true">▾</span>
+        </button>
+        ${open ? `<div class="lead-filters-body">
+          <div class="crm-filters">${Object.keys(F).map(k => `<button class="pill ${ui.leadFilter === k ? 'active' : ''}" data-lf="${k}">${F[k][0]} <span class="pill-count">${leads().filter(F[k][1]).length}</span></button>`).join('')}</div>
+          <div class="crm-search-wrap"><input type="search" class="crm-search-input" id="leadSearch" placeholder="Cerca per nome, centro o telefono..." value="${esc(ui.search)}"></div>
+        </div>` : ''}
+      </section>
+      <section class="card crm-table-wrap lead-list-card">
+        <div class="lead-list-head"><span class="appt-list-title">Lead</span><span class="count-pill">${rows.length}</span></div>
+        ${rows.length ? `<table class="crm-table leads-tbl"><thead><tr><th>Lead</th><th>Stato</th><th>Appuntamenti</th><th>Prossima azione</th><th>Quando</th><th>Setter</th><th></th></tr></thead><tbody>
         ${rows.map(l => {
           const sv = svoltiCount(l); const pend = pendingAppt(l);
           let azione = '<span class="sub">—</span>', quando = '';
           if (missingNext(l)) azione = '<span class="miss">⚠️ Manca</span>';
           else if (l.next) { azione = actLabel(l.next); quando = `<span class="${l.next.date < TODAY() ? 'red' : ''}">${relDay(l.next.date)}${l.next.time ? ' ' + l.next.time : ''}</span>`; }
           else if (pend) { azione = '📅 ' + nOrd(apptNumber(pend)) + ' appuntamento'; quando = isDue(pend) ? '<span class="red">da esitare</span>' : relDay(String(pend.scheduledAt).slice(0, 10)) + ' ' + String(pend.scheduledAt).slice(11, 16); }
-          return `<tr>
+          return `<tr data-lead-row="${l.id}">
             <td class="crm-cell-center"><button class="who" data-lead="${l.id}">${leadName(l)}</button>${centroTxt(l) ? `<div class="sub">${centroTxt(l)}</div>` : ''}</td>
             <td class="crm-cell-center">${stPill(l.stato)}</td>
             <td class="crm-cell-center"><span class="nchip">${sv} svolt${sv === 1 ? 'o' : 'i'}</span></td>
             <td class="crm-cell-center">${azione}</td>
             <td class="crm-cell-center">${quando}</td>
-            <td class="crm-cell-center">${esc(l.setter || '')}</td></tr>`;
-        }).join('')}</tbody></table>` : `<p class="text-dim">${leads().length ? 'Nessun lead con questo filtro.' : 'Ancora nessun lead. Nascono dagli appuntamenti Venditore.'}</p>`}
-        <p class="text-dim ld-foot">Ogni appuntamento Venditore appartiene a un lead: stesso nome o stesso telefono = stesso lead.</p>
-      </section>`;
-    if (typeof wireSubTabsBar === 'function') wireSubTabsBar('venditore');
-    appRoot.querySelectorAll('[data-lf]').forEach(b => b.addEventListener('click', () => { ui.leadFilter = b.dataset.lf; renderLeadList(subTabsHtml); }));
+            <td class="crm-cell-center">${esc(l.setter || '')}</td>
+            <td class="crm-row-actions"><button class="btn-icon appt-more-btn" data-lead-more="${l.id}" title="Altre azioni" aria-label="Altre azioni per ${leadName(l)}">⋯</button></td></tr>`;
+        }).join('')}</tbody></table>` : `<p class="text-dim">${leads().length ? 'Nessun lead con questo filtro.' : 'Ancora nessun lead. Crea il primo con "+ Nuovo lead".'}</p>`}
+        ${orphans.length ? `<p class="text-dim ld-foot lead-orphans">${orphans.length} appuntament${orphans.length === 1 ? 'o' : 'i'} Venditore senza nome (non collegat${orphans.length === 1 ? 'o' : 'i'} a un lead). <button class="linkish" id="btnDelOrphans">Elimina</button></p>` : ''}
+      </section>
+      ${renderApptCalendar('venditore')}`;
+    wireApptCalendar('venditore');
+    document.getElementById('btnCallRecordings').addEventListener('click', openCallRecordingsModal);
+    document.getElementById('btnLeadReport').addEventListener('click', generateVenditoreAppointmentsReport);
+    document.getElementById('btnNewLead').addEventListener('click', openNewLead);
+    document.getElementById('btnToggleLeadFilters').addEventListener('click', () => { setFiltersOpen(!filtersOpen()); renderLeadList(); });
+    appRoot.querySelectorAll('[data-lf]').forEach(b => b.addEventListener('click', () => { ui.leadFilter = b.dataset.lf; renderLeadList(); }));
     const s = document.getElementById('leadSearch');
-    s.addEventListener('input', () => {
-      ui.search = s.value; const pos = s.selectionStart; renderLeadList(subTabsHtml);
+    if (s) s.addEventListener('input', () => {
+      ui.search = s.value; const pos = s.selectionStart; renderLeadList();
       const s2 = document.getElementById('leadSearch'); s2.focus(); s2.setSelectionRange(pos, pos);
     });
+    appRoot.querySelectorAll('[data-lead-more]').forEach(b => b.addEventListener('click', () => openLeadMenu(b.dataset.leadMore)));
+    const delOrph = document.getElementById('btnDelOrphans');
+    if (delOrph) delOrph.addEventListener('click', () => showConfirm(`Eliminare ${orphans.length} appuntament${orphans.length === 1 ? 'o' : 'i'} Venditore senza nome?`, () => {
+      const ids = new Set(orphans.map(a => a.id));
+      removeVndAppts(ids); persist(); renderLeadList(); showToast('Eliminati.');
+    }, { confirmLabel: 'Elimina' }));
     wireRowButtons(appRoot);
+  }
+
+  /** Menu ⋯ della riga in lista. */
+  function openLeadMenu(leadId) {
+    const l = leadById(leadId); if (!l) return;
+    modal(`
+      <h3>${leadName(l)}</h3>
+      <p class="modal-sub">${STATO_LABEL[l.stato] || esc(l.stato)}${centroTxt(l) ? ' · ' + centroTxt(l) : ''}</p>
+      <div class="lead-menu">
+        <button class="btn-ghost" id="lmOpen">Apri la scheda</button>
+        <button class="btn-ghost" id="lmAppt">+ Appuntamento</button>
+        <button class="btn-danger-ghost" id="lmDel">🗑 Elimina lead</button>
+      </div>
+      <div class="modal-actions"><button class="btn-ghost" id="lmClose">Chiudi</button></div>
+    `, box => {
+      box.querySelector('#lmClose').addEventListener('click', closeModal);
+      box.querySelector('#lmOpen').addEventListener('click', () => { closeModal(); ui.leadTab = 'storico'; location.hash = '#/lead/' + l.id; });
+      box.querySelector('#lmAppt').addEventListener('click', () => openAddAppt(l.id));
+      box.querySelector('#lmDel').addEventListener('click', () => openDeleteLead(l.id));
+    });
+  }
+
+  /* ---------- "+ Nuovo lead": lead + primo appuntamento (prima solo dalla tabella) ---------- */
+  function usedSetters() {
+    const set = new Set();
+    leads().forEach(l => { if (l.setter) set.add(l.setter); });
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }
+  function openNewLead() {
+    modal(`
+      <h3>Nuovo lead</h3>
+      <p class="modal-sub">Crea il lead e il suo primo appuntamento Venditore.</p>
+      <label class="mblock" style="display:block"><span class="mlabel">Nome e cognome</span><input type="text" class="ld-input" id="nlName" maxlength="120" placeholder="Es. Lead Prova 1"></label>
+      <div class="mrow">
+        <label><span class="mlabel">Telefono (facoltativo)</span><input type="tel" class="ld-input" id="nlPhone" maxlength="40"></label>
+        <label><span class="mlabel">Setter</span><input type="text" class="ld-input" id="nlSetter" maxlength="20" list="nlSetterList" placeholder="Es. MJ"><datalist id="nlSetterList">${usedSetters().map(x => `<option value="${esc(x)}">`).join('')}</datalist></label>
+      </div>
+      <div class="mrow">
+        <label><span class="mlabel">Giorno dell'appuntamento</span><input type="date" class="ld-input" id="nlDate" value="${workDay(1)}"></label>
+        <label><span class="mlabel">Ora</span><input type="time" class="ld-input" id="nlTime" value=""></label>
+      </div>
+      <p class="mhint" id="nlSame" hidden></p>
+      <div class="mwarn" id="nlWarn"></div>
+      <div class="modal-actions"><button class="btn-ghost" id="nlCancel">Annulla</button><button class="btn-primary" id="nlSave">Crea lead</button></div>
+    `, box => {
+      const nameIn = box.querySelector('#nlName'), phoneIn = box.querySelector('#nlPhone');
+      // Stesso nome o stesso telefono = stesso lead (regola di ensureLeads): l'appuntamento
+      // va nella scheda di quello che c'è già, non si crea un doppione.
+      const existing = () => {
+        const n = normName(parseApptName(nameIn.value).name), k = phoneKey(phoneIn.value);
+        return leads().find(l => (n && normName(l.name) === n) || (k && phoneKey(l.phone) === k)) || null;
+      };
+      const showSame = () => {
+        const ex = existing(), el = box.querySelector('#nlSame');
+        el.hidden = !ex;
+        if (ex) el.innerHTML = `C'è già il lead <b>${leadName(ex)}</b> (${STATO_LABEL[ex.stato] || esc(ex.stato)}): l'appuntamento va nella sua scheda.`;
+      };
+      nameIn.addEventListener('input', showSame); phoneIn.addEventListener('input', showSame);
+      box.querySelector('#nlCancel').addEventListener('click', closeModal);
+      box.querySelector('#nlSave').addEventListener('click', () => {
+        const warn = box.querySelector('#nlWarn');
+        const p = parseApptName(nameIn.value);
+        const d = box.querySelector('#nlDate').value, t = box.querySelector('#nlTime').value;
+        if (!p.name) { warn.textContent = 'Scrivi il nome del lead.'; nameIn.focus(); return; }
+        if (!d || !t) { warn.textContent = 'Scegli giorno e ora dell\'appuntamento.'; return; }
+        const setter = box.querySelector('#nlSetter').value.trim() || p.setter;
+        const phone = phoneIn.value.trim();
+        let l = existing();
+        if (!l) { l = newLead({ name: p.name, setter, phone }); leads().push(l); addHistory(l, { k: 'stato', t: 'Lead creato', s: '' }); }
+        else { if (!l.phone && phone) l.phone = phone; if (!l.setter && setter) l.setter = setter; }
+        addApptToLead(l, d + 'T' + t, '');
+        persist(); closeModal(); ui.leadTab = 'storico';
+        location.hash = '#/lead/' + l.id; renderRoute();
+        showToast('Lead salvato. Appuntamento per ' + fmtDT(d + 'T' + t) + '.');
+      });
+    });
+  }
+
+  /* ---------- "+ Appuntamento" dalla scheda lead (restyling 5.6) ----------
+   * Crea un appuntamento Venditore del lead. Dalla scheda (o dal ⋯): Nuovo → In trattativa.
+   * Da "+ Nuovo lead" il lead resta Nuovo (è il suo primo appuntamento). La prossima azione
+   * diventa quell'appuntamento (l.next si svuota: la scheda e la lista mostrano
+   * "📅 N° appuntamento"); un recupero no show aperto si chiude come risolto. */
+  function addApptToLead(l, when, note) {
+    const apt = createApptForLead(l, when);
+    if (note) addHistory(l, { k: 'nota', t: 'Nota sull\'appuntamento del ' + fmtShort(when), s: note });
+    l.next = null;
+    closeRecovery(l, 'resolved', apt.id);
+    return apt;
+  }
+  function openAddAppt(leadId) {
+    const l = leadById(leadId); if (!l) return;
+    modal(`
+      <h3>Nuovo appuntamento · ${leadName(l)}</h3>
+      <p class="modal-sub">Diventa la prossima azione del lead${l.stato === 'Nuovo' ? ', che passa a In trattativa' : ''}.</p>
+      <div class="mrow">
+        <label><span class="mlabel">Giorno</span><input type="date" class="ld-input" id="naDate" value="${workDay(1)}"></label>
+        <label><span class="mlabel">Ora</span><input type="time" class="ld-input" id="naTime" value=""></label>
+      </div>
+      <label class="mblock" style="display:block"><span class="mlabel">Nota (facoltativa)</span><input type="text" class="ld-input" id="naNote" maxlength="300" placeholder="Es. vuole vedere i risultati con il socio"></label>
+      <div class="mwarn" id="naWarn"></div>
+      <div class="modal-actions"><button class="btn-ghost" id="naCancel">Annulla</button><button class="btn-primary" id="naSave">Salva</button></div>
+    `, box => {
+      box.querySelector('#naCancel').addEventListener('click', closeModal);
+      box.querySelector('#naSave').addEventListener('click', () => {
+        const d = box.querySelector('#naDate').value, t = box.querySelector('#naTime').value;
+        if (!d || !t) { box.querySelector('#naWarn').textContent = 'Scegli giorno e ora.'; return; }
+        addApptToLead(l, d + 'T' + t, box.querySelector('#naNote').value.trim());
+        if (l.stato === 'Nuovo') { addHistory(l, { k: 'stato', t: 'Stato: In trattativa', s: 'nuovo appuntamento' }); l.stato = 'Trattativa'; }
+        persist(); rerender(); showToast('Appuntamento salvato per ' + fmtDT(d + 'T' + t) + '.');
+      });
+    });
+  }
+
+  /* ---------- Cancella lead (restyling 5.6, deciso da Simone: cancella TUTTO) ----------
+   * Il lead, i suoi appuntamenti Venditore (con rate e soldi, quindi anche le commissioni)
+   * e i riferimenti (voci del Round Recupero di quegli appuntamenti, collegamenti degli
+   * spostati, apt.leadId). Gli appuntamenti Setter non si toccano, anche con lo stesso
+   * nome. Online le righe spariscono da "lead" e "appuntamenti" (cloud-sync confronta
+   * gli id). Task, Prossimi pagamenti e calendario si calcolano dai dati: spariscono da soli. */
+  function removeVndAppts(ids) {
+    db.appointments.filter(a => ids.has(a.id)).forEach(a => unlinkRescheduleOnDelete(a));
+    db.appointments = db.appointments.filter(a => !ids.has(a.id));
+    db.appointments.forEach(a => { if (a.linkedAppointmentId && ids.has(a.linkedAppointmentId)) a.linkedAppointmentId = null; });
+    db.recoveryRound = (db.recoveryRound || []).filter(r => !ids.has(r.sourceAppointmentId));
+    db.recoveryRound.forEach(r => { if (r.resolvedAppointmentId && ids.has(r.resolvedAppointmentId)) r.resolvedAppointmentId = null; });
+  }
+  function leadDeleteSummary(l) {
+    const aps = vndAppts().filter(a => a.leadId === l.id);
+    const comm = round2(aps.reduce((s, a) => s + sumEvents(commissionEventsForAppointment(a)), 0));
+    return { aps, comm };
+  }
+  function openDeleteLead(leadId) {
+    const l = leadById(leadId); if (!l) return;
+    const { aps, comm } = leadDeleteSummary(l);
+    const msg = `Elimini ${l.name || '(senza nome)'}, ${aps.length} appuntament${aps.length === 1 ? 'o' : 'i'} e ${fmtNumIt(comm, true)} di commissioni. Non si può annullare.`;
+    modal(`
+      <h3>Eliminare il lead?</h3>
+      <p class="lead-del-msg" id="ldMsg">${esc(msg)}</p>
+      <p class="mhint">Gli appuntamenti del Setting con lo stesso nome restano.</p>
+      <div class="modal-actions"><button class="btn-ghost" id="ldCancel">Annulla</button><button class="btn-danger" id="ldOk">Elimina</button></div>
+    `, box => {
+      box.querySelector('#ldCancel').addEventListener('click', closeModal);
+      box.querySelector('#ldOk').addEventListener('click', () => {
+        removeVndAppts(new Set(aps.map(a => a.id)));
+        db.leads = leads().filter(x => x.id !== l.id);
+        persist(); closeModal();
+        if (location.hash !== '#/venditore-lead') location.hash = '#/venditore-lead';
+        renderRoute();
+        showToast('Lead eliminato.');
+      });
+    });
   }
 
   /* ===================== Scheda lead ===================== */
@@ -763,11 +944,10 @@ const LeadCRM = (function () {
     } else {
       nextHtml = `<section class="card"><div class="card-label">Prossima azione</div><p class="text-dim ld-p">${l.stato === 'Cliente' ? 'Cliente: niente da inseguire. Controlla le rate in Pagamenti.' : l.stato === 'Freddo' ? 'Freddo: nessuna azione. Puoi riaprirlo cambiando lo stato.' : 'Perso: nessuna azione. Puoi riaprirlo cambiando lo stato.'}</p></section>`;
     }
-    const proms = l.promises || [];
     const tab = ui.leadTab;
     const sv = svoltiCount(l);
     appRoot.innerHTML = `
-      <div><button class="ld-back" data-back="1">← Tutti i lead</button></div>
+      <div class="ld-top"><button class="ld-back" data-back="1">← Tutti i lead</button><button class="btn-icon ld-del-btn" id="leadDelete" title="Elimina il lead e i suoi appuntamenti" aria-label="Elimina il lead">🗑</button></div>
       <div class="lead-grid">
         <div class="lead-col">
           <section class="card">
@@ -782,11 +962,7 @@ const LeadCRM = (function () {
             </dl>
           </section>
           ${nextHtml}
-          <section class="card">
-            <div class="card-label">Cose promesse <span>${proms.filter(p => !p.done).length} da fare</span></div>
-            <div class="prom">${proms.length ? proms.map(p => `<label><input type="checkbox" data-prom="${p.id}" ${p.done ? 'checked' : ''}><span class="${p.done ? 'done' : ''}">${esc(p.text)}</span><span class="q ${!p.done && p.when && p.when < TODAY() ? 'late' : ''}">${p.when && !p.done ? relDay(p.when) : ''}</span></label>`).join('') : '<span class="text-dim">Niente di promesso.</span>'}</div>
-            <div class="inline-add"><input type="text" class="ld-input" id="promText" placeholder="Nuova cosa promessa"><input type="date" class="ld-input" id="promWhen" value="${workDay(1)}"><button class="btn-ghost" id="promAdd">Aggiungi</button></div>
-          </section>
+          ${apptsCardHtml(l)}
         </div>
         <div class="lead-col">
           <section class="card">
@@ -816,16 +992,8 @@ const LeadCRM = (function () {
       persist(); renderLead(id);
       if (missingNext(l)) openSetNext(l.id);
     });
-    appRoot.querySelectorAll('[data-prom]').forEach(c => c.addEventListener('change', () => {
-      const p = proms.find(x => x.id === c.dataset.prom); if (!p) return;
-      if (c.checked) markPromiseDone(l, p); else p.done = false;
-      persist(); renderLead(id);
-    }));
-    document.getElementById('promAdd').addEventListener('click', () => {
-      const t = document.getElementById('promText').value.trim(); if (!t) return;
-      l.promises = proms.concat([{ id: uid('prom'), text: t, when: document.getElementById('promWhen').value, done: false }]);
-      persist(); renderLead(id);
-    });
+    document.getElementById('leadDelete').addEventListener('click', () => openDeleteLead(l.id));
+    wireApptsCard(l);
     if (tab === 'pagamenti') wirePay(l);
     else {
       const noteInput = document.getElementById('leadNoteText');
@@ -839,7 +1007,87 @@ const LeadCRM = (function () {
     }
   }
 
-  /** Storico: appuntamenti (calcolati dalla tabella, sempre aggiornati) + azioni, stati, soldi. */
+  /* ---------- Appuntamenti nella scheda lead (restyling 5.6) ----------
+   * Prima si gestivano nella tabella Appuntamenti Venditore (tolta): data e ora, stato
+   * della trattativa (stesse regole: Spostato chiede la nuova data, Chiuso / Contratto
+   * firmato chiedono il centro, il lead segue con onDealStageChanged), elimina, € per i
+   * soldi del singolo appuntamento chiuso. "+ Appuntamento" ne crea uno nuovo. */
+  function apptsCardHtml(l) {
+    const list = apptsOf(l).slice().reverse(); // il più recente in alto
+    const opts = a => `<option value="" ${!a.dealStage ? 'selected' : ''}>— Da impostare —</option>` +
+      DEAL_STAGES.map(s => `<option value="${s.key}" ${a.dealStage === s.key ? 'selected' : ''}>${esc(s.label)}</option>`).join('');
+    return `<section class="card ld-appts">
+      <div class="card-label">Appuntamenti <button class="btn-ghost btn-sm" id="leadAddAppt">+ Appuntamento</button></div>
+      ${list.length ? `<div class="ld-appt-list">${list.map(a => `
+        <div class="ld-appt ${a.dealStage === 'spostato' ? 'is-moved' : ''}" data-appt-item="${a.id}">
+          <div class="ld-appt-top">
+            <span class="ld-appt-num">${a.dealStage === 'spostato' ? 'Spostato' : nOrd(apptNumber(a))}</span>
+            <input type="datetime-local" class="ld-input ld-small ld-appt-when" data-appt-when="${a.id}" value="${esc(String(a.scheduledAt || '').slice(0, 16))}" aria-label="Data e ora">
+            ${isDue(a) ? `<span class="late-tag">da esitare</span>` : ''}
+          </div>
+          <div class="ld-appt-actions">
+            <select class="ld-input ld-small deal-stage-select" data-stage="${a.dealStage || ''}" data-appt-stage="${a.id}" aria-label="Stato della trattativa">${opts(a)}</select>
+            ${isClosedAppt(a) ? `<button class="btn-ghost btn-sm" data-appt-pay="${a.id}" title="Incassato e rate di questo appuntamento">€ Pagamenti</button>` : ''}
+            <button class="crm-row-del" data-appt-del="${a.id}" title="Elimina appuntamento" aria-label="Elimina appuntamento">×</button>
+          </div>
+        </div>`).join('')}</div>` : '<p class="text-dim ld-p">Nessun appuntamento.</p>'}
+    </section>`;
+  }
+  function wireApptsCard(l) {
+    const again = () => { if (leadById(l.id)) renderLead(l.id); else { location.hash = '#/venditore-lead'; renderRoute(); } };
+    const find = id => db.appointments.find(a => a.id === id);
+    document.getElementById('leadAddAppt').addEventListener('click', () => openAddAppt(l.id));
+    appRoot.querySelectorAll('[data-appt-when]').forEach(inp => inp.addEventListener('change', () => {
+      const a = find(inp.dataset.apptWhen); if (!a || !inp.value) return;
+      // presentedAt segue la data se era uguale (statistiche e commissioni sul giorno giusto).
+      if (a.presentedAt && a.presentedAt === a.scheduledAt) a.presentedAt = inp.value;
+      a.scheduledAt = inp.value;
+      persist(); again();
+    }));
+    appRoot.querySelectorAll('[data-appt-stage]').forEach(sel => sel.addEventListener('change', () => {
+      const a = find(sel.dataset.apptStage); if (!a) return;
+      const v = sel.value;
+      if (v === 'spostato') {
+        if (a.dealStage === 'spostato') return;
+        openRescheduleModal(a.id, again);
+        sel.value = a.dealStage || ''; // finché non si salva resta com'era
+        return;
+      }
+      const def = dealStageDef(v);
+      if (def && def.isClosed && !a.closed) {
+        openClosingDataModal(a, {
+          defaultCentro: l.centro || '',
+          onCancel: again,
+          onSave: centro => {
+            if (centro && !l.centro) l.centro = centro;
+            applyDealStage(a, v);
+            onDealStageChanged(a);
+            again();
+          }
+        });
+        return;
+      }
+      applyDealStage(a, v || null);
+      onDealStageChanged(a);
+      again();
+    }));
+    appRoot.querySelectorAll('[data-appt-pay]').forEach(b => b.addEventListener('click', () => {
+      ui.payApptId = b.dataset.apptPay; ui.leadTab = 'pagamenti'; renderLead(l.id);
+    }));
+    appRoot.querySelectorAll('[data-appt-del]').forEach(b => b.addEventListener('click', () => {
+      const a = find(b.dataset.apptDel); if (!a) return;
+      const last = apptsOf(l).length === 1;
+      showConfirm(`Eliminare l'appuntamento del ${fmtDT(a.scheduledAt)}?${last ? ' È l\'unico: sparisce anche il lead.' : ''}`, () => {
+        unlinkRescheduleOnDelete(a);
+        deactivateRecoveryEntryForAppointment(a);
+        db.appointments = db.appointments.filter(x => x.id !== a.id);
+        onApptDeleted(a); // lead rimasto senza appuntamenti: sparisce anche lui
+        persist(); again();
+      }, { confirmLabel: 'Elimina' });
+    }));
+  }
+
+  /** Storico: appuntamenti (calcolati dai dati, sempre aggiornati) + azioni, stati, soldi. */
   function histHtml(l) {
     const aps = apptsOf(l).map(a => {
       const setter = setterOf(a);
@@ -869,11 +1117,19 @@ const LeadCRM = (function () {
     const comm = sumEvents(commissionEventsForAppointment(a));
     return { incassato, daIncassare: Math.max(0, apptTotalSold(a) - incassato), comm };
   }
+  /** Appuntamento chiuso mostrato in Pagamenti: quello scelto (€ nella lista appuntamenti
+   * o tendina in alto), altrimenti l'ultimo chiuso (come prima). */
+  function payAppt(l) {
+    const closed = apptsOf(l).filter(isClosedAppt);
+    return closed.find(a => a.id === ui.payApptId) || closed[closed.length - 1] || null;
+  }
   function payHtml(l) {
-    const a = lastClosedAppt(l);
+    const a = payAppt(l);
+    const closedAll = apptsOf(l).filter(isClosedAppt);
     if (!a) return `<p class="text-dim ld-p">Nessun appuntamento chiuso. Incassato e rate si segnano quando il lead chiude (Com'è finita? → Sì).</p>`;
     const c = payCalc(a); const rate = a.installments || [];
     return `
+      ${closedAll.length > 1 ? `<label class="pay-which"><span class="mlabel">Appuntamento chiuso</span><select class="ld-input ld-small" id="payApptSel">${closedAll.map(x => `<option value="${x.id}" ${x.id === a.id ? 'selected' : ''}>${fmtDT(x.scheduledAt)} · ${x.dealStage === 'contratto_firmato' ? 'Contratto firmato' : 'Chiuso'}</option>`).join('')}</select></label>` : ''}
       <div class="pay-sum"><div class="ok"><b>${euro(c.incassato)}</b><span>Incassato</span></div><div><b>${euro(c.daIncassare)}</b><span>Da incassare</span></div><div><b>${euro(c.comm)}</b><span>Commissione 10%</span></div></div>
       <div class="pay-form">
         <label class="pay-centro">Nome del centro<input type="text" class="ld-input" id="payCentro" maxlength="120" value="${esc(a.centerName || '')}" placeholder="${esc(l.centro || 'Nome del centro')}"></label>
@@ -885,11 +1141,13 @@ const LeadCRM = (function () {
         ${rate.length ? rate.map((r, i) => { const over = !r.paid && r.dueDate && r.dueDate < TODAY(); return `<tr class="${r.paid ? 'paid' : ''}"><td>${esc(r.label || 'Rata ' + (i + 1))}</td><td>${euro(r.amount)}</td><td class="${over ? 'over' : ''}">${r.dueDate ? fmtShort(r.dueDate) : '—'}${over ? ' · scaduta' : ''}</td><td><input type="checkbox" data-rate="${r.id}" ${r.paid ? 'checked' : ''} aria-label="Rata ${i + 1} pagata"></td><td>${r.paidDate ? fmtShort(r.paidDate) : ''}</td><td><button class="crm-row-del" data-delrate="${r.id}" title="Elimina rata">×</button></td></tr>`; }).join('') : '<tr><td colspan="6" class="text-dim">Nessuna rata.</td></tr>'}
       </tbody></table></div>
       <div class="inline-add"><input type="number" min="0" step="50" class="ld-input" id="rateAmt" placeholder="Importo rata"><input type="date" class="ld-input" id="rateDue" value="${workDay(20)}"><button class="btn-ghost" id="rateAdd">+ Rata</button></div>
-      <p class="text-dim ld-foot">${a.dealStage === 'contratto_firmato' ? 'Contratto firmato. ' : ''}Commissione: 10% dell'incassato. Le rate contano solo quando le spunti, nel giorno in cui sono state pagate. Sono gli stessi dati della tabella Appuntamenti (${fmtDT(a.scheduledAt)}).</p>`;
+      <p class="text-dim ld-foot">${a.dealStage === 'contratto_firmato' ? 'Contratto firmato. ' : ''}Commissione: 10% dell'incassato. Le rate contano solo quando le spunti, nel giorno in cui sono state pagate. Dati dell'appuntamento del ${fmtDT(a.scheduledAt)}.</p>`;
   }
   function wirePay(l) {
-    const a = lastClosedAppt(l); if (!a) return;
+    const a = payAppt(l); if (!a) return;
     const id = l.id;
+    const which = document.getElementById('payApptSel');
+    if (which) which.addEventListener('change', () => { ui.payApptId = which.value; renderLead(id); });
     const num = v => Math.max(0, Number(v) || 0);
     const before = () => sumEvents(commissionEventsForAppointment(a));
     const ticker = prev => { const now = before(); if (db.settings.toggles && db.settings.toggles.liveTicker && now > prev) showCommissionTicker(now - prev); };
@@ -956,14 +1214,6 @@ const LeadCRM = (function () {
       </section>`;
   }
 
-  /* ===================== Colonne in più nella tabella Appuntamenti Venditore ===================== */
-  /** Sotto il nome: lead e numero dell'appuntamento. */
-  function apptRowExtraHtml(a) {
-    const l = a.leadId && leadById(a.leadId); if (!l) return '';
-    const num = a.dealStage === 'spostato' ? '' : `<span class="nchip">${nOrd(apptNumber(a))}</span>`;
-    return `<div class="ld-apt-extra">${num}<button class="who ld-small-link" data-lead="${l.id}">Scheda lead →</button>${isDue(a) ? `<button class="btn-primary ld-esita-mini" data-esita="${a.id}">Com'è finita?</button>` : ''}</div>`;
-  }
-
   /* ===================== Appuntamento cancellato (bug 16/10) ===================== */
   /** Da chiamare DOPO aver tolto l'appuntamento da db.appointments: se il lead non ha più
    * appuntamenti, sparisce anche lui (prima restava un lead "a 0 appuntamenti"). */
@@ -1014,7 +1264,7 @@ const LeadCRM = (function () {
 
   return {
     isOn, applyNav, ensureLeads, dashboardTaskItems, renderLeadList, renderLead, renderNewStatsSection, newStatsValues,
-    apptRowExtraHtml, wireRowButtons, onDealStageChanged, onApptNameChanged, accountToggleHtml, wireAccountToggle,
+    wireRowButtons, onDealStageChanged, accountToggleHtml, wireAccountToggle,
     parseApptName, handlesRecovery, onApptDeleted, reportInfo, paymentsApptOf, onInstallmentPaid
   };
 })();

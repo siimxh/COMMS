@@ -18,6 +18,7 @@
   --accent-ink: #C2410C;
   /* Testo sopra una superficie piena accent-500 (bianco non arriva a 4.5:1). */
   --on-accent: #111113;
+  --on-danger: #FFFFFF; /* testo sopra il rosso pieno (tasto Elimina): bianco anche nel tema scuro */
 
   /* Neutri */
   --neutral-0:   #FFFFFF;
@@ -1170,33 +1171,6 @@ tr.appt-row-moved > td { opacity: 0.6; }
 .sub-tabs-bar { padding: 10px 14px; }
 .sub-tabs { display: flex; gap: 8px; }
 
-/* ============================================================================
- * Calendario Appuntamenti (modal, Setter/Venditore) — pillole colorate per giorno
- * ==========================================================================*/
-.cal-appt-pills { display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
-.cal-appt-pill {
-  font-size: 0.62rem; font-weight: 700; padding: 2px 5px; border-radius: 3px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid transparent;
-}
-.cal-appt-more { font-size: 0.6rem; color: var(--text-dim); font-family: var(--mono); }
-.cal-appt-pill.cal-appt-neutral { background: var(--bg-elev2); color: var(--text-dim); border-color: var(--border); }
-.cal-appt-pill.cal-appt-confirmed { background: var(--stage-trattativa-bg); color: var(--stage-trattativa); border-color: var(--neutral-200); }
-.cal-appt-pill.cal-appt-presented { background: var(--accent-100); color: var(--accent-ink); border-color: var(--accent-200); }
-.cal-appt-pill.cal-appt-noshow { background: var(--stage-no_show-bg); color: var(--stage-no_show); border-color: var(--neutral-200); }
-.cal-appt-pill.cal-appt-annullato { background: var(--bg-elev2); color: var(--text-dim); border-color: var(--text-dim); text-decoration: line-through; }
-.cal-appt-pill.cal-appt-spostato { background: var(--stage-spostato-bg); color: var(--stage-spostato); border-color: var(--neutral-200); text-decoration: line-through; }
-
-.cal-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-.cal-legend-item {
-  font-size: 0.66rem; font-weight: 700; padding: 3px 8px; border-radius: 3px; border: 1px solid transparent;
-}
-.cal-legend-item.cal-appt-neutral { background: var(--bg-elev2); color: var(--text-dim); border-color: var(--border); }
-.cal-legend-item.cal-appt-confirmed { background: var(--stage-trattativa-bg); color: var(--stage-trattativa); border-color: var(--neutral-200); }
-.cal-legend-item.cal-appt-presented { background: var(--accent-100); color: var(--accent-ink); border-color: var(--accent-200); }
-.cal-legend-item.cal-appt-noshow { background: var(--stage-no_show-bg); color: var(--stage-no_show); border-color: var(--neutral-200); }
-.cal-legend-item.cal-appt-annullato { background: var(--bg-elev2); color: var(--text-dim); border-color: var(--text-dim); }
-.cal-legend-item.cal-appt-spostato { background: var(--stage-spostato-bg); color: var(--stage-spostato); border-color: var(--neutral-200); }
-
 .installments-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
 .installment-row { display: grid; grid-template-columns: 1fr 100px 130px 90px 130px auto; gap: 8px; align-items: center; font-size: 0.82rem; }
 @media (max-width: 620px) { .installment-row { grid-template-columns: 1fr; } }
@@ -1607,12 +1581,6 @@ body { line-height: 1.45; }
 .next-big { font-size: 1.15rem; font-weight: 700; }
 .next-meta { color: var(--text-dim); font-variant-numeric: tabular-nums; margin: 2px 0 8px; }
 .next-card .row-btns { justify-content: flex-start; margin-top: 12px; }
-.prom { display: flex; flex-direction: column; gap: 8px; }
-.prom label { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 0.93rem; cursor: pointer; }
-.prom input { width: 17px; height: 17px; accent-color: var(--accent); }
-.prom .done { color: var(--text-dim); text-decoration: line-through; }
-.prom .q { color: var(--text-dim); font-size: 0.8rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.prom .q.late { color: var(--danger); font-weight: 700; }
 .inline-add { display: grid; grid-template-columns: minmax(0, 1fr) 140px auto; gap: 6px; margin-top: 10px; }
 .inline-add input, .ld-input {
   background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 8px 10px; font: inherit; font-size: 0.92rem; min-width: 0; width: 100%;
@@ -1696,9 +1664,6 @@ body { line-height: 1.45; }
 .mblock { margin-bottom: 14px; }
 .mhint { font-size: 0.82rem; color: var(--text-dim); margin-top: 6px; }
 .mwarn { font-size: 0.86rem; color: var(--danger); font-weight: 600; min-height: 1.2em; }
-.prom-edit { display: flex; flex-direction: column; gap: 6px; }
-.prom-edit .pe { display: grid; grid-template-columns: minmax(0, 1fr) 150px 30px; gap: 6px; }
-.prom-edit .pe button { background: none; border: 1px solid var(--border); border-radius: 10px; color: var(--text-dim); cursor: pointer; }
 .linkish { background: none; border: 0; color: var(--accent); cursor: pointer; font: inherit; font-size: 0.88rem; padding: 4px 0; text-align: left; }
 .setrow { display: flex; justify-content: space-between; gap: 16px; align-items: center; padding: 14px 0; border-bottom: 1px solid var(--border); }
 .setrow:last-of-type { border-bottom: 0; }
@@ -1716,7 +1681,7 @@ body { line-height: 1.45; }
 }
 @media (max-width: 560px) {
   .mrow, .pay-form, .pay-sum { grid-template-columns: 1fr; }
-  .inline-add, .prom-edit .pe { grid-template-columns: 1fr; }
+  .inline-add { grid-template-columns: 1fr; }
 }
 @media (prefers-reduced-motion: reduce) { .tog::after { transition: none; } }
 
@@ -2019,7 +1984,6 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .cal-cell.today .cal-daynum { color: var(--accent-ink); }
 .cal-cell.cash-day { border: none; box-shadow: inset 0 0 0 2px var(--accent-300); background: var(--accent-100); }
 .cal-detail-amount, .installment-deposit-amount { color: var(--neutral-900); }
-.cal-appt-pill, .cal-legend-item { border-radius: var(--radius-pill); }
 
 /* ---------- Modali, toast, tooltip ---------- */
 .modal-box { border: var(--border-line); border-top: var(--border-line); border-radius: var(--radius-card); box-shadow: var(--shadow-active); }
@@ -2029,7 +1993,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .choice button.sel { background: var(--neutral-900); border-color: var(--neutral-900); color: var(--neutral-0); }
 .choice button.yes.sel { background: var(--accent-500); border-color: var(--accent-500); color: var(--on-accent); }
 .choice button.no.sel { background: var(--neutral-600); border-color: var(--neutral-600); color: var(--neutral-0); }
-.inline-add input, .ld-input, .prom-edit .pe button, .copy-mini { border-radius: var(--radius-control); }
+.inline-add input, .ld-input, .copy-mini { border-radius: var(--radius-control); }
 .mlabel, .card-label, .pay-form label, .money-field { color: var(--neutral-600); font-weight: 600; }
 
 /* ---------- Interruttori ---------- */
@@ -2715,3 +2679,49 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
 .account-notify-title { font-weight: 600; font-size: 0.9375rem; }
 .account-notify-sub { font-size: 0.8125rem; margin-top: 2px; }
 .account-notify-state { flex: none; text-align: right; font-size: 0.8125rem; max-width: 45%; }
+
+/* ---------- Venditore → Lead e scheda lead (restyling step 15) ---------- */
+.lead-toolbar { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.lead-toolbar-right { display: flex; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+.lead-toolbar .pill-count { margin-left: 4px; color: var(--neutral-600); font-weight: 600; font-variant-numeric: tabular-nums; }
+.lead-filters-now { color: var(--neutral-600); font-size: 0.875rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lead-filters-body { display: flex; flex-direction: column; gap: 12px; padding-top: 4px; }
+.lead-filters-body .crm-filters { align-self: flex-start; flex-wrap: wrap; }
+.lead-filters-body .crm-search-wrap { flex: none; max-width: none; min-width: 0; }
+.lead-filters-body .crm-search-input { width: 100%; }
+.lead-list-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.leads-tbl .crm-row-actions { width: 48px; text-align: right; }
+.lead-orphans { margin-top: 12px; }
+.lead-menu { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 4px; }
+.lead-menu button { width: 100%; justify-content: flex-start; text-align: left; }
+.lead-del-msg { font-size: 1rem; line-height: 1.45; color: var(--neutral-900); margin: 4px 0 8px; }
+.btn-danger { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 16px; border-radius: var(--radius-control); border: 1px solid var(--danger); background: var(--danger); color: var(--on-danger); font: inherit; font-weight: 600; cursor: pointer; }
+.btn-danger:hover { filter: brightness(0.93); }
+.btn-danger:focus-visible { outline: 2px solid var(--neutral-900); outline-offset: 2px; }
+.ld-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ld-del-btn { width: 36px; height: 36px; padding: 0; font-size: 1rem; }
+.ld-del-btn:hover { background: var(--danger-bg); border-color: var(--danger); }
+.ld-appts .card-label { margin-bottom: 12px; }
+.ld-appts .card-label .btn-sm { text-transform: none; letter-spacing: 0; font-size: 0.8125rem; color: var(--neutral-900); }
+.ld-appt-list { display: flex; flex-direction: column; }
+.ld-appt { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; padding: 10px 0; border-top: 1px solid var(--neutral-200); }
+.ld-appt:first-child { border-top: 0; padding-top: 0; }
+.ld-appt-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.ld-appt-num { font-weight: 600; font-size: 0.875rem; color: var(--neutral-900); min-width: 28px; }
+.ld-appt.is-moved .ld-appt-num { color: var(--neutral-600); font-weight: 500; }
+.ld-appt.is-moved .ld-appt-when { color: var(--neutral-600); text-decoration: line-through; }
+.ld-appt-when { width: auto; max-width: 240px; }
+.ld-appt-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-left: auto; }
+.ld-appt-actions select { width: auto; max-width: 190px; }
+.pay-which { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.pay-which select { width: auto; }
+@media (max-width: 600px) {
+  .lead-toolbar-right { margin-left: 0; width: 100%; }
+  .lead-toolbar-right .btn-primary { flex: 1; }
+  .ld-appt-actions { margin-left: 0; }
+  /* La tabella lead scorre di lato dentro la card: il ⋯ resta sempre a portata. */
+  .leads-tbl th:last-child, .leads-tbl td.crm-row-actions { position: sticky; right: 0; z-index: 1; min-width: 56px; background: var(--neutral-0); box-shadow: -10px 0 10px -10px rgba(0, 0, 0, .18); }
+}
+/* Statistiche Venditore → Numeri dei lead: niente verde/rosso nelle barre (solo trend). In tempo = accento, in ritardo = neutro. */
+.new-stats .meter i.ok { background: var(--accent-500); }
+.new-stats .meter i.ko { background: var(--neutral-400); }

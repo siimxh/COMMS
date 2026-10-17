@@ -14,7 +14,7 @@
  * Errori: conta sia gli errori JavaScript sia i console.error della pagina.
  * Schermo: VIEWPORT=390x844 per provare il telefono (default 1440x900). Su ogni
  * pagina controlla anche che non ci sia scroll orizzontale (conta come errore).
- * Le route vecchie (#/oggi, #/venditore-appuntamenti) devono finire sulla nuova.
+ * Le route vecchie (#/oggi, #/venditore-appuntamenti, #/venditore-tabella) devono finire sulla nuova.
  *
  * Dati finti per la prova: tools/dati-finti.js (vedi commento in testa al file).
  *
@@ -119,12 +119,11 @@ function loadPlaywright() {
 
   const outDir = process.env.CARTELLA_SCREENSHOT || '/tmp/prova-tracker';
   fs.mkdirSync(outDir, { recursive: true });
-  // Route del restyling (step 2). venditore-tabella = tabella Appuntamenti Venditore,
-  // fuori dal menu ma raggiungibile dalla pagina Lead.
+  // Route del restyling (step 2). La tabella Appuntamenti Venditore non c'è più (step 15).
   const routes = ['#/dashboard', '#/setting-appuntamenti', '#/sessioni', '#/setting-statistiche',
-    '#/venditore-lead', '#/venditore-statistiche', '#/venditore-tabella', '#/impostazioni'];
+    '#/venditore-lead', '#/venditore-statistiche', '#/impostazioni'];
   // Route vecchie: devono portare alla nuova.
-  const redirects = [['#/oggi', '#/dashboard'], ['#/venditore-appuntamenti', '#/venditore-lead']];
+  const redirects = [['#/oggi', '#/dashboard'], ['#/venditore-appuntamenti', '#/venditore-lead'], ['#/venditore-tabella', '#/venditore-lead']];
   for (const [from, to] of redirects) {
     await page.evaluate(h => { location.hash = h; renderRoute(); }, from);
     await page.waitForTimeout(150);

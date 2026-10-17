@@ -6,8 +6,6 @@ let uiState = {
   sessioniPipelineFilter: 'all',
   crmSetterFilter: 'prossimi', // vedi SETTER_APPT_FILTERS — lista Appuntamenti Setter
   crmSetterSearch: '',         // testo ricerca per nome/telefono — tabella Appuntamenti Setter
-  crmVenditoreFilter: 'all',   // 'all' | 'trattativa' | 'no_show' | 'perso' — tabella Appuntamenti Venditore
-  crmVenditoreSearch: '',      // testo ricerca per nome/telefono — tabella Appuntamenti Venditore
   calMonthOffset: 0,           // scostamento in mesi dal mese corrente, per la navigazione del calendario
   editingPaceGoal: null,       // 'setter' | 'venditore' quando l'obiettivo del mese di Pace mese è in modifica
   goalsTimeframe: 'month',     // "Migliore di sempre" della Dashboard: giorno | settimana | mese (day|week|month)
@@ -355,13 +353,13 @@ function isCashDay(dayTotal) {
  * Route piatte con trattino. Le vecchie restano valide e vengono girate:
  *   #/oggi -> #/dashboard, #/venditore-appuntamenti -> #/venditore-lead.
  * La pagina Oggi non esiste più: il suo contenuto sta nelle Task della Dashboard
- * (renderDashboardTasks, righe Venditore da LeadCRM.dashboardTaskItems). La tabella Appuntamenti Venditore resta raggiungibile
- * SOLO da un link nella pagina Lead (#/venditore-tabella), finché la scheda lead non fa
- * tutto quello che si fa lì (nuovo appuntamento, rate, registrazioni): step 15. */
+ * (renderDashboardTasks, righe Venditore da LeadCRM.dashboardTaskItems).
+ * La tabella Appuntamenti Venditore non esiste più (step 15): tutto si fa da Venditore →
+ * Lead e dalla scheda lead. I suoi vecchi link (#/venditore-appuntamenti,
+ * #/venditore-tabella) portano alla lista Lead. */
 const SETTING_SUBROUTES = { appuntamenti: 'setting-appuntamenti', sessioni: 'sessioni', statistiche: 'setting-statistiche' };
 const VENDITORE_SUBROUTES = { lead: 'venditore-lead', statistiche: 'venditore-statistiche' };
-const VENDITORE_TABLE_ROUTE = 'venditore-tabella';
-const ROUTE_REDIRECTS = { oggi: 'dashboard', 'venditore-appuntamenti': 'venditore-lead' };
+const ROUTE_REDIRECTS = { oggi: 'dashboard', 'venditore-appuntamenti': 'venditore-lead', 'venditore-tabella': 'venditore-lead' };
 const SETTING_TAB_LABELS = { appuntamenti: 'Appuntamenti', sessioni: 'Sessioni', statistiche: 'Stats' };
 const VENDITORE_TAB_LABELS = { lead: 'Lead', statistiche: 'Statistiche' };
 
@@ -369,7 +367,7 @@ function isSettingRouteName(route) {
   return route === 'setting' || Object.values(SETTING_SUBROUTES).includes(route);
 }
 function isVenditoreRouteName(route) {
-  return route === 'venditore' || route === 'lead' || route === VENDITORE_TABLE_ROUTE || Object.values(VENDITORE_SUBROUTES).includes(route);
+  return route === 'venditore' || route === 'lead' || Object.values(VENDITORE_SUBROUTES).includes(route);
 }
 
 function renderRoute() {
@@ -448,7 +446,6 @@ function renderRoute() {
   if (route === 'sessioni' && parts[1]) renderSessioneDetail(parts[1]);
   else if (section === 'setting') renderSettingPage();
   else if (route === 'lead' && parts[1]) LeadCRM.renderLead(parts[1]);
-  else if (route === VENDITORE_TABLE_ROUTE) renderVenditoreAppuntamenti();
   else if (section === 'venditore') renderVenditorePage();
   else if (route === 'impostazioni') renderBuilderPage();
   else renderDashboard();
@@ -590,13 +587,7 @@ function renderSettingPage() {
 function renderVenditorePage() {
   const tab = uiState.venditoreTab || 'lead';
   if (tab === 'statistiche') renderVenditoreStatistiche();
-  else LeadCRM.renderLeadList(renderVenditoreTableLink());
-}
-
-/** Link alla tabella Appuntamenti Venditore (fuori dal menu dal restyling). Serve finché
- * la scheda lead non ha "+ Appuntamento", rate e registrazioni (step 15). */
-function renderVenditoreTableLink() {
-  return `<div class="stats-page-link"><a class="btn-ghost" href="#/${VENDITORE_TABLE_ROUTE}" title="Nuovo appuntamento, stato trattativa, rate e registrazioni">📋 Tabella appuntamenti</a></div>`;
+  else LeadCRM.renderLeadList();
 }
 
 /* ============================================================================
@@ -666,15 +657,15 @@ function renderVenditoreStatistiche() {
       <div class="kpi-card"><div class="kpi-value">${st.assegnati}</div><div class="kpi-label">Assegnati</div></div>
       <div class="kpi-card"><div class="kpi-value">${st.presentati}</div><div class="kpi-label">Presentati</div></div>
       <div class="kpi-card"><div class="kpi-value">${st.chiusi}</div><div class="kpi-label">Chiusi</div></div>
-      <div class="kpi-card"><div class="kpi-value">€${round2(st.commissioniTot)}</div><div class="kpi-label">Commissioni</div></div>
+      <div class="kpi-card"><div class="kpi-value">${fmtNumIt(st.commissioniTot, true)}</div><div class="kpi-label">Commissioni</div></div>
     </section>
     <section class="card">
       <h3>Tassi</h3>
       <div class="rates-row">
-        ${rateCell(st.showRate + '%', 'Show rate', `${st.presentati} presentati su ${st.showRateBase}`)}
-        ${rateCell(st.conversionRate + '%', 'Closing', 'chiusi su presentati in target')}
-        ${rateCell('€' + round2(st.scontrinoMedio), 'Scontrino medio', `${st.chiusi} chiusi`)}
-        ${rateCell('€' + round2(st.totalVenduto), 'Totale venduto', 'appuntamenti chiusi')}
+        ${rateCell(fmtPctIt(st.showRate), 'Show rate', `${st.presentati} presentati su ${st.showRateBase}`)}
+        ${rateCell(fmtPctIt(st.conversionRate), 'Closing', 'chiusi su presentati in target')}
+        ${rateCell(fmtNumIt(st.scontrinoMedio, true), 'Scontrino medio', `${st.chiusi} ${st.chiusi === 1 ? 'chiuso' : 'chiusi'}`)}
+        ${rateCell(fmtNumIt(st.totalVenduto, true), 'Totale venduto', 'appuntamenti chiusi')}
       </div>
     </section>
     ${LeadCRM.renderNewStatsSection(range)}
@@ -1945,17 +1936,12 @@ function buildVenditoreAppointmentsReportText(rows, filterLabel) {
   return lines.join('\n');
 }
 
-// Report per il direttore commerciale — sezione Venditore, rispetta l'eventuale filtro
-// (Tutti/Trattativa/No Show/Perso) attivo sulla tabella, come il report Setter.
+// Report per il direttore commerciale — sezione Venditore: tutti gli appuntamenti Venditore
+// (tasto "Report" in Venditore → Lead; la tabella con i suoi filtri non c'è più, step 15).
 async function generateVenditoreAppointmentsReport() {
-  const filter = uiState.crmVenditoreFilter || 'all';
-  let rows = db.appointments.filter(a => a.role === 'venditore');
-  if (filter !== 'all') rows = rows.filter(a => a.dealStage === filter);
-  rows = [...rows].sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
-  const filterLabels = { all: 'Venditore', trattativa: 'Venditore — solo Trattativa', no_show: 'Venditore — solo No Show', perso: 'Venditore — solo Perso' };
-  const filterLabel = filterLabels[filter] || 'Venditore';
-
-  const text = buildVenditoreAppointmentsReportText(rows, filterLabel);
+  const rows = db.appointments.filter(a => a.role === 'venditore')
+    .sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
+  const text = buildVenditoreAppointmentsReportText(rows, 'Venditore');
   const copied = await copyToClipboard(text);
   showReportModal(text, copied, 'Report Appuntamenti');
 }
@@ -3691,9 +3677,8 @@ function getEffectiveInstallments(apt) {
 /**
  * Sezione Appuntamenti — SOLO Setter (split Setter/Venditore): questa tabella e tutte
  * le funzioni sottostanti (renderApptRow/wireAppuntamentiEvents/openNewSetterApptModal)
- * mostrano/creano sempre e solo righe role:'setter'. La versione Venditore è un sistema
- * di rendering separato (vedi renderVenditoreAppuntamenti più sotto) con un layout e un
- * modello di stato (dealStage) diversi.
+ * mostrano/creano sempre e solo righe role:'setter'. Gli appuntamenti Venditore (dealStage)
+ * si gestiscono dalla scheda lead (lead.js, dal restyling step 15).
  */
 function renderAppuntamenti() {
   uiState.settingTab = 'appuntamenti';
@@ -4261,15 +4246,6 @@ function wireAppuntamentiEvents() {
  * autosave su ogni campo). L'utente compila Nome/Ruolo/Data direttamente nella riga; il
  * focus va subito sul campo Nome.
  */
-function addBlankAppointmentRow(role) {
-  const apt = newAppointment(role || 'venditore');
-  db.appointments.unshift(apt);
-  persist();
-  renderVenditoreAppuntamenti();
-  const nameInput = appRoot.querySelector(`[data-name-input="${apt.id}"]`);
-  if (nameInput) nameInput.focus();
-}
-
 /* ---------- Dati richiesti alla chiusura (restyling 17/10/2026, step 6) ----------
  * Chiudendo un appuntamento il tool chiede il nome del CENTRO (serve a "Prossimi
  * pagamenti" in Dashboard: lì compare il centro, mai la persona) e, solo per il
@@ -4378,216 +4354,6 @@ function applyDealStage(apt, stageKey) {
   }
 }
 
-function renderVenditoreAppuntamenti() {
-  uiState.venditoreTab = 'lead'; // la tabella sta sotto la tab Lead (restyling, step 2)
-  if (LeadCRM.ensureLeads()) persist(); // ogni appuntamento Venditore ha il suo lead (lead.js)
-  const filter = uiState.crmVenditoreFilter || 'all'; // 'all' | 'trattativa' | 'no_show' | 'perso'
-  const search = uiState.crmVenditoreSearch || '';
-  let rows = db.appointments.filter(a => a.role === 'venditore');
-  if (filter !== 'all') rows = rows.filter(a => a.dealStage === filter);
-  if (search.trim()) rows = rows.filter(a => matchesApptSearch(a, search));
-  rows = [...rows].sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
-
-  const rowsHtml = rows.length ? rows.map(renderVenditoreApptRow).join('') : '';
-  const noResults = search.trim() && !rows.length;
-
-  appRoot.innerHTML = `
-    <a class="back-link" href="#/venditore-lead">← Lead</a>
-    <section class="card crm-toolbar">
-      <div class="crm-filters">
-        <button class="pill ${filter === 'all' ? 'active' : ''}" data-crm-vnd-filter="all">Tutti</button>
-        <button class="pill ${filter === 'trattativa' ? 'active' : ''}" data-crm-vnd-filter="trattativa">Trattativa</button>
-        <button class="pill ${filter === 'no_show' ? 'active' : ''}" data-crm-vnd-filter="no_show">No Show</button>
-        <button class="pill ${filter === 'perso' ? 'active' : ''}" data-crm-vnd-filter="perso">Perso</button>
-        <button class="pill ${filter === 'spostato' ? 'active' : ''}" data-crm-vnd-filter="spostato">Spostati</button>
-      </div>
-      <div class="crm-search-wrap">
-        <input type="search" class="crm-search-input" id="crmVenditoreSearchInput" placeholder="Cerca per nome o telefono..." value="${escapeHtml(search)}">
-      </div>
-      <div style="display:flex; gap:8px;">
-        <button class="btn-ghost" id="btnApptCalendarVnd">📅 Calendario</button>
-        <button class="btn-ghost" id="btnApptReportVnd">Report</button>
-        <button class="btn-ghost" id="btnCallRecordings">🎙️ Registrazioni (${(db.callRecordings || []).length})</button>
-        <button class="btn-primary" id="btnNewApptVnd">+ Nuovo Appuntamento</button>
-      </div>
-    </section>
-    <div class="two-col">
-      <section class="card crm-table-wrap" style="grid-column: 1 / -1;">
-        ${rows.length ? `
-        <table class="crm-table">
-          <thead>
-            <tr>
-              <th>Nome / Telefono</th><th>Data/Ora</th><th>Stato trattativa</th>
-              <th>Cash Collected</th><th>Totale Venduto</th><th></th>
-            </tr>
-          </thead>
-          <tbody>${rowsHtml}</tbody>
-        </table>` : `<p class="text-dim">${noResults ? 'Nessun appuntamento trovato per questa ricerca.' : 'Nessun appuntamento ancora. Crea il primo con "+ Nuovo Appuntamento".'}</p>`}
-      </section>
-    </div>
-  `;
-
-  wireVenditoreAppuntamentiEvents();
-}
-
-function renderVenditoreApptRow(a) {
-  const stageOptionsHtml = DEAL_STAGES.map(s =>
-    `<option value="${s.key}" ${a.dealStage === s.key ? 'selected' : ''}>${escapeHtml(s.label)}</option>`
-  ).join('');
-  const currentStage = a.dealStage || '';
-
-  const totalSold = apptTotalSold(a);
-
-  return `
-    <tr data-appt-row="${a.id}" class="${a.dealStage === 'spostato' ? 'appt-row-moved' : ''}">
-      <td>
-        <input type="text" class="crm-inline-input crm-name-input" data-name-input="${a.id}" value="${escapeHtml(a.clientName || '')}" placeholder="Nome e cognome">
-        <div class="crm-phone-row">
-          <input type="text" class="crm-inline-input crm-phone-input" data-phone-input="${a.id}" value="${escapeHtml(a.phone || '')}" placeholder="Telefono (facoltativo)">
-          <button class="crm-copy-phone-btn" data-copy-phone="${a.id}" title="Copia numero">⧉</button>
-        </div>
-        ${rescheduleBadgesHtml(a)}
-        ${LeadCRM.apptRowExtraHtml(a)}
-      </td>
-      <td class="crm-cell-center"><input type="datetime-local" class="crm-inline-input crm-datetime-input" data-scheduled-input="${a.id}" value="${(a.scheduledAt || '').slice(0, 16)}"></td>
-      <td class="crm-cell-center">
-        <select class="deal-stage-select" data-stage="${currentStage}" data-set-stage="${a.id}">
-          <option value="" ${!currentStage ? 'selected' : ''}>— Da impostare —</option>
-          ${stageOptionsHtml}
-        </select>
-      </td>
-      <td><input type="number" min="0" step="1" class="assigned-edit-input" data-cash-input="${a.id}" value="${a.cashCollected || 0}" style="width:90px;"></td>
-      <td class="crm-cell-center"><button class="crm-amount-link" data-open-installments="${a.id}">€${round2(totalSold)}</button></td>
-      <td class="crm-row-actions"><button class="crm-row-del" data-del-appt-vnd="${a.id}" title="Elimina">×</button></td>
-    </tr>`;
-}
-
-function wireVenditoreAppuntamentiEvents() {
-  wireSubTabsBar('venditore');
-  appRoot.querySelectorAll('[data-crm-vnd-filter]').forEach(btn => {
-    btn.addEventListener('click', () => { uiState.crmVenditoreFilter = btn.dataset.crmVndFilter; renderVenditoreAppuntamenti(); });
-  });
-  wireCrmSearchInput('crmVenditoreSearchInput', 'crmVenditoreSearch', renderVenditoreAppuntamenti);
-  document.getElementById('btnNewApptVnd').addEventListener('click', () => addBlankAppointmentRow('venditore'));
-  document.getElementById('btnApptReportVnd').addEventListener('click', generateVenditoreAppointmentsReport);
-  document.getElementById('btnApptCalendarVnd').addEventListener('click', () => openAppointmentsCalendarModal('venditore'));
-
-  appRoot.querySelectorAll('[data-name-input]').forEach(input => {
-    input.addEventListener('change', () => {
-      const apt = db.appointments.find(x => x.id === input.dataset.nameInput);
-      if (!apt) return;
-      apt.clientName = input.value;
-      persist();
-      LeadCRM.onApptNameChanged(apt); // il lead segue il nome (lead.js)
-      renderVenditoreAppuntamenti();
-    });
-  });
-
-  appRoot.querySelectorAll('[data-phone-input]').forEach(input => {
-    input.addEventListener('change', () => {
-      const apt = db.appointments.find(x => x.id === input.dataset.phoneInput);
-      if (!apt) return;
-      apt.phone = input.value || null;
-      persist();
-    });
-  });
-
-  appRoot.querySelectorAll('[data-copy-phone]').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const apt = db.appointments.find(x => x.id === btn.dataset.copyPhone);
-      if (!apt || !apt.phone) { showToast('Nessun numero da copiare.', true); return; }
-      const ok = await copyToClipboard(apt.phone);
-      showToast(ok ? 'Numero copiato.' : 'Seleziona e copia manualmente.', !ok);
-    });
-  });
-
-  appRoot.querySelectorAll('[data-scheduled-input]').forEach(input => {
-    input.addEventListener('change', () => {
-      const apt = db.appointments.find(x => x.id === input.dataset.scheduledInput);
-      if (!apt || !input.value) return;
-      // presentedAt era la vecchia data: se l'utente corregge la data, la segue
-      // (altrimenti statistiche e commissioni restano sul giorno sbagliato).
-      if (apt.presentedAt && apt.presentedAt === apt.scheduledAt) apt.presentedAt = input.value;
-      apt.scheduledAt = input.value;
-      persist();
-      renderVenditoreAppuntamenti();
-    });
-  });
-
-  // Scheda lead e "Com'è finita?" sotto il nome (lead.js).
-  LeadCRM.wireRowButtons(appRoot);
-
-  appRoot.querySelectorAll('[data-set-stage]').forEach(sel => {
-    sel.addEventListener('change', () => {
-      const apt = db.appointments.find(x => x.id === sel.dataset.setStage);
-      if (!apt) return;
-      // "Spostato": stessa logica del Setter — prima la nuova data, poi lo stato.
-      if (sel.value === 'spostato') {
-        if (apt.dealStage === 'spostato') return;
-        openRescheduleModal(apt.id, renderVenditoreAppuntamenti);
-        renderVenditoreAppuntamenti(); // rimette la tendina allo stato attuale finché non si salva
-        return;
-      }
-      const def = dealStageDef(sel.value);
-      if (def && def.isClosed && !apt.closed) {
-        // Chiusura nuova: prima il nome del centro (step 6), precompilato con quello del lead.
-        if (LeadCRM.ensureLeads()) persist();
-        const lead = apt.leadId && (db.leads || []).find(l => l.id === apt.leadId);
-        openClosingDataModal(apt, {
-          defaultCentro: lead ? lead.centro : '',
-          onCancel: renderVenditoreAppuntamenti,
-          onSave: centro => {
-            if (lead && centro && !lead.centro) lead.centro = centro;
-            applyDealStage(apt, sel.value);
-            LeadCRM.onDealStageChanged(apt);
-            renderVenditoreAppuntamenti();
-          }
-        });
-        return;
-      }
-      applyDealStage(apt, sel.value || null);
-      LeadCRM.onDealStageChanged(apt); // il lead segue (chiuso -> Cliente, ...)
-      renderVenditoreAppuntamenti();
-    });
-  });
-
-  appRoot.querySelectorAll('[data-cash-input]').forEach(input => {
-    input.addEventListener('change', () => {
-      const apt = db.appointments.find(x => x.id === input.dataset.cashInput);
-      if (!apt) return;
-      const prevCommission = apt.closed ? commissionEventsForAppointment(apt).filter(e => e.id === apt.id + '_deposit').reduce((s, e) => s + e.amount, 0) : 0;
-      apt.cashCollected = Math.max(0, parseFloat(input.value) || 0);
-      persist();
-      if (apt.closed && db.settings.toggles.liveTicker) {
-        const newCommission = commissionEventsForAppointment(apt).filter(e => e.id === apt.id + '_deposit').reduce((s, e) => s + e.amount, 0);
-        if (newCommission > prevCommission) showCommissionTicker(newCommission - prevCommission);
-      }
-      renderVenditoreAppuntamenti();
-    });
-  });
-
-  appRoot.querySelectorAll('[data-open-installments]').forEach(btn => {
-    btn.addEventListener('click', () => openInstallmentsModal(btn.dataset.openInstallments, 'venditore'));
-  });
-
-  appRoot.querySelectorAll('[data-del-appt-vnd]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const apt = db.appointments.find(x => x.id === btn.dataset.delApptVnd);
-      if (!apt) return;
-      showConfirm(`Eliminare l'appuntamento di "${apt.clientName || '(senza nome)'}"?`, () => {
-        unlinkRescheduleOnDelete(apt);
-        deactivateRecoveryEntryForAppointment(apt);
-        db.appointments = db.appointments.filter(x => x.id !== apt.id);
-        LeadCRM.onApptDeleted(apt); // lead rimasto senza appuntamenti: sparisce anche lui
-        persist();
-        renderVenditoreAppuntamenti();
-      }, { confirmLabel: 'Elimina' });
-    });
-  });
-
-  document.getElementById('btnCallRecordings').addEventListener('click', openCallRecordingsModal);
-}
-
 /**
  * Sistema di note (quadernino): elenco con data e ora + "Aggiungi nota". Lo usano i
  * "Da richiamare" (richiesta di Hamza, 2026-10-14). Le note del Venditore stanno nella
@@ -4693,7 +4459,7 @@ function openInstallmentsModal(apptId, role) {
 }
 
 function renderInstallmentsModal(apt, role) {
-  const returnToRoleScreen = () => { if (role === 'venditore') renderVenditoreAppuntamenti(); else renderAppuntamenti(); };
+  const returnToRoleScreen = () => renderRoute(); // Setter: pannello € della lista (il Venditore usa la scheda lead → Pagamenti)
   // Rata sintetica "Acconto" (dal cash collected, vedi getEffectiveInstallments):
   // mostrata per prima, bloccata (non cancellabile, importo non editabile qui — si
   // modifica dal campo Cash Collected nella riga della tabella) così l'utente vede
@@ -4866,122 +4632,12 @@ function wireCommissioniCalendarSection() {
   });
 }
 
-/* ============================================================================
- * Calendario Appuntamenti (Setter e Venditore) — modal con vista mensile, aperta dal
- * bottone "📅 Calendario" nelle rispettive schermate Appuntamenti. Ogni giorno mostra gli
- * appuntamenti con quella scheduledAt come mini-pillole colorate: per il Setter in base a
- * presentedStatus (stessa idea del semaforo No/Confermato24h/Presentato/No Show già usato
- * nei chip della tabella), per il Venditore riusando esattamente i colori DEAL_STAGES già
- * definiti per il menu a tendina "stato trattativa" (var CSS --stage-*), così il colore è
- * coerente in tutto il tool invece di inventarne uno nuovo solo per il calendario.
- */
-const SETTER_PRESENTED_COLOR_CLASS = {
-  no: 'cal-appt-neutral',
-  confirmed24h: 'cal-appt-confirmed',
-  presented: 'cal-appt-presented',
-  no_show: 'cal-appt-noshow',
-  annullato: 'cal-appt-annullato',
-  spostato: 'cal-appt-spostato'
-};
 const SETTER_PRESENTED_LABEL = { no: 'No', confirmed24h: 'Confermato24h', presented: 'Presentato', no_show: 'No Show', annullato: 'Annullato', spostato: 'Spostato' };
-
-let calModalRole = 'setter';
-let calModalMonthOffset = 0;
-
-function openAppointmentsCalendarModal(role) {
-  calModalRole = role;
-  calModalMonthOffset = 0;
-  openModal(renderAppointmentsCalendarModalBody());
-  wireAppointmentsCalendarModal();
-}
-
-function renderAppointmentsCalendarModalBody() {
-  const now = new Date();
-  const viewDate = new Date(now.getFullYear(), now.getMonth() + calModalMonthOffset, 1);
-  const monthRange = { start: startOfMonth(viewDate), end: endOfMonth(viewDate) };
-
-  const rows = db.appointments.filter(a => a.role === calModalRole && a.scheduledAt && inRange(a.scheduledAt, monthRange));
-  const byDay = {};
-  rows.forEach(a => {
-    const key = dateInputValue(a.scheduledAt);
-    if (!byDay[key]) byDay[key] = [];
-    byDay[key].push(a);
-  });
-
-  const firstOfMonth = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
-  const firstWeekday = (firstOfMonth.getDay() + 6) % 7;
-  const daysInMonth = endOfMonth(viewDate).getDate();
-  const todayKey = dateInputValue(now);
-  const dowLabels = ['LUN', 'MAR', 'MER', 'GIO', 'VEN', 'SAB', 'DOM'];
-
-  let cells = '';
-  for (let i = 0; i < firstWeekday; i++) cells += `<div class="cal-cell empty"></div>`;
-  for (let day = 1; day <= daysInMonth; day++) {
-    const cellDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
-    const key = dateInputValue(cellDate);
-    const dayAppts = byDay[key] || [];
-    const classes = ['cal-cell'];
-    if (dayAppts.length) classes.push('has-events');
-    if (key === todayKey) classes.push('today');
-
-    const pillsHtml = dayAppts.slice(0, 4).map(a => {
-      if (calModalRole === 'venditore') {
-        const stage = a.dealStage || '';
-        const label = stage && dealStageDef(stage) ? dealStageDef(stage).label : '—';
-        return `<div class="cal-appt-pill deal-stage-select" data-stage="${stage}" title="${escapeHtml(a.clientName || '')}">${escapeHtml(a.clientName || '(senza nome)')}</div>`;
-      }
-      const cls = SETTER_PRESENTED_COLOR_CLASS[a.presentedStatus] || 'cal-appt-neutral';
-      return `<div class="cal-appt-pill ${cls}" title="${escapeHtml(a.clientName || '')}">${escapeHtml(a.clientName || '(senza nome)')}</div>`;
-    }).join('');
-    const moreHtml = dayAppts.length > 4 ? `<div class="cal-appt-more">+${dayAppts.length - 4}</div>` : '';
-
-    cells += `
-      <div class="${classes.join(' ')}">
-        <div class="cal-daynum">${day}</div>
-        <div class="cal-appt-pills">${pillsHtml}${moreHtml}</div>
-      </div>`;
-  }
-
-  const legendHtml = calModalRole === 'venditore'
-    ? DEAL_STAGES.map(s => `<span class="cal-legend-item deal-stage-select" data-stage="${s.key}">${escapeHtml(s.label)}</span>`).join('')
-    : Object.entries(SETTER_PRESENTED_LABEL).map(([key, label]) => `<span class="cal-legend-item ${SETTER_PRESENTED_COLOR_CLASS[key]}">${escapeHtml(label)}</span>`).join('');
-
-  return `
-    <h3>Calendario Appuntamenti — ${calModalRole === 'venditore' ? 'Venditore' : 'Setter'}</h3>
-    <div class="cal-nav">
-      <button id="calModalPrev">← Mese prec.</button>
-      <div class="cal-month-label">${viewDate.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</div>
-      <button id="calModalNext">Mese succ. →</button>
-    </div>
-    <div class="cal-grid">
-      ${dowLabels.map(d => `<div class="cal-dow">${d}</div>`).join('')}
-      ${cells}
-    </div>
-    <div class="cal-legend">${legendHtml}</div>
-    <div class="modal-actions">
-      <button class="btn-primary" data-close-modal="1">Chiudi</button>
-    </div>
-  `;
-}
-
-function wireAppointmentsCalendarModal() {
-  document.getElementById('calModalPrev').addEventListener('click', () => {
-    calModalMonthOffset -= 1;
-    modalRoot.querySelector('.modal-box').innerHTML = renderAppointmentsCalendarModalBody();
-    wireAppointmentsCalendarModal();
-  });
-  document.getElementById('calModalNext').addEventListener('click', () => {
-    calModalMonthOffset += 1;
-    modalRoot.querySelector('.modal-box').innerHTML = renderAppointmentsCalendarModalBody();
-    wireAppointmentsCalendarModal();
-  });
-  modalRoot.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', closeModal));
-}
 
 /* ============================================================================
  * Calendario appuntamenti — componente unico (restyling 17/10/2026, step 11, 5.2.1)
  * renderApptCalendar(role) + wireApptCalendar(role). Setter: in fondo a Setting →
- * Appuntamenti. Venditore: pronto per Venditore → Lead (step 15).
+ * Appuntamenti. Venditore: in fondo a Venditore → Lead (step 15).
  * Stessa struttura del calendario commissioni (mese lun-dom, ◀ ▶, "Oggi"), ma pensato
  * per leggere: celle alte, testo da 13 px, un blocco per appuntamento con ora + nome
  * (+ centro se c'è), colore per esito (rampa accento + neutri, legenda sotto), oggi con
@@ -5167,7 +4823,7 @@ function openApptFromCalendar(id) {
   if (!a) return;
   if (a.role === 'venditore') {
     const lead = a.leadId && (db.leads || []).find(l => l.id === a.leadId);
-    location.hash = lead ? '#/lead/' + lead.id : '#/' + VENDITORE_TABLE_ROUTE;
+    location.hash = lead ? '#/lead/' + lead.id : '#/venditore-lead'; // senza nome = senza lead: in fondo alla lista Lead
     return;
   }
   if (!location.hash.startsWith('#/setting-appuntamenti')) {
