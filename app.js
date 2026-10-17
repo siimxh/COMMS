@@ -49,298 +49,206 @@ function setSyncStatus(status) {
 }
 
 /* ============================================================================
- * Builder / Tema — preset, colori custom, radius, font, glow, saturazione/contrasto
+ * Tema — accento a rampa (restyling 17/10/2026, step 16)
+ * C'è UN solo stile, quello della guida colori. Da 🎨 Aspetto si sceglie solo:
+ *  - l'accento: i 4 preset della guida (Arancione = default, Indaco, Teal, Magenta) o
+ *    un colore a scelta, da cui il tool genera la rampa 500-100 (guida §5);
+ *  - Chiaro / Scuro (i neutri scuri stanno in style.css, data-theme="dark");
+ *  - la grandezza del testo e l'effetto "Numeri che contano".
+ * applyTheme scrive sulla pagina SOLO i token dell'accento (--accent-500..100,
+ * --accent-ink, --on-accent) e, se l'accento è verde o rosso, i colori di trend.
+ * Tutto il resto del CSS legge quei token: nessun colore d'accento scritto a mano.
+ * Salvato in db.settings: accent ('arancione'|'indaco'|'teal'|'magenta'|'custom'),
+ * accentCustom ('#RRGGBB', solo per 'custom'), themeMode ('light'|'dark').
  * ==========================================================================*/
 
-/**
- * Preset colore del builder 🎨. "Carta" è il predefinito (scelto dall'utente perché è
- * quello che gli stanca meno gli occhi); per lo stesso motivo quasi tutti i temi NON
- * hanno sfondo bianco puro: solo due chiari "freddi", gli altri caldi/tenui o scuri.
- * radiusStyle/glowLevel facoltativi: se presenti vengono applicati insieme ai colori.
- */
-const THEME_PRESETS = {
-  'carta': {
-    label: 'Carta',
-    radiusStyle: 'round', glowLevel: 'none',
-    colors: { bg: '#f3efe7', bgElev: '#fbf9f4', accent: '#2346a0', text: '#22211e', setterColor: '#2346a0', venditoreColor: '#1985ab', success: '#1f6b2e', danger: '#b3261e' }
-  },
-  'sabbia': {
-    label: 'Sabbia',
-    radiusStyle: 'round', glowLevel: 'none',
-    colors: { bg: '#ebe5d8', bgElev: '#f4efe4', accent: '#8a4b16', text: '#2a241c', setterColor: '#8a4b16', venditoreColor: '#2d6a8a', success: '#3d6b22', danger: '#a8321f' }
-  },
-  'salvia': {
-    label: 'Salvia',
-    radiusStyle: 'round', glowLevel: 'none',
-    colors: { bg: '#e4e9e2', bgElev: '#eef2ec', accent: '#2f6b4f', text: '#1c2620', setterColor: '#2f6b4f', venditoreColor: '#3a5f8f', success: '#2f6b4f', danger: '#a8321f' }
-  },
-  'nebbia': {
-    label: 'Nebbia',
-    radiusStyle: 'round', glowLevel: 'none',
-    colors: { bg: '#e6e9ef', bgElev: '#f0f2f6', accent: '#3b4fa0', text: '#1c2130', setterColor: '#3b4fa0', venditoreColor: '#a0583b', success: '#2f7a4f', danger: '#b3261e' }
-  },
-  'notte-morbida': {
-    label: 'Notte Morbida',
-    radiusStyle: 'round', glowLevel: 'none',
-    colors: { bg: '#1b1c20', bgElev: '#24262b', accent: '#f2b66d', text: '#eceae4', setterColor: '#f2b66d', venditoreColor: '#8ec5ff', success: '#8fd19e', danger: '#ff7a6b' }
-  },
-  'ardesia': {
-    label: 'Ardesia',
-    radiusStyle: 'round', glowLevel: 'none',
-    colors: { bg: '#1a1f27', bgElev: '#232a35', accent: '#8ab4f8', text: '#e6eaf0', setterColor: '#8ab4f8', venditoreColor: '#f2b66d', success: '#8fd19e', danger: '#ff7a6b' }
-  },
-  'bosco': {
-    label: 'Bosco',
-    radiusStyle: 'round', glowLevel: 'none',
-    colors: { bg: '#18201b', bgElev: '#212b24', accent: '#9ed69a', text: '#e5ece5', setterColor: '#9ed69a', venditoreColor: '#e8c07a', success: '#9ed69a', danger: '#ff8a7a' }
-  },
-  'prugna': {
-    label: 'Prugna',
-    radiusStyle: 'round', glowLevel: 'none',
-    colors: { bg: '#1f1a22', bgElev: '#2a232e', accent: '#d7a6e8', text: '#eee8f0', setterColor: '#d7a6e8', venditoreColor: '#8ec5ff', success: '#9ed69a', danger: '#ff8a7a' }
-  },
-  'oceano': {
-    label: 'Oceano',
-    radiusStyle: 'round', glowLevel: 'none',
-    colors: { bg: '#12202a', bgElev: '#1a2b37', accent: '#6fd3c9', text: '#e3eef2', setterColor: '#6fd3c9', venditoreColor: '#f2b66d', success: '#8fd19e', danger: '#ff8a7a' }
-  },
-  'graphite-lime': {
-    label: 'Graphite Lime',
-    colors: { bg: '#17181a', bgElev: '#1e2022', accent: '#c6ff3d', text: '#f5f6f2', setterColor: '#c6ff3d', venditoreColor: '#7fd9ff', success: '#c6ff3d', danger: '#ff5c5c' }
-  },
-  'slate-amber': {
-    label: 'Slate Amber',
-    colors: { bg: '#12141a', bgElev: '#1a1d24', accent: '#f5a524', text: '#f2f3f6', setterColor: '#f5a524', venditoreColor: '#7fd9ff', success: '#4ade80', danger: '#ff5c5c' }
-  },
-  'navy-gold': {
-    label: 'Navy Gold',
-    colors: { bg: '#0b1220', bgElev: '#131c30', accent: '#d4a94a', text: '#f2f4f8', setterColor: '#d4a94a', venditoreColor: '#7fd9ff', success: '#4ade80', danger: '#ff5c5c' }
-  },
-  // I due chiari "freddi": niente più card in bianco puro (#fff), troppo abbagliante.
-  'paper-emerald': {
-    label: 'Paper Emerald',
-    colors: { bg: '#eef0ec', bgElev: '#f8f9f6', accent: '#0f7a5c', text: '#111813', setterColor: '#0f7a5c', venditoreColor: '#1985ab', success: '#0f7a5c', danger: '#c23b3b' }
-  },
-  'cobalt-light': {
-    label: 'Cobalt Light',
-    colors: { bg: '#eceff6', bgElev: '#f7f8fc', accent: '#3355ff', text: '#0e1220', setterColor: '#3355ff', venditoreColor: '#0f7a5c', success: '#0f7a5c', danger: '#c23b3b' }
-  }
+/** Rampe della guida (§5, "Esempi di rampe alternative"): 500, 400, 300, 200, 100. */
+const ACCENT_PRESETS = {
+  arancione: { label: 'Arancione', ramp: ['#FF5A1F', '#FA8A5F', '#FCB497', '#FDD8C7', '#FFEDE5'],
+    // Testo arancione: gli stessi valori scelti allo step 1 (il 500 sul bianco non passa il contrasto).
+    ink: '#C2410C', inkDark: '#FF8A5F' },
+  indaco: { label: 'Indaco', ramp: ['#4F46E5', '#7C75EE', '#A9A4F4', '#D4D1FA', '#EEEDFD'] },
+  teal: { label: 'Teal', ramp: ['#0D9488', '#4DB3AA', '#8ACFC8', '#C4E8E4', '#E6F5F3'] },
+  magenta: { label: 'Magenta', ramp: ['#D9267A', '#E5639F', '#EE99C0', '#F7CCE0', '#FCEAF2'] }
 };
+const DEFAULT_ACCENT = 'arancione';
+const ACCENT_LEVELS = [500, 400, 300, 200, 100];
+/* Luminosità HSL della guida per 400-100 (il 500 resta quello scelto, tenuto tra 45 e 60%). */
+const ACCENT_RAMP_L = { 400: 68, 300: 78, 200: 88, 100: 95 };
+const ACCENT_L500_MIN = 45, ACCENT_L500_MAX = 60;
+/* Superfici dei due temi (uguali a style.css) per i calcoli di contrasto e le tinte scure. */
+const THEME_SURFACE = { light: { card: '#FFFFFF', page: '#F5F5F6' }, dark: { card: '#1B1B1E', page: '#26262A' } };
+const ON_ACCENT_DARK = '#111113';
+/* Colori di trend quando l'accento li confonderebbe (guida §5.4).
+ * REGOLA: accento VERDE (tinta 90-160°) → variazione positiva ↑ in BLU;
+ *         accento ROSSO (tinta 345-15°) → variazione negativa ↓ (e scadenze) in VIOLA.
+ * Sotto il 20% di saturazione (quasi grigio) la tinta non conta: niente spostamento. */
+const TREND_SHIFT = {
+  success: { light: ['#2563EB', '#E8EFFD'], dark: ['#6E9BFF', '#16233F'] },
+  danger: { light: ['#7C3AED', '#F1EAFD'], dark: ['#A98BFF', '#2A1F45'] }
+};
+const THEME_INLINE_VARS = ['--accent-500', '--accent-400', '--accent-300', '--accent-200', '--accent-100',
+  '--accent-ink', '--on-accent', '--success', '--success-bg', '--danger', '--danger-bg'];
 
-/* Angoli, font e glow del builder vecchio: tolti col restyling (17/10). Il font è Inter
- * per tutti (style.css, --font-sans). */
-
-/** Schiarisce/scurisce un colore hex di una percentuale (positiva = verso il bianco). Usata per derivare --bg-elev2/--border/--accent-hover dai colori custom. */
-function shadeHex(hex, pct) {
-  const c = hex.replace('#', '');
-  const num = parseInt(c.length === 3 ? c.split('').map(x => x + x).join('') : c, 16);
-  let r = (num >> 16) & 0xff, g = (num >> 8) & 0xff, b = num & 0xff;
-  const mix = (ch) => Math.max(0, Math.min(255, Math.round(ch + (pct >= 0 ? (255 - ch) : ch) * pct)));
-  r = mix(r); g = mix(g); b = mix(b);
-  return '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('');
+/* ---------- Colori: conversioni e contrasto (WCAG) ---------- */
+function hexToRgb(hex) {
+  const c = String(hex).replace('#', '');
+  const full = c.length === 3 ? c.split('').map(x => x + x).join('') : c;
+  const n = parseInt(full, 16);
+  return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff];
 }
-
-/** Mescola due colori hex: t=0 -> a, t=1 -> b. */
+function rgbToHex(rgb) {
+  return '#' + rgb.map(v => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+function isHexColor(v) { return typeof v === 'string' && /^#[0-9a-fA-F]{6}$/.test(v); }
+/** → { h: 0-360, s: 0-100, l: 0-100 } */
+function hexToHsl(hex) {
+  const [r, g, b] = hexToRgb(hex).map(v => v / 255);
+  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const l = (max + min) / 2;
+  let h = 0, s = 0;
+  if (max !== min) {
+    const d = max - min;
+    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+    if (max === r) h = ((g - b) / d + (g < b ? 6 : 0));
+    else if (max === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h *= 60;
+  }
+  return { h, s: s * 100, l: l * 100 };
+}
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return rgbToHex([f(0) * 255, f(8) * 255, f(4) * 255]);
+}
+/** Mescola due colori hex: t=0 → a, t=1 → b. */
 function mixHex(a, b, t) {
-  const p = (h) => { const c = h.replace('#', ''); const n = parseInt(c.length === 3 ? c.split('').map(x => x + x).join('') : c, 16); return [(n >> 16) & 0xff, (n >> 8) & 0xff, n & 0xff]; };
-  const x = p(a), y = p(b);
-  return '#' + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, '0')).join('');
+  const x = hexToRgb(a), y = hexToRgb(b);
+  return rgbToHex(x.map((v, i) => v + (y[i] - v) * t));
+}
+/** Luminanza relativa WCAG 2.x. */
+function relLuminance(hex) {
+  const [r, g, b] = hexToRgb(hex).map(v => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+function contrastRatio(a, b) {
+  const la = relLuminance(a), lb = relLuminance(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-function hexToRgba(hex, alpha) {
-  const c = hex.replace('#', '');
-  const num = parseInt(c.length === 3 ? c.split('').map(x => x + x).join('') : c, 16);
-  const r = (num >> 16) & 0xff, g = (num >> 8) & 0xff, b = num & 0xff;
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+/** Rampa 500-100 da un colore qualsiasi (guida §5): stessa tinta e saturazione,
+ *  luminosità 500 = quella scelta tenuta tra 45 e 60%, poi 68 / 78 / 88 / 95%. */
+function accentRampFromHex(hex) {
+  const { h, s, l } = hexToHsl(hex);
+  const l500 = Math.max(ACCENT_L500_MIN, Math.min(ACCENT_L500_MAX, l));
+  return [hslToHex(h, s, l500)].concat([400, 300, 200, 100].map(k => hslToHex(h, s, ACCENT_RAMP_L[k])));
 }
 
-/* Variabili che la versione prima del restyling scriveva direttamente sulla pagina
- * (style="--bg:..."): se restano, vincono sui token di style.css. Le togliamo. */
-const OLD_INLINE_THEME_VARS = ['--bg', '--bg-elev', '--bg-elev2', '--border', '--accent', '--accent-hover', '--accent-dim',
-  '--text', '--text-dim', '--warning', '--on-accent', '--setter-color', '--venditore-color', '--success', '--danger',
-  '--tag-x2-bg', '--tag-x2-text', '--tag-conv-bg', '--tag-conv-text', '--accent-filter'];
+/** La stessa tinta, scurita (chiaro) o schiarita (scuro) finché si legge come testo sulle superfici. */
+function accentInkFor(base, mode) {
+  const surf = THEME_SURFACE[mode];
+  const ok = c => contrastRatio(c, surf.card) >= 4.5 && contrastRatio(c, surf.page) >= 4.5;
+  const { h, s, l } = hexToHsl(base);
+  if (ok(base)) return base.toUpperCase();
+  for (let i = 1; i <= 100; i++) {
+    const c = hslToHex(h, s, mode === 'dark' ? Math.min(100, l + i) : Math.max(0, l - i));
+    if (ok(c)) return c;
+  }
+  return mode === 'dark' ? '#FFFFFF' : ON_ACCENT_DARK;
+}
 
-/** Chiaro o scuro, dalla scelta salvata in 🎨 (sfondo scuro = tema scuro). */
+/** 'green' | 'red' | null: l'accento si confonde con i colori di trend? */
+function accentTrendConflict(hex) {
+  const { h, s } = hexToHsl(hex);
+  if (s < 20) return null;
+  if (h >= 90 && h <= 160) return 'green';
+  if (h >= 345 || h <= 15) return 'red';
+  return null;
+}
+
+/** Accento salvato → { key, label, base (500 della rampa chiara) , ramp chiara }. Valori sconosciuti = Arancione. */
+function currentAccent(settings) {
+  const s = settings || {};
+  if (s.accent === 'custom' && isHexColor(s.accentCustom)) {
+    return { key: 'custom', label: 'Colore a scelta', ramp: accentRampFromHex(s.accentCustom) };
+  }
+  const key = ACCENT_PRESETS[s.accent] ? s.accent : DEFAULT_ACCENT;
+  return Object.assign({ key }, ACCENT_PRESETS[key]);
+}
+
+/** Tutti i token da scrivere sulla pagina per un accento in un tema. */
+function accentTokens(acc, mode) {
+  const [c500, c400, c300, c200, c100] = acc.ramp;
+  const t = { '--accent-500': c500, '--accent-400': c400 };
+  if (mode === 'dark') {
+    // Tema scuro: le tinte tenui (sfondi) diventano tinte SCURE della stessa tinta,
+    // altrimenti un accent-100 quasi bianco abbaglia sulle card scure (come lo step 1).
+    const card = THEME_SURFACE.dark.card;
+    t['--accent-300'] = mixHex(card, c500, 0.55);
+    t['--accent-200'] = mixHex(card, c500, 0.30);
+    t['--accent-100'] = mixHex(card, c500, 0.14);
+    t['--accent-ink'] = acc.inkDark || accentInkFor(c500, 'dark');
+  } else {
+    t['--accent-300'] = c300;
+    t['--accent-200'] = c200;
+    t['--accent-100'] = c100;
+    t['--accent-ink'] = acc.ink || accentInkFor(c500, 'light');
+  }
+  // Testo sopra l'accento pieno: bianco solo se arriva a 4.5:1, altrimenti neutral-900.
+  t['--on-accent'] = contrastRatio('#FFFFFF', c500) >= 4.5 ? '#FFFFFF' : ON_ACCENT_DARK;
+  const conflict = accentTrendConflict(c500);
+  if (conflict === 'green') { t['--success'] = TREND_SHIFT.success[mode][0]; t['--success-bg'] = TREND_SHIFT.success[mode][1]; }
+  if (conflict === 'red') { t['--danger'] = TREND_SHIFT.danger[mode][0]; t['--danger-bg'] = TREND_SHIFT.danger[mode][1]; }
+  return t;
+}
+
+/** Chiaro o scuro, dalla scelta salvata in 🎨. */
 function themeModeFromSettings(settings) {
-  const bg = (settings.colors || {}).bg;
-  return bg && /^#[0-9a-fA-F]{3,6}$/.test(bg) && isDarkColor(bg) ? 'dark' : 'light';
+  return (settings && settings.themeMode === 'dark') ? 'dark' : 'light';
 }
 
 /**
- * Applica data.settings al DOM. Restyling 17/10 (step 1): i colori vengono SOLO dai
- * token di style.css (guida colori). Qui si sceglie solo chiaro/scuro (data-theme),
- * la grandezza del testo e le classi degli effetti (Grind, Boss Mode).
- * I vecchi preset, angoli, font e glow del builder non cambiano più l'aspetto:
- * il builder nuovo (accento a rampa) arriva allo step 16.
+ * Applica db.settings al DOM: data-theme (chiaro/scuro), token dell'accento, grandezza
+ * del testo. Si chiama a ogni renderRoute e dopo ogni cambio in 🎨.
  */
 function applyTheme(settings) {
   if (!settings) return;
   const root = document.documentElement;
-  OLD_INLINE_THEME_VARS.forEach(v => root.style.removeProperty(v));
-  root.removeAttribute('data-skin');
-  root.removeAttribute('data-tone');
-  // Grandezza del testo (🎨 semplice, 16/10): "Grande" ingrandisce tutto il tool.
+  const mode = themeModeFromSettings(settings);
+  root.setAttribute('data-theme', mode);
+  const tokens = accentTokens(currentAccent(settings), mode);
+  THEME_INLINE_VARS.forEach(v => {
+    if (tokens[v]) root.style.setProperty(v, tokens[v]);
+    else root.style.removeProperty(v);
+  });
+  // Grandezza del testo (🎨, 16/10): "Grande" ingrandisce tutto il tool.
   root.style.fontSize = settings.textSize === 'large' ? '121%' : '';
-  // Niente più classi di angoli/font/glow del builder vecchio.
-  const body = document.body;
-  body.className = body.className.replace(/\b(radius|font|glow)-\S+/g, '').replace(/\s+/g, ' ').trim();
-  root.setAttribute('data-theme', themeModeFromSettings(settings));
-
-  // Tema auto giorno/notte (toggle 6): 7-19 chiaro, resto scuro — sovrascrive la preferenza di sistema.
-  if (settings.toggles && settings.toggles.autoTheme) {
-    const h = new Date().getHours();
-    root.setAttribute('data-theme', (h >= 7 && h < 19) ? 'light' : 'dark');
-  }
-
-  // Modalità Grind (toggle 1): confronta chiusure mese corrente coi due target mensili "chiusi".
-  document.body.classList.remove('grind-under', 'grind-over');
-  if (settings.toggles && settings.toggles.grindMode) {
-    const ranges = currentPeriodRanges();
-    const setterVals = computeFunnelValues(db, 'setter', ranges.month);
-    const targetSetter = (db.goals.setter.month.chiusi || 0);
-    const under = targetSetter > 0 && setterVals.chiusi < targetSetter;
-    document.body.classList.add(under ? 'grind-under' : 'grind-over');
-  }
-
-  // Boss Mode (toggle 13): ultimi 3 giorni del mese E sotto obiettivo mensile "chiusi" (setter).
-  document.body.classList.remove('boss-mode');
-  if (settings.toggles && settings.toggles.bossMode) {
-    const now = new Date();
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const daysLeft = lastDay - now.getDate();
-    const ranges = currentPeriodRanges();
-    const setterVals = computeFunnelValues(db, 'setter', ranges.month);
-    const targetSetter = (db.goals.setter.month.chiusi || 0);
-    if (daysLeft <= 3 && targetSetter > 0 && setterVals.chiusi < targetSetter) {
-      document.body.classList.add('boss-mode');
-    }
-  }
 }
 
-function isDarkColor(hex) {
-  const c = hex.replace('#', '');
-  const num = parseInt(c.length === 3 ? c.split('').map(x => x + x).join('') : c, 16);
-  const r = (num >> 16) & 0xff, g = (num >> 8) & 0xff, b = num & 0xff;
-  return (0.299 * r + 0.587 * g + 0.114 * b) < 128;
-}
-
-/* ---------- Suoni (Web Audio API, niente file esterni) ---------- */
-
-let _audioCtx = null;
-function getAudioCtx() {
-  if (!_audioCtx) {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return null;
-    _audioCtx = new Ctx();
-  }
-  return _audioCtx;
-}
-
-/** Due note rapide in sequenza — usata sia dal beep "chiusura" (toggle 3) che dal "level up" (toggle 14), con frequenze diverse. */
-function playChime(freq1, freq2) {
-  const ctx = getAudioCtx();
-  if (!ctx) return;
-  try {
-    const now = ctx.currentTime;
-    [{ f: freq1, t: now }, { f: freq2, t: now + 0.11 }].forEach(({ f, t }) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(f, t);
-      gain.gain.setValueAtTime(0.0001, t);
-      gain.gain.exponentialRampToValueAtTime(0.18, t + 0.015);
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
-      osc.connect(gain).connect(ctx.destination);
-      osc.start(t);
-      osc.stop(t + 0.12);
-    });
-  } catch (e) { console.error('Audio non disponibile', e); }
-}
-
-function playCloseSound() { playChime(660, 880); }
-function playLevelUpSound() { playChime(523, 1046); }
-
-/* ---------- Confetti (toggle 5) ---------- */
-
-function fireConfetti() {
-  const colors = [getCssVar('--accent'), getCssVar('--setter-color'), getCssVar('--venditore-color'), getCssVar('--success')];
-  for (let i = 0; i < 26; i++) {
-    const piece = document.createElement('div');
-    piece.className = 'confetti-piece';
-    const left = Math.random() * 100;
-    const dur = 1.4 + Math.random() * 1.2;
-    const delay = Math.random() * 0.3;
-    piece.style.left = left + 'vw';
-    piece.style.background = colors[i % colors.length];
-    piece.style.animationDuration = dur + 's';
-    piece.style.animationDelay = delay + 's';
-    document.body.appendChild(piece);
-    setTimeout(() => piece.remove(), (dur + delay) * 1000 + 100);
-  }
-}
-
-function getCssVar(name) {
-  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#c6ff3d';
-}
-
-/* ---------- Ticker commissioni live (toggle 12) ---------- */
-
-function showCommissionTicker(amount) {
-  if (!db.settings.toggles.liveTicker) return;
-  const anchor = document.querySelector('.kpi-card.accented[data-ticker-anchor]');
-  if (!anchor) return;
-  let ticker = anchor.querySelector('.commission-ticker');
-  if (!ticker) {
-    ticker = document.createElement('div');
-    ticker.className = 'commission-ticker';
-    anchor.appendChild(ticker);
-  }
-  ticker.textContent = `+€${round2(amount)}`;
-  ticker.classList.remove('show');
-  void ticker.offsetWidth;
-  ticker.classList.add('show');
-}
-
-/* ---------- Numeri animati: countUp (toggle 2) e slot-machine (toggle 16) ----------
- * Se entrambi i toggle sono attivi, la priorità va allo slot-machine (più vistoso e
- * pensato apposta per "quando un KPI cambia") mentre countUp resta l'animazione di
- * default per il primo render. Scelta documentata anche nel brief del builder. */
+/* ---------- Numeri che contano (unico effetto rimasto in 🎨) ---------- */
 function animateKpiValues(root) {
-  if (!db.settings.toggles) return;
-  const useSlot = db.settings.toggles.slotMachineNumbers;
-  const useCount = db.settings.toggles.animatedNumbers;
-  if (!useSlot && !useCount) return;
+  if (!db.settings.toggles || !db.settings.toggles.animatedNumbers) return;
   root.querySelectorAll('[data-kpi-num]').forEach(el => {
     const target = parseFloat(el.dataset.kpiNum);
     if (isNaN(target)) return;
-    if (useSlot) {
-      el.classList.remove('slot-anim');
-      void el.offsetWidth;
-      el.classList.add('slot-anim');
-      el.textContent = el.dataset.kpiDisplay || String(target);
-    } else if (useCount) {
-      const isMoney = el.dataset.kpiMoney === '1';
-      const suffix = el.dataset.kpiSuffix || '';
-      const duration = 600;
-      const start = performance.now();
-      function step(now) {
-        const p = Math.min(1, (now - start) / duration);
-        const eased = 1 - Math.pow(1 - p, 3);
-        const val = target * eased;
-        el.textContent = (isMoney ? '€' : '') + (Number.isInteger(target) ? Math.round(val) : round1(val)) + suffix;
-        if (p < 1) requestAnimationFrame(step);
-        else el.textContent = el.dataset.kpiDisplay || String(target);
-      }
-      requestAnimationFrame(step);
+    const money = /€/.test(el.dataset.kpiDisplay || '');
+    const duration = 600;
+    const start = performance.now();
+    function step(now) {
+      const p = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = fmtNumIt(Math.round(target * eased), money);
+      if (p < 1) requestAnimationFrame(step);
+      else el.textContent = el.dataset.kpiDisplay || String(target);
     }
+    requestAnimationFrame(step);
   });
-}
-
-/* ---------- Cash Day badge (toggle 15) ---------- */
-function isCashDay(dayTotal) {
-  if (!db.settings.toggles.cashDayBadge) return false;
-  const threshold = db.settings.cashDayThreshold || 0;
-  return threshold > 0 && dayTotal >= threshold;
 }
 
 /* ---------- Router ---------- */
@@ -968,13 +876,10 @@ function wireDashboardPayments() {
     // tabella Setting, il popup rate e la scheda lead → Pagamenti.
     const inst = apt && (apt.installments || []).find(i => i.id === cb.dataset.payInst);
     if (!inst || inst.paid) return;
-    const before = sumEvents(commissionEventsForAppointment(apt));
     inst.paid = true;
     inst.paidDate = dateInputValue(new Date());
     if (apt.role === 'venditore') LeadCRM.onInstallmentPaid(apt, inst);
     persist();
-    const gained = sumEvents(commissionEventsForAppointment(apt)) - before;
-    if (gained > 0 && db.settings.toggles && db.settings.toggles.liveTicker) showCommissionTicker(gained);
     renderDashboard();
     showToast('Pagato: ' + fmtEuroIt(inst.amount) + (apt.centerName ? ' · ' + apt.centerName : '') + '.');
   }));
@@ -1539,7 +1444,7 @@ function renderCommissionKpiSection() {
   const prev = (!best && tf === 'all') ? null : computeCommissionSummary(db, previousPeriod(range));
   const vOn = LeadCRM.isOn();
   const cell = (label, val, prevVal, anchor) => `
-      <div class="kpi-card${anchor ? ' accented' : ''}"${anchor ? ' data-ticker-anchor="1"' : ''}>
+      <div class="kpi-card${anchor ? ' accented' : ''}">
         <div class="kpi-label">${escapeHtml(label)}</div>
         <div class="kpi-value" data-kpi-num="${val}" data-kpi-money="0" data-kpi-display="${fmtNumIt(val, true)}">${fmtNumIt(val, true)}</div>
         <div class="kpi-vs">${prev ? `${trendBadge(val, prevVal)}<span>vs periodo prima (${fmtNumIt(prevVal, true)})</span>` : '<span>tutto lo storico</span>'}</div>
@@ -4222,13 +4127,8 @@ function wireAppuntamentiEvents() {
       if (!apt) return;
       // L'acconto (cash collected) è ora la rata sintetica "_deposit" (vedi
       // getEffectiveInstallments) — il suo id evento è apt.id + '_deposit'.
-      const prevCommission = apt.closed ? commissionEventsForAppointment(apt).filter(e => e.id === apt.id + '_deposit').reduce((s, e) => s + e.amount, 0) : 0;
       apt.cashCollected = Math.max(0, parseFloat(input.value) || 0);
       persist();
-      if (apt.closed && db.settings.toggles.liveTicker) {
-        const newCommission = commissionEventsForAppointment(apt).filter(e => e.id === apt.id + '_deposit').reduce((s, e) => s + e.amount, 0);
-        if (newCommission > prevCommission) showCommissionTicker(newCommission - prevCommission);
-      }
       renderAppuntamenti();
     });
   });
@@ -4295,34 +4195,13 @@ function openClosingDataModal(apt, opts) {
 
 /**
  * Marca closed=true/false su un appuntamento, gestendo closedAt (vedi commento in
- * newAppointment) e i feedback opzionali del builder: suono di chiusura, confetti se
- * una barra obiettivo tocca 100% dopo l'aggiornamento, suono "level up" allo stesso
- * trigger del 100% (stessa logica descritta nel brief per il toggle 14).
+ * newAppointment). Suoni e confetti del builder vecchio: tolti (restyling step 16).
  */
 function setAppointmentClosed(apt, value) {
-  const wasComplete = anyGoalComplete();
   apt.closed = value;
   if (value && !apt.closedAt) apt.closedAt = new Date().toISOString();
   if (!value) apt.closedAt = null;
   persist();
-
-  if (value && db.settings.toggles.closeSound) playCloseSound();
-
-  const nowComplete = anyGoalComplete();
-  if (value && !wasComplete && nowComplete) {
-    if (db.settings.toggles.confetti) fireConfetti();
-    if (db.settings.toggles.levelUpSound) playLevelUpSound();
-  }
-}
-
-/** true se almeno un obiettivo "chiusi" (mese, per uno qualsiasi dei due ruoli) è al 100% o oltre. */
-function anyGoalComplete() {
-  const ranges = currentPeriodRanges();
-  const setterVals = computeFunnelValues(db, 'setter', ranges.month);
-  const venditoreVals = computeFunnelValues(db, 'venditore', ranges.month);
-  const targetSetter = db.goals.setter.month.chiusi || 0;
-  const targetVenditore = db.goals.venditore.month.chiusi || 0;
-  return (targetSetter > 0 && setterVals.chiusi >= targetSetter) || (targetVenditore > 0 && venditoreVals.chiusi >= targetVenditore);
 }
 
 /* ============================================================================
@@ -4334,7 +4213,6 @@ function anyGoalComplete() {
  * ==========================================================================*/
 
 function applyDealStage(apt, stageKey) {
-  const wasComplete = anyGoalComplete();
   apt.dealStage = stageKey || null;
   const def = dealStageDef(stageKey);
   apt.closed = !!(def && def.isClosed);
@@ -4345,13 +4223,6 @@ function applyDealStage(apt, stageKey) {
   if (stageKey === 'no_show' || stageKey === 'annullato') addToRecoveryRound(apt, 'venditore', stageKey);
   else deactivateRecoveryEntryForAppointment(apt);
   persist();
-
-  if (apt.closed && db.settings.toggles.closeSound) playCloseSound();
-  const nowComplete = anyGoalComplete();
-  if (apt.closed && !wasComplete && nowComplete) {
-    if (db.settings.toggles.confetti) fireConfetti();
-    if (db.settings.toggles.levelUpSound) playLevelUpSound();
-  }
 }
 
 /**
@@ -4527,9 +4398,6 @@ function renderInstallmentsModal(apt, role) {
       const field = fieldEl.dataset.instField;
       const evt = (fieldEl.type === 'checkbox') ? 'change' : 'change';
       fieldEl.addEventListener(evt, () => {
-        const prevCommission = inst.paid ? commissionEventsForAppointment(apt).find(e => e.id === apt.id + '_' + inst.id) : null;
-        const prevAmount = prevCommission ? prevCommission.amount : 0;
-
         if (field === 'label') inst.label = fieldEl.value;
         else if (field === 'amount') inst.amount = Math.max(0, parseFloat(fieldEl.value) || 0);
         else if (field === 'dueDate') inst.dueDate = fieldEl.value;
@@ -4539,13 +4407,6 @@ function renderInstallmentsModal(apt, role) {
         } else if (field === 'paidDate') inst.paidDate = fieldEl.value;
 
         persist();
-
-        if (inst.paid && db.settings.toggles.liveTicker) {
-          const newCommission = commissionEventsForAppointment(apt).find(e => e.id === apt.id + '_' + inst.id);
-          const newAmount = newCommission ? newCommission.amount : 0;
-          if (newAmount > prevAmount) showCommissionTicker(newAmount - prevAmount);
-        }
-
         renderInstallmentsModal(apt);
       });
     });
@@ -4588,7 +4449,6 @@ function renderCommissioniCalendarSection() {
     const classes = ['cal-cell'];
     if (hasEvents) classes.push('has-events', 'lvl-' + (maxDay > 0 ? Math.max(1, Math.ceil(dayTotal / maxDay * 4)) : 1));
     if (key === todayKey) classes.push('today');
-    if (isCashDay(dayTotal)) classes.push('cash-day');
     cells += `
       <div class="${classes.join(' ')}" ${hasEvents ? `data-cal-day="${key}" title="${escapeHtml(detail)}"` : ''}>
         <div class="cal-daynum">${day}</div>
@@ -6223,84 +6083,98 @@ function importData(file) {
 }
 
 /* ============================================================================
- * Builder (Impostazioni) — pagina piena, raggiungibile dal pulsante 🎨 in topbar.
- * Scelta di design: pagina piena invece di modal, perché il builder ha molte
- * sezioni (preset, 8 color picker, radius, font, 2 slider, glow, 16 toggle) e
- * un modal sarebbe scomodo da scorrere.
+ * 🎨 Aspetto (#/impostazioni) — restyling step 16.
+ * Scheletro di prima (preset rapidi + colore a scelta + Chiaro/Scuro, grandezza del
+ * testo, effetti), ma i preset sono le rampe della guida e il colore a scelta genera la
+ * rampa da solo (vedi "Tema — accento a rampa"). Lo stile vecchio non si può più scegliere.
  * ==========================================================================*/
 
-/* 🎨 semplice (Simone, 16/10, lettera I): chiaro/scuro, un colore, grandezza del testo,
- * 4 effetti. Il resto sta in "Personalizza a mano", chiuso. */
-const SIMPLE_ACCENTS = [['#d7a6e8', 'Lilla'], ['#4d7cf0', 'Blu'], ['#2fa36b', 'Verde'], ['#e08a2c', 'Arancio'], ['#e0605a', 'Rosso'], ['#1fa3b5', 'Azzurro']];
-// countdown, streak e ritmo di chiusura erano sezioni della Dashboard: tolte (restyling step 9).
-const SIMPLE_TOGGLES = ['animatedNumbers'];
-const SIMPLE_BASE = {
-  dark: { bg: '#1f1a22', bgElev: '#2a232e', text: '#eee8f0', venditoreColor: '#8ec5ff', success: '#9ed69a', danger: '#ff8a7a' },
-  light: { bg: '#f3efe7', bgElev: '#fbf9f4', text: '#22211e', venditoreColor: '#1985ab', success: '#1f6b2e', danger: '#b3261e' }
-};
-function applySimpleLook(mode, accent) {
-  const s = db.settings;
-  s.colors = Object.assign({}, s.colors, SIMPLE_BASE[mode], { accent, setterColor: accent });
-  s.preset = 'custom';
-  s.simpleMode = mode;
-  persist();
-  applyTheme(s);
-  renderBuilderPage();
+/* Unico effetto rimasto: gli altri (Grind, Boss, confetti, suoni, ticker, Cash Day,
+ * slot machine, tema auto...) non facevano più niente dopo il restyling e sono stati tolti. */
+const BUILDER_TOGGLES = [
+  { key: 'animatedNumbers', title: 'Numeri che contano', desc: 'I numeri delle commissioni salgono da zero quando apri la Dashboard.' }
+];
+
+function accentSwatchHtml(key, label, ramp, active) {
+  return `
+    <button type="button" class="accent-swatch${active ? ' active' : ''}" data-accent-preset="${key}" aria-pressed="${active ? 'true' : 'false'}">
+      <span class="accent-swatch-ramp" aria-hidden="true">${ramp.map(c => `<i style="background:${c}"></i>`).join('')}</span>
+      <span class="accent-swatch-name">${escapeHtml(label)}</span>
+    </button>`;
 }
 
-const TOGGLE_DEFS = [
-  { key: 'grindMode', title: 'Modalità Grind', desc: 'Sotto obiettivo mese = accenti rossi, sopra = lime/verde.' },
-  { key: 'animatedNumbers', title: 'Numeri che contano', desc: 'Count-up animato sui KPI ad ogni render.' },
-  { key: 'closeSound', title: 'Suono conferma chiusura', desc: 'Beep sintetizzato quando marchi un appuntamento come chiuso.' },
-  { key: 'dailyStreak', title: 'Streak giornaliero', desc: 'Mostra i giorni consecutivi con almeno un appuntamento fissato.' },
-  { key: 'confetti', title: 'Confetti', desc: 'Coriandoli animati quando una barra obiettivo tocca il 100%.' },
-  { key: 'autoTheme', title: 'Tema auto giorno/notte', desc: 'Chiaro 7-19, scuro il resto del giorno (sovrascrive il tema di sistema).' },
-  { key: 'monthCountdown', title: 'Countdown fine mese', desc: 'Giorni rimanenti nel mese corrente, in cima alla dashboard.' },
-  { key: 'dailyQuote', title: 'Frase motivazionale', desc: 'Una frase al giorno, stabile per tutto il giorno.' },
-  { key: 'closingPace', title: 'Ritmo di chiusura', desc: 'Proietta quando raggiungerai il target mensile di chiusure.' },
-  { key: 'personalBest', title: 'Personal best', desc: 'Badge se la settimana corrente batte lo storico.' },
-  { key: 'midMilestone', title: 'Milestone a metà', desc: 'Pulse quando una barra supera il 50%/75%.' },
-  { key: 'liveTicker', title: 'Ticker commissioni live', desc: '"+€X" che appare e sfuma vicino al KPI commissioni.' },
-  { key: 'bossMode', title: 'Boss Mode', desc: 'Ultimi 3 giorni del mese, sotto obiettivo: bordi pulsanti sugli elementi principali.' },
-  { key: 'levelUpSound', title: 'Suono level up', desc: 'Come il beep di chiusura, tono diverso, stesso trigger del 100% obiettivo.' },
-  { key: 'cashDayBadge', title: 'Cash Day badge', desc: 'Evidenzia nel calendario i giorni sopra una soglia €.', hasThreshold: true },
-  { key: 'slotMachineNumbers', title: 'Font slot machine', desc: 'Animazione verticale sui KPI invece del count-up (ha priorità se entrambi attivi).' }
-];
+/** Anteprima della rampa applicata adesso (valori veri del tema in uso) + contrasto. */
+function accentPreviewHtml(acc, mode) {
+  const t = accentTokens(acc, mode);
+  const white = contrastRatio('#FFFFFF', t['--accent-500']);
+  const onWhite = t['--on-accent'] === '#FFFFFF';
+  const fmtRatio = r => r.toLocaleString('it-IT', { maximumFractionDigits: 1, minimumFractionDigits: 1 }) + ':1';
+  const conflict = accentTrendConflict(t['--accent-500']);
+  const conflictNote = conflict === 'green'
+    ? '<p class="accent-note">Accento verde: le variazioni in salita ↑ diventano <b>blu</b>, per non confonderle col colore del tool.</p>'
+    : conflict === 'red'
+      ? '<p class="accent-note">Accento rosso: le variazioni in discesa ↓ e le scadenze diventano <b>viola</b>, per non confonderle col colore del tool.</p>'
+      : '';
+  return `
+    <div class="accent-preview" data-accent-preview>
+      <div class="accent-ramp">
+        ${ACCENT_LEVELS.map(lv => {
+          const c = t['--accent-' + lv];
+          return `<div class="accent-ramp-step"><span class="accent-ramp-chip" style="background:${c}"></span><span class="accent-ramp-lv">${lv}</span><span class="accent-ramp-hex">${c}</span></div>`;
+        }).join('')}
+      </div>
+      <div class="accent-sample">
+        <span class="accent-sample-btn">Esempio</span>
+        <span class="accent-sample-text">Testo sull'accento: <b>${onWhite ? 'bianco' : 'scuro'}</b> · il bianco arriva a ${fmtRatio(white)}${onWhite ? '' : ' (serve 4,5:1)'}</span>
+      </div>
+      ${conflictNote}
+      ${mode === 'dark' ? '<p class="accent-note">Tema scuro: 300, 200 e 100 diventano tinte scure dello stesso colore, per non abbagliare sulle card scure.</p>' : ''}
+    </div>`;
+}
 
 function renderBuilderPage() {
   const s = db.settings;
-
-  const dark = isDarkColor(s.colors.bg || '#000000');
-  const simpleTogglesHtml = SIMPLE_TOGGLES.map(k => {
-    const t = TOGGLE_DEFS.find(x => x.key === k);
-    return `
+  const mode = themeModeFromSettings(s);
+  const acc = currentAccent(s);
+  const customHex = isHexColor(s.accentCustom) ? s.accentCustom.toUpperCase() : '#0EA5E9';
+  const togglesHtml = BUILDER_TOGGLES.map(t => `
     <div class="toggle-row">
       <div class="toggle-row-text">
         <div class="toggle-row-title">${t.title}</div>
         <div class="toggle-row-desc">${t.desc}</div>
       </div>
-      <div class="toggle-row-extra">
-        <label class="switch">
-          <input type="checkbox" data-toggle="${t.key}" ${s.toggles[t.key] ? 'checked' : ''}>
-          <span class="switch-track"></span>
-        </label>
-      </div>
-    </div>`;
-  }).join('');
+      <label class="switch">
+        <input type="checkbox" data-toggle="${t.key}" ${s.toggles && s.toggles[t.key] ? 'checked' : ''}>
+        <span class="switch-track"></span>
+      </label>
+    </div>`).join('');
 
   appRoot.innerHTML = `
     <div class="page-header"><h2>🎨 Aspetto</h2></div>
 
     <section class="card builder-section">
-      <h3>1 · Chiaro o scuro?</h3>
+      <h3>1 · Colore</h3>
+      <div class="accent-swatches">
+        ${Object.keys(ACCENT_PRESETS).map(k => accentSwatchHtml(k, ACCENT_PRESETS[k].label, ACCENT_PRESETS[k].ramp, acc.key === k)).join('')}
+        <div class="accent-swatch accent-custom${acc.key === 'custom' ? ' active' : ''}" id="accentCustomBox" title="Scegli un colore qualsiasi: il tool crea la rampa da solo">
+          <span class="accent-custom-pick"><input type="color" id="accentCustomPicker" value="${customHex.toLowerCase()}" aria-label="Scegli un colore"></span>
+          <span class="accent-swatch-name">A scelta</span>
+          <input type="text" id="accentCustomText" class="accent-custom-hex" value="${customHex}" maxlength="7" spellcheck="false" aria-label="Codice colore">
+        </div>
+      </div>
+      ${accentPreviewHtml(acc, mode)}
+    </section>
+
+    <section class="card builder-section">
+      <h3>2 · Chiaro o scuro?</h3>
       <div class="chip-select-row">
-        <button class="chip-select big ${!dark ? 'active' : ''}" data-simple-mode="light">☀️ Chiaro</button>
-        <button class="chip-select big ${dark ? 'active' : ''}" data-simple-mode="dark">🌙 Scuro</button>
+        <button class="chip-select big ${mode === 'light' ? 'active' : ''}" data-theme-mode="light">☀️ Chiaro</button>
+        <button class="chip-select big ${mode === 'dark' ? 'active' : ''}" data-theme-mode="dark">🌙 Scuro</button>
       </div>
     </section>
 
     <section class="card builder-section">
-      <h3>2 · Grandezza del testo</h3>
+      <h3>3 · Grandezza del testo</h3>
       <div class="chip-select-row">
         <button class="chip-select big ${s.textSize !== 'large' ? 'active' : ''}" data-text-size="normal">Normale</button>
         <button class="chip-select big ${s.textSize === 'large' ? 'active' : ''}" data-text-size="large">Grande</button>
@@ -6309,124 +6183,62 @@ function renderBuilderPage() {
 
     <section class="card builder-section">
       <h3>Effetti</h3>
-      <div class="toggle-list">${simpleTogglesHtml}</div>
+      <div class="toggle-list">${togglesHtml}</div>
     </section>
-
   `;
 
   wireBuilderEvents();
 }
 
+/** Salva l'accento, lo applica e ridisegna la pagina. */
+function setAccent(key, customHex) {
+  db.settings.accent = key;
+  if (customHex) db.settings.accentCustom = customHex.toUpperCase();
+  persist();
+  applyTheme(db.settings);
+  renderBuilderPage();
+}
+
 function wireBuilderEvents() {
-  appRoot.querySelectorAll('[data-simple-mode]').forEach(btn => btn.addEventListener('click', () => {
-    applySimpleLook(btn.dataset.simpleMode, db.settings.colors.accent || SIMPLE_ACCENTS[0][0]);
-  }));
-  appRoot.querySelectorAll('[data-simple-accent]').forEach(btn => btn.addEventListener('click', () => {
-    applySimpleLook(isDarkColor(db.settings.colors.bg || '#000000') ? 'dark' : 'light', btn.dataset.simpleAccent);
-  }));
-  appRoot.querySelectorAll('[data-text-size]').forEach(btn => btn.addEventListener('click', () => {
-    db.settings.textSize = btn.dataset.textSize;
+  appRoot.querySelectorAll('[data-accent-preset]').forEach(btn => btn.addEventListener('click', () => setAccent(btn.dataset.accentPreset)));
+
+  // Colore a scelta: mentre trascini si vede subito (solo pagina), al rilascio si salva.
+  const picker = document.getElementById('accentCustomPicker');
+  const text = document.getElementById('accentCustomText');
+  picker.addEventListener('input', () => {
+    text.value = picker.value.toUpperCase();
+    const preview = { accent: 'custom', accentCustom: picker.value, themeMode: db.settings.themeMode, textSize: db.settings.textSize };
+    applyTheme(preview);
+  });
+  picker.addEventListener('change', () => setAccent('custom', picker.value));
+  // Clic sul riquadro (fuori dai due campi) quando c'è già un colore a scelta salvato: lo riattiva.
+  document.getElementById('accentCustomBox').addEventListener('click', e => {
+    if (e.target.closest('input')) return;
+    if (db.settings.accent !== 'custom' && isHexColor(db.settings.accentCustom)) setAccent('custom');
+  });
+  text.addEventListener('change', () => {
+    let v = text.value.trim();
+    if (/^[0-9a-fA-F]{6}$/.test(v)) v = '#' + v;
+    if (!isHexColor(v)) { showToast('Codice colore non valido: scrivi tipo #0EA5E9.', true); text.value = picker.value.toUpperCase(); return; }
+    setAccent('custom', v);
+  });
+
+  appRoot.querySelectorAll('[data-theme-mode]').forEach(btn => btn.addEventListener('click', () => {
+    db.settings.themeMode = btn.dataset.themeMode === 'dark' ? 'dark' : 'light';
     persist();
     applyTheme(db.settings);
     renderBuilderPage();
   }));
-  const manual = appRoot.querySelector('.builder-manual');
-  if (manual) manual.addEventListener('toggle', () => { uiState.builderManualOpen = manual.open; });
-
-  appRoot.querySelectorAll('[data-preset]').forEach(el => {
-    el.addEventListener('click', () => {
-      const preset = THEME_PRESETS[el.dataset.preset];
-      if (!preset) return;
-      db.settings.preset = el.dataset.preset;
-      db.settings.colors = Object.assign({}, preset.colors);
-      if (preset.radiusStyle) db.settings.radiusStyle = preset.radiusStyle;
-      if (preset.glowLevel) db.settings.glowLevel = preset.glowLevel;
-      persist();
-      applyTheme(db.settings);
-      renderBuilderPage();
-    });
-  });
-
-  const colorFieldDefs = ['bg', 'bgElev', 'accent', 'text', 'setterColor', 'venditoreColor', 'success', 'danger'];
-  colorFieldDefs.forEach(key => {
-    const colorInput = document.getElementById('color_' + key);
-    const textInput = document.getElementById('colortext_' + key);
-    if (!colorInput || !textInput) return; // sezione tolta col restyling (torna allo step 16)
-    const commit = (val) => {
-      if (!/^#[0-9a-fA-F]{6}$/.test(val)) return;
-      db.settings.colors[key] = val;
-      db.settings.preset = 'custom';
-      persist();
-      applyTheme(db.settings);
-    };
-    colorInput.addEventListener('input', () => { textInput.value = colorInput.value; commit(colorInput.value); });
-    textInput.addEventListener('change', () => { commit(textInput.value); colorInput.value = textInput.value; });
-  });
-
-  appRoot.querySelectorAll('[data-radius]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      db.settings.radiusStyle = btn.dataset.radius;
-      persist();
-      applyTheme(db.settings);
-      renderBuilderPage();
-    });
-  });
-  appRoot.querySelectorAll('[data-font]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      db.settings.fontStyle = btn.dataset.font;
-      persist();
-      applyTheme(db.settings);
-      renderBuilderPage();
-    });
-  });
-  appRoot.querySelectorAll('[data-glow]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      db.settings.glowLevel = btn.dataset.glow;
-      persist();
-      applyTheme(db.settings);
-      renderBuilderPage();
-    });
-  });
-
-  const sliderSat = document.getElementById('sliderSaturation');
-  if (sliderSat) sliderSat.addEventListener('input', (e) => {
-    db.settings.accentSaturation = parseInt(e.target.value, 10);
+  appRoot.querySelectorAll('[data-text-size]').forEach(btn => btn.addEventListener('click', () => {
+    db.settings.textSize = btn.dataset.textSize === 'large' ? 'large' : 'normal';
     persist();
     applyTheme(db.settings);
-  });
-  const sliderCon = document.getElementById('sliderContrast');
-  if (sliderCon) sliderCon.addEventListener('input', (e) => {
-    db.settings.cardContrast = parseInt(e.target.value, 10);
+    renderBuilderPage();
+  }));
+  appRoot.querySelectorAll('[data-toggle]').forEach(input => input.addEventListener('change', () => {
+    db.settings.toggles[input.dataset.toggle] = input.checked;
     persist();
-    applyTheme(db.settings);
-  });
-
-  const cashThreshold = document.getElementById('cashDayThreshold');
-  if (cashThreshold) {
-    cashThreshold.addEventListener('change', () => {
-      db.settings.cashDayThreshold = Math.max(0, parseFloat(cashThreshold.value) || 0);
-      persist();
-    });
-  }
-
-  appRoot.querySelectorAll('[data-toggle]').forEach(input => {
-    input.addEventListener('change', () => {
-      db.settings.toggles[input.dataset.toggle] = input.checked;
-      persist();
-      applyTheme(db.settings);
-    });
-  });
-
-  const btnReset = document.getElementById('btnResetBuilder');
-  if (btnReset) btnReset.addEventListener('click', () => {
-    showConfirm('Ripristinare aspetto e opzioni ai valori di default (Graphite Lime)?', () => {
-      db.settings = defaultSettings();
-      persist();
-      applyTheme(db.settings);
-      renderBuilderPage();
-      showToast('Impostazioni ripristinate.');
-    }, { confirmLabel: 'Ripristina' });
-  });
+  }));
 }
 
 /* ---------- Init ---------- */

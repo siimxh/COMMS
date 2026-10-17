@@ -1149,8 +1149,6 @@ const LeadCRM = (function () {
     const which = document.getElementById('payApptSel');
     if (which) which.addEventListener('change', () => { ui.payApptId = which.value; renderLead(id); });
     const num = v => Math.max(0, Number(v) || 0);
-    const before = () => sumEvents(commissionEventsForAppointment(a));
-    const ticker = prev => { const now = before(); if (db.settings.toggles && db.settings.toggles.liveTicker && now > prev) showCommissionTicker(now - prev); };
     // Nome del centro dell'appuntamento chiuso (Prossimi pagamenti in Dashboard).
     document.getElementById('payCentro').addEventListener('change', e => {
       a.centerName = e.target.value.trim();
@@ -1159,16 +1157,15 @@ const LeadCRM = (function () {
     });
     document.getElementById('payTotal').addEventListener('change', e => { a.totalSold = num(e.target.value); persist(); renderLead(id); });
     document.getElementById('payCash').addEventListener('change', e => {
-      const v = num(e.target.value); const prev = before();
+      const v = num(e.target.value);
       if (v !== (Number(a.cashCollected) || 0)) addHistory(l, { k: 'soldi', t: 'Cash collected ' + euro(v), s: '' });
-      a.cashCollected = v; persist(); ticker(prev); renderLead(id);
+      a.cashCollected = v; persist(); renderLead(id);
     });
     appRoot.querySelectorAll('[data-rate]').forEach(c => c.addEventListener('change', () => {
       const r = (a.installments || []).find(x => x.id === c.dataset.rate); if (!r) return;
-      const prev = before();
       r.paid = c.checked; r.paidDate = c.checked ? TODAY() : null;
       if (c.checked) addHistory(l, { k: 'soldi', t: 'Rata pagata ' + euro(r.amount), s: '' });
-      persist(); ticker(prev); renderLead(id);
+      persist(); renderLead(id);
     }));
     appRoot.querySelectorAll('[data-delrate]').forEach(b => b.addEventListener('click', () => {
       showConfirm('Eliminare questa rata?', () => { a.installments = (a.installments || []).filter(x => x.id !== b.dataset.delrate); persist(); renderLead(id); }, { confirmLabel: 'Elimina' });

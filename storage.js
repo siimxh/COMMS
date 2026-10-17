@@ -74,47 +74,54 @@ function defaultGoals() {
   };
 }
 
-/** Palette di default "Carta" (vedi anche i preset in app.js). */
+/** Impostazioni di default. Aspetto (restyling step 16): accento Arancione (rampa della
+ *  guida colori), tema chiaro, testo normale. Vedi "Tema — accento a rampa" in app.js. */
 function defaultSettings() {
   return {
-    preset: 'carta',
-    colors: {
-      bg: '#f3efe7',
-      bgElev: '#fbf9f4',
-      accent: '#2346a0',
-      text: '#22211e',
-      setterColor: '#2346a0',
-      venditoreColor: '#1985ab',
-      success: '#1f6b2e',
-      danger: '#b3261e'
-    },
-    radiusStyle: 'round',
-    fontStyle: 'lexend',
-    accentSaturation: 86,
-    cardContrast: 70,
-    glowLevel: 'none',
-    readableV1: true, // vedi migrazione in mergeWithDefaults
-    cashDayThreshold: 500,
+    accent: 'arancione',   // 'arancione' | 'indaco' | 'teal' | 'magenta' | 'custom'
+    accentCustom: '',      // '#RRGGBB' del colore a scelta (solo con accent 'custom')
+    themeMode: 'light',    // 'light' | 'dark'
+    textSize: 'normal',    // 'normal' | 'large'
     venditoreOn: true, // interruttore "Parte Venditore" in 👤 Account (Oggi, tab Venditore, obiettivi venditore)
     toggles: {
-      grindMode: false,
-      animatedNumbers: false,
-      closeSound: false,
-      dailyStreak: false,
-      confetti: false,
-      autoTheme: false,
-      monthCountdown: false,
-      dailyQuote: false,
-      closingPace: false,
-      personalBest: false,
-      midMilestone: false,
-      liveTicker: false,
-      bossMode: false,
-      levelUpSound: false,
-      cashDayBadge: false,
-      slotMachineNumbers: false
+      animatedNumbers: false // "Numeri che contano" (unico effetto rimasto in 🎨)
     }
   };
+}
+
+/* Campi del builder vecchio (prima del restyling): non servono più, si tolgono. */
+const OLD_SETTINGS_KEYS = ['preset', 'colors', 'radiusStyle', 'fontStyle', 'accentSaturation', 'cardContrast',
+  'glowLevel', 'readableV1', 'simpleBuilderV1', 'simpleMode', 'skin', 'cashDayThreshold'];
+const ACCENT_KEYS = ['arancione', 'indaco', 'teal', 'magenta', 'custom'];
+
+/** "#rgb"/"#rrggbb" scuro? (per capire se il vecchio tema salvato era scuro) */
+function oldBgIsDark(hex) {
+  if (typeof hex !== 'string' || !/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(hex)) return false;
+  const c = hex.slice(1);
+  const n = parseInt(c.length === 3 ? c.split('').map(x => x + x).join('') : c, 16);
+  return (0.299 * ((n >> 16) & 0xff) + 0.587 * ((n >> 8) & 0xff) + 0.114 * (n & 0xff)) < 128;
+}
+
+/**
+ * Migrazione dell'aspetto (restyling step 16). Chi aveva salvato un preset/tema vecchio
+ * (Carta, Notte Morbida, colori a mano...) o qualsiasi valore sconosciuto riparte
+ * dall'Arancione; chiaro/scuro si tiene (prima si capiva dallo sfondo salvato).
+ * Si può rilanciare ogni volta: sui dati già nuovi non cambia niente.
+ */
+function migrateSettings(saved) {
+  const src = (saved && typeof saved === 'object') ? saved : {};
+  const out = Object.assign({}, defaultSettings(), src);
+  if (src.themeMode !== 'light' && src.themeMode !== 'dark') {
+    out.themeMode = oldBgIsDark((src.colors || {}).bg) ? 'dark' : 'light';
+  }
+  if (!/^#[0-9a-fA-F]{6}$/.test(out.accentCustom || '')) out.accentCustom = '';
+  if (ACCENT_KEYS.indexOf(out.accent) === -1 || (out.accent === 'custom' && !out.accentCustom)) out.accent = 'arancione';
+  if (out.textSize !== 'large') out.textSize = 'normal';
+  out.venditoreOn = out.venditoreOn !== false;
+  const oldToggles = (src.toggles && typeof src.toggles === 'object') ? src.toggles : {};
+  out.toggles = { animatedNumbers: oldToggles.animatedNumbers === true };
+  OLD_SETTINGS_KEYS.forEach(k => { delete out[k]; });
+  return out;
 }
 
 function defaultData() {
@@ -312,33 +319,7 @@ function mergeWithDefaults(parsed) {
     });
   });
 
-  out.settings = Object.assign({}, base.settings, parsed.settings);
-  out.settings.colors = Object.assign({}, base.settings.colors, (parsed.settings || {}).colors);
-  out.settings.toggles = Object.assign({}, base.settings.toggles, (parsed.settings || {}).toggles);
-
-  // Migrazione una tantum (2026-10): lo stile "Carta" diventa il predefinito per tutti —
-  // chi ha dati salvati col vecchio aspetto passa a Carta (colori, font Lexend, angoli
-  // arrotondati). Dopo può comunque scegliere un altro tema dal builder 🎨.
-  if (!(parsed.settings || {}).readableV1) {
-    const b = base.settings;
-    out.settings.preset = b.preset;
-    out.settings.colors = Object.assign({}, b.colors);
-    out.settings.radiusStyle = b.radiusStyle;
-    out.settings.fontStyle = b.fontStyle;
-    out.settings.glowLevel = b.glowLevel;
-    out.settings.readableV1 = true;
-  }
-  delete out.settings.skin;
-
-  // Migrazione una tantum (Simone, 16/10, lettera I): il 🎨 semplice tiene solo 4 effetti
-  // (Numeri che contano, Countdown fine mese, Giorni di fila, Ritmo di chiusura). Gli altri
-  // 12 interruttori spariscono e si spengono.
-  if (!out.settings.simpleBuilderV1) {
-    const keep = ['animatedNumbers', 'monthCountdown', 'dailyStreak', 'closingPace'];
-    Object.keys(out.settings.toggles).forEach(k => { if (keep.indexOf(k) === -1) out.settings.toggles[k] = false; });
-    out.settings.simpleBuilderV1 = true;
-  }
-  if (out.settings.textSize !== 'large') out.settings.textSize = 'normal';
+  out.settings = migrateSettings(parsed.settings);
 
   out.pipelines = ensureDefaultOutcomesOnPipelines(out.pipelines);
   out.appointments = (parsed.appointments || []).map(migrateAppointment);

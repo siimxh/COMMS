@@ -2,9 +2,10 @@
  * COLORI E FORME — guida colori di Comms (restyling 17/10/2026, step 1).
  * Fonte unica: i token qui sotto. Ogni componente usa SOLO questi token (o le
  * vecchie variabili del tool, che ora puntano ai token: vedi "Variabili vecchie").
- * Per cambiare brand basta cambiare il blocco "Accento" (lo farà il builder 🎨,
- * step 16). applyTheme (app.js) non scrive più colori sulla pagina: sceglie solo
- * chiaro/scuro (data-theme) e la grandezza del testo.
+ * Per cambiare brand basta cambiare il blocco "Accento". Il builder 🎨 (step 16)
+ * lo fa da solo: applyTheme (app.js) scrive sulla pagina SOLO --accent-500..100,
+ * --accent-ink, --on-accent (e i colori di trend se l'accento è verde o rosso).
+ * I valori qui sotto sono quelli dell'Arancione (default, e schermata di login).
  * ==========================================================================*/
 :root {
   /* Accento: sostituire solo questo blocco per cambiare brand */
@@ -75,8 +76,9 @@
   --accent-filter: none;
 }
 
-/* Tema scuro: stessi ruoli, neutri invertiti. Accento invariato; le tinte tenui
-   (100-200) diventano tinte scure dello stesso arancione. Si attiva con la scelta
+/* Tema scuro: stessi ruoli, neutri invertiti. 500/400 invariati; le tinte tenui
+   (100-300) diventano tinte scure della stessa tinta (per gli altri accenti le
+   calcola applyTheme con la stessa regola). Si attiva con la scelta
    "Scuro" in 🎨 (data-theme="dark", vedi applyTheme) o, prima del login, col
    tema di sistema. */
 :root[data-theme="dark"] {
@@ -113,68 +115,6 @@
     --danger-bg: #3A1A1C;
     --overlay: rgba(0, 0, 0, 0.6);
   }
-}
-
-/* ---------- Modalità Grind (toggle 1): tinge di danger/success in base al ritmo ---------- */
-
-/* ---------- Boss Mode (toggle 13): ultimi 3gg del mese sotto obiettivo ---------- */
- body.boss-mode .kpi-card.accented {
-  animation: boss-pulse 1.4s ease-in-out infinite;
-}
-@keyframes boss-pulse {
-  0%, 100% { box-shadow: 0 0 0 1px var(--danger); }
-  50% { box-shadow: 0 0 0 1px var(--danger), 0 0 16px var(--danger-bg); }
-}
-
-/* ---------- Milestone pulse (toggle 11) ---------- */
-
-@keyframes milestone-pulse {
-  0% { transform: scale(1); }
-  30% { transform: scale(1.03); }
-  100% { transform: scale(1); }
-}
-
-/* ---------- Slot machine numbers (toggle 16) ---------- */
-.slot-anim { display: inline-block; animation: slot-in 0.32s ease-out 1; }
-@keyframes slot-in {
-  0% { transform: translateY(-60%); opacity: 0; }
-  100% { transform: translateY(0); opacity: 1; }
-}
-
-/* ---------- Ticker commissioni live (toggle 12) ---------- */
-.commission-ticker {
-  position: absolute;
-  top: -8px;
-  right: 8px;
-  font-family: var(--mono);
-  font-weight: 700;
-  font-size: 0.78rem;
-  color: var(--success);
-  opacity: 0;
-  transform: translateY(0);
-  pointer-events: none;
-}
-.commission-ticker.show { animation: ticker-rise 1.6s ease-out 1; }
-@keyframes ticker-rise {
-  0% { opacity: 0; transform: translateY(6px); }
-  15% { opacity: 1; transform: translateY(0); }
-  75% { opacity: 1; }
-  100% { opacity: 0; transform: translateY(-14px); }
-}
-
-/* ---------- Confetti (toggle 5) ---------- */
-.confetti-piece {
-  position: fixed;
-  top: -14px;
-  width: 8px;
-  height: 14px;
-  z-index: 500;
-  pointer-events: none;
-  animation: confetti-fall linear forwards;
-}
-@keyframes confetti-fall {
-  0% { transform: translateY(0) rotate(0deg); opacity: 1; }
-  100% { transform: translateY(100vh) rotate(540deg); opacity: 0; }
 }
 
 * { box-sizing: border-box; }
@@ -1209,7 +1149,6 @@ tr.appt-row-moved > td { opacity: 0.6; }
 .cal-cell.has-events { cursor: pointer; }
 .cal-cell.has-events:hover { background: var(--bg-elev2); }
 .cal-cell.today { box-shadow: inset 0 0 0 1px var(--accent); }
-.cal-cell.cash-day { border: 1px solid var(--success); box-shadow: 0 0 8px var(--accent-dim); }
 .cal-daynum { font-family: var(--mono); font-size: 0.72rem; color: var(--text-dim); }
 .cal-cell.today .cal-daynum { color: var(--accent); font-weight: 700; }
 .cal-day-total { font-family: var(--mono); font-weight: 700; font-size: 0.84rem; }
@@ -1230,33 +1169,8 @@ tr.appt-row-moved > td { opacity: 0.6; }
  * Builder (Impostazioni)
  * ==========================================================================*/
 
-.builder-grid { display: flex; flex-direction: column; gap: 20px; }
 .builder-section { display: flex; flex-direction: column; gap: 10px; }
 .builder-section h3 { margin: 0; }
-
-.preset-row { display: flex; flex-wrap: wrap; gap: 10px; }
-.preset-swatch {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 128px;
-  background: var(--bg-elev2);
-}
-.preset-swatch:hover { border-color: var(--accent); }
-.preset-swatch.active { box-shadow: 0 0 0 2px var(--accent); }
-.preset-dots { display: flex; gap: 4px; }
-.preset-dot { width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); }
-.preset-name { font-family: var(--mono); font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-dim); }
-
-.color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
-.color-field { display: flex; align-items: center; gap: 8px; background: var(--bg-elev2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; }
-.color-field label { font-family: var(--mono); font-size: 0.64rem; text-transform: uppercase; color: var(--text-dim); flex: 1; letter-spacing: 0.02em; }
-.color-field input[type="color"] { width: 30px; height: 30px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: none; padding: 0; cursor: pointer; }
-.color-field input[type="text"] { width: 78px; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-family: var(--mono); font-size: 0.74rem; padding: 4px 6px; }
 
 .chip-select-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip-select {
@@ -1265,10 +1179,6 @@ tr.appt-row-moved > td { opacity: 0.6; }
   font-family: var(--mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.03em;
 }
 .chip-select.active { background: var(--accent-100); border-color: var(--accent-500); color: var(--neutral-900); font-weight: 600; }
-
-.slider-row { display: flex; flex-direction: column; gap: 4px; }
-.slider-row label { font-family: var(--mono); font-size: 0.68rem; text-transform: uppercase; color: var(--text-dim); display: flex; justify-content: space-between; }
-.slider-row input[type="range"] { width: 100%; accent-color: var(--accent); }
 
 .toggle-list { display: flex; flex-direction: column; gap: 2px; }
 .toggle-row {
@@ -1279,12 +1189,6 @@ tr.appt-row-moved > td { opacity: 0.6; }
 .toggle-row-text { display: flex; flex-direction: column; gap: 2px; }
 .toggle-row-title { font-size: 0.86rem; font-weight: 600; }
 .toggle-row-desc { font-size: 0.72rem; color: var(--text-dim); }
-.toggle-row-extra { display: flex; align-items: center; gap: 8px; }
-.toggle-row-extra input[type="number"] {
-  width: 76px; background: var(--bg-elev2); border: 1px solid var(--border); border-radius: var(--radius-sm);
-  color: var(--text); font-family: var(--mono); padding: 6px 8px;
-}
-
 .switch { position: relative; display: inline-block; width: 42px; height: 24px; flex-shrink: 0; }
 .switch input { opacity: 0; width: 0; height: 0; }
 .switch-track {
@@ -1434,8 +1338,6 @@ body.in-session #confirmAlertBanner { display: none; }
 .confirm-alert-item-phone { font-family: var(--mono); font-size: 0.72rem; color: var(--text-dim); }
 .confirm-alert-item-time { font-family: var(--mono); font-size: 0.76rem; color: var(--warning); font-weight: 700; white-space: nowrap; }
 .confirm-alert-copy-btn { font-size: 0.68rem; padding: 6px 10px; white-space: nowrap; }
-
-.builder-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 4px; }
 
 /* ============================================================================
    LEGGIBILITÀ — base di tutto il tool (ex skin "Carta", resa predefinita su
@@ -1718,18 +1620,8 @@ body { line-height: 1.45; }
 .to-esitare-tag { margin-top: 4px; font-size: 0.72rem; font-weight: 700; color: var(--warning); text-transform: uppercase; letter-spacing: 0.04em; }
 .show-more-wrap { display: flex; justify-content: center; margin: 12px 0 24px; }
 
-/* Lettera I (16/10): 🎨 semplice */
+/* 🎨 Aspetto: tasti grandi Chiaro/Scuro e testo */
 .chip-select.big { font-size: 1rem; padding: 12px 20px; }
-.simple-sw-row { display: flex; flex-wrap: wrap; gap: 12px; }
-.simple-sw { width: 48px; height: 48px; border-radius: 50%; border: 3px solid transparent; cursor: pointer; box-shadow: 0 0 0 1px var(--border); }
-.simple-sw.active { border-color: var(--text); }
-.simple-sw:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
-.builder-manual > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
-.builder-manual > summary::before { content: "▸"; color: var(--text-dim); }
-.builder-manual[open] > summary::before { content: "▾"; }
-.builder-manual > summary h3 { margin: 0; }
-.builder-manual .builder-section { margin-top: 18px; }
-
 /* ============================================================================
  * RESTYLING (17/10/2026, step 1) — stile base dei componenti dalla guida colori.
  * Sta in fondo apposta: a parità di selettore vince sulle regole vecchie sopra.
@@ -1847,7 +1739,7 @@ a { color: var(--neutral-900); }
 .crm-search-input, .crm-inline-input, .ld-input, .inline-add input, .installment-row input[type="text"],
 .installment-row input[type="number"], .installment-row input[type="date"], .call-rec-add-row input[type="text"],
 .add-outcome-row input[type="text"], .note-add-row textarea, #cbNote, .custom-range input[type="date"],
-.pipeline-filter select, #sessioniPipelineFilter, .toggle-row-extra input[type="number"], .assigned-edit-input, .color-field input[type="text"] {
+.pipeline-filter select, #sessioniPipelineFilter, .assigned-edit-input, .accent-custom-hex {
   background: var(--neutral-0);
   border: 1px solid var(--neutral-200);
   border-radius: var(--radius-control);
@@ -1915,7 +1807,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .kpi-label { font-family: var(--font-sans); font-size: 0.8rem; font-weight: 500; color: var(--neutral-600); }
 .stat-block .stat-label, .productivity-grid .stat-label, .trend-label,
 .cal-dow, .cal-daynum, .cal-detail-source, .session-card-sub, .bar-row, .breakdown-chip, .line-chart-yaxis-tick, .callback-row-sub, .callback-row-when, .session-callback-item-phone, .session-callback-item-when,
-.session-callback-sidebar-title, .session-pipeline-name, .preset-name, .color-field label, .slider-row label,
+.session-callback-sidebar-title, .session-pipeline-name,
 .checkbox-inline, .recov-entry-count-label, .crm-link-note, .note-card-meta, .sync-status,
 .cal-month-label, .back-link, .tf-tab, .stat-value, .trend-value, .bar-value, .kpi-value, #sessionTimer, .crm-amount, .crm-amount-link, .installment-total-row, .cal-day-total, .recov-entry-count,
 .recov-hero-phone, .confirm-hero-phone, .confirm-hero-when, .outcome-btn-sub, .confirm-alert-toggle,
@@ -1982,7 +1874,6 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .cal-cell.has-events:hover { background: var(--neutral-50); }
 .cal-cell.today { box-shadow: inset 0 0 0 2px var(--accent-500); }
 .cal-cell.today .cal-daynum { color: var(--accent-ink); }
-.cal-cell.cash-day { border: none; box-shadow: inset 0 0 0 2px var(--accent-300); background: var(--accent-100); }
 .cal-detail-amount, .installment-deposit-amount { color: var(--neutral-900); }
 
 /* ---------- Modali, toast, tooltip ---------- */
@@ -2725,3 +2616,38 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
 /* Statistiche Venditore → Numeri dei lead: niente verde/rosso nelle barre (solo trend). In tempo = accento, in ritardo = neutro. */
 .new-stats .meter i.ok { background: var(--accent-500); }
 .new-stats .meter i.ko { background: var(--neutral-400); }
+
+/* ============================================================================
+ * 🎨 Aspetto: accento a rampa (restyling step 16)
+ * ==========================================================================*/
+.accent-swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.accent-swatch { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 12px; background: var(--neutral-0); border: var(--border-line); border-radius: var(--radius-control); color: var(--neutral-900); font: inherit; text-align: left; cursor: pointer; }
+.accent-swatch:hover { border-color: var(--neutral-400); }
+.accent-swatch.active { border-color: var(--neutral-900); box-shadow: inset 0 0 0 1px var(--neutral-900); }
+.accent-swatch:focus-visible { outline: 2px solid var(--neutral-900); outline-offset: 2px; }
+.accent-swatch-ramp { display: flex; width: 100%; height: 22px; border-radius: var(--radius-pill); overflow: hidden; box-shadow: inset 0 0 0 1px var(--neutral-200); }
+.accent-swatch-ramp i { flex: 1; }
+.accent-swatch-name { font-size: 0.875rem; font-weight: 600; }
+.accent-custom { cursor: default; }
+.accent-custom-pick { display: block; width: 100%; height: 22px; }
+.accent-custom-pick input[type="color"] { display: block; width: 100%; height: 22px; padding: 0; border: none; border-radius: var(--radius-pill); background: none; cursor: pointer; }
+.accent-custom-pick input[type="color"]::-webkit-color-swatch-wrapper { padding: 0; }
+.accent-custom-pick input[type="color"]::-webkit-color-swatch { border: 1px solid var(--neutral-200); border-radius: var(--radius-pill); }
+.accent-custom-pick input[type="color"]::-moz-color-swatch { border: 1px solid var(--neutral-200); border-radius: var(--radius-pill); }
+.accent-custom-hex { width: 100%; padding: 4px 8px; font-size: 0.8125rem; font-variant-numeric: tabular-nums; text-transform: uppercase; }
+.accent-preview { display: flex; flex-direction: column; gap: 12px; padding-top: 6px; }
+.accent-ramp { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 8px; }
+.accent-ramp-step { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.accent-ramp-chip { display: block; height: 40px; border-radius: var(--radius-control); box-shadow: inset 0 0 0 1px var(--neutral-200); }
+.accent-ramp-lv { font-size: 0.8125rem; font-weight: 600; color: var(--neutral-900); }
+.accent-ramp-hex { font-size: 0.75rem; color: var(--neutral-600); font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; }
+.accent-sample { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.accent-sample-btn { display: inline-flex; align-items: center; padding: 8px 16px; border-radius: var(--radius-control); background: var(--accent-500); color: var(--on-accent); font-weight: 600; font-size: 0.875rem; }
+.accent-sample-text { font-size: 0.8125rem; color: var(--neutral-600); }
+.accent-sample-text b { color: var(--neutral-900); }
+.accent-note { margin: 0; font-size: 0.8125rem; color: var(--neutral-600); }
+.accent-note b { color: var(--neutral-900); }
+@media (max-width: 480px) {
+  .accent-swatches { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .accent-ramp-hex { font-size: 0.6875rem; }
+}
