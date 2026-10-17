@@ -905,6 +905,105 @@ function openNewTaskModal() {
 }
 
 
+/* ---------- Dashboard: Prossimi pagamenti (restyling 17/10/2026, step 7) ----------
+ * Tutte le rate NON pagate degli appuntamenti chiusi, Setter e Venditore insieme, per
+ * scadenza. Fonte: getEffectiveInstallments (l'acconto sintetico è sempre già pagato e
+ * non compare). Venditore: solo l'appuntamento della scheda Pagamenti del lead (l'ultimo
+ * chiuso, LeadCRM.paymentsApptOf); senza lead (raro) l'appuntamento stesso. Righe
+ * Venditore nascoste se la parte Venditore è spenta.
+ * Riga: nome del CENTRO (mai la persona: se manca, nome del lead in grigio + "centro
+ * mancante"), scadenza (rossa se passata), importo, ruolo, venditore (solo Setter),
+ * spunta "Pagato": rata vera in apt.installments -> paid + paidDate di oggi. La
+ * commissione la ricalcola commissionEventsForAppointment (giorno del pagamento). */
+const DASH_PAYMENTS_LIMIT = 10;
+
+function collectUpcomingPayments() {
+  const out = [];
+  const leadsById = {};
+  (db.leads || []).forEach(l => { leadsById[l.id] = l; });
+  db.appointments.forEach(a => {
+    if (!a.closed) return;
+    let lead = null;
+    if (a.role === 'venditore') {
+      if (!LeadCRM.isOn()) return;
+      lead = a.leadId ? leadsById[a.leadId] : null;
+      if (lead) { const pa = LeadCRM.paymentsApptOf(lead.id); if (!pa || pa.id !== a.id) return; }
+    } else if (a.role !== 'setter') return;
+    getEffectiveInstallments(a).forEach(inst => {
+      if (inst.paid || inst.isDeposit) return;
+      const centro = String(a.centerName || (lead && lead.centro) || '').trim();
+      const person = lead ? lead.name : (a.role === 'venditore' ? LeadCRM.parseApptName(a.clientName).name : a.clientName);
+      const dueRaw = String(inst.dueDate || '');
+      const due = /^\d{4}-\d{2}-\d{2}/.test(dueRaw) ? dueRaw.slice(0, 10) : (dueRaw ? dateInputValue(dueRaw) : '');
+      out.push({ apt: a, inst, role: a.role, centro, person: person || '(senza nome)', due });
+    });
+  });
+  // Per scadenza; quelle senza data in fondo.
+  out.sort((x, y) => (x.due || '9999').localeCompare(y.due || '9999') || x.centro.localeCompare(y.centro));
+  return out;
+}
+
+function fmtEuroIt(n) { return '€' + round2(Number(n) || 0).toLocaleString('it-IT'); }
+
+function renderDashboardPayments() {
+  const items = collectUpcomingPayments();
+  const showAll = !!uiState.dashPaymentsAll;
+  const visible = showAll ? items : items.slice(0, DASH_PAYMENTS_LIMIT);
+  const todayKey = dateInputValue(new Date());
+  const row = p => {
+    const late = !!p.due && p.due < todayKey;
+    const title = p.centro
+      ? `<span class="task-title">${escapeHtml(p.centro)}</span>`
+      : `<span class="task-title pay-noname">${escapeHtml(p.person)}</span> <span class="pay-missing">centro mancante</span>`;
+    const sub = [escapeHtml(p.inst.label || 'Rata'), p.role === 'setter' && p.apt.venditoreName ? 'Venditore: ' + escapeHtml(p.apt.venditoreName) : ''].filter(Boolean).join(' · ');
+    return `
+      <div class="task-row pay-row ${late ? 'is-late' : ''}">
+        <div class="task-lead">${taskIconSvg('calendar')}</div>
+        <div class="task-main"><div>${title}</div><div class="task-sub">${sub}</div></div>
+        <div class="task-meta">
+          <span class="task-when ${late ? 'late' : ''}">${p.due ? escapeHtml(relDayLabel(p.due)) + (late ? ' · scaduta' : '') : 'senza data'}</span>
+          <span class="role-pill ${p.role}">${p.role === 'venditore' ? 'Venditore' : 'Setter'}</span>
+        </div>
+        <div class="task-actions">
+          <span class="pay-amount">${fmtEuroIt(p.inst.amount)}</span>
+          <label class="pay-tick"><input type="checkbox" data-pay-apt="${p.apt.id}" data-pay-inst="${p.inst.id}"> Pagato</label>
+        </div>
+      </div>`;
+  };
+  return `
+    <section class="card dash-list-card" id="dashPayments">
+      <div class="dash-list-head">
+        <h2>Prossimi pagamenti</h2>
+        ${items.length ? `<span class="count-pill">${items.length}</span>` : ''}
+      </div>
+      ${items.length ? `<div class="task-list">${visible.map(row).join('')}</div>` : '<p class="dash-list-empty">Nessuna rata da incassare.</p>'}
+      ${items.length > DASH_PAYMENTS_LIMIT ? `<button class="linkish dash-list-more" id="btnPaymentsMore">${showAll ? 'Mostra meno' : `Mostra tutti (${items.length})`}</button>` : ''}
+    </section>`;
+}
+
+function wireDashboardPayments() {
+  const root = document.getElementById('dashPayments');
+  if (!root) return;
+  const more = document.getElementById('btnPaymentsMore');
+  if (more) more.addEventListener('click', () => { uiState.dashPaymentsAll = !uiState.dashPaymentsAll; renderDashboard(); });
+  root.querySelectorAll('[data-pay-inst]').forEach(cb => cb.addEventListener('change', () => {
+    const apt = db.appointments.find(a => a.id === cb.dataset.payApt);
+    // La rata VERA (non la copia di getEffectiveInstallments): è quella che vedono la
+    // tabella Setting, il popup rate e la scheda lead → Pagamenti.
+    const inst = apt && (apt.installments || []).find(i => i.id === cb.dataset.payInst);
+    if (!inst || inst.paid) return;
+    const before = sumEvents(commissionEventsForAppointment(apt));
+    inst.paid = true;
+    inst.paidDate = dateInputValue(new Date());
+    if (apt.role === 'venditore') LeadCRM.onInstallmentPaid(apt, inst);
+    persist();
+    const gained = sumEvents(commissionEventsForAppointment(apt)) - before;
+    if (gained > 0 && db.settings.toggles && db.settings.toggles.liveTicker) showCommissionTicker(gained);
+    renderDashboard();
+    showToast('Pagato: ' + fmtEuroIt(inst.amount) + (apt.centerName ? ' · ' + apt.centerName : '') + '.');
+  }));
+}
+
 /**
  * Dashboard — SOLO: Obiettivi Setter, Obiettivi Venditore, Andamento generale (KPI
  * commissioni + grafici a linea Commissioni/Totale Venduto), calendario Commissioni in
@@ -919,11 +1018,13 @@ function renderDashboard() {
 
   appRoot.innerHTML = `
     ${tasksHtml}
+    ${renderDashboardPayments()}
     ${topSectionsHtml}
     ${commissioniCalHtml}
   `;
 
   wireDashboardTasks();
+  wireDashboardPayments();
   wireDashboardTopSectionEvents();
   wireCommissioniCalendarSection();
   animateKpiValues(appRoot);

@@ -2434,3 +2434,15 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
 /* Dati della chiusura (step 6): centro e venditore. */
 .pay-form .pay-centro { grid-column: 1 / -1; }
 .money-text-input { width: 180px; }
+/* Prossimi pagamenti (step 7). */
+.pay-noname { color: var(--neutral-400); font-weight: 600; }
+.pay-missing { display: inline-flex; padding: 2px 8px; border-radius: var(--radius-pill); background: var(--neutral-100); color: var(--neutral-600); font-size: 0.72rem; font-weight: 600; white-space: nowrap; }
+.pay-row .task-actions { align-items: center; gap: 14px; flex-wrap: nowrap; }
+.pay-amount { font-weight: 700; color: var(--neutral-900); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pay-tick { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: var(--border-line); border-radius: var(--radius-control); background: var(--neutral-0); font-size: 0.84rem; font-weight: 600; color: var(--neutral-900); cursor: pointer; white-space: nowrap; }
+.pay-tick:hover { border-color: var(--neutral-400); }
+.pay-tick input { width: 16px; height: 16px; margin: 0; accent-color: var(--neutral-900); cursor: pointer; }
+@media (max-width: 720px) {
+  .pay-row .task-meta { grid-column: 2 / -1; }
+  .pay-row .task-actions { grid-column: 2 / -1; grid-row: 3; justify-content: space-between; }
+}

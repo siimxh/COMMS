@@ -973,6 +973,15 @@ const LeadCRM = (function () {
     if (!apptsOf(l).length) db.leads = leads().filter(x => x.id !== l.id);
   }
 
+  /* ===================== Prossimi pagamenti (Dashboard, restyling step 7) ===================== */
+  /** Appuntamento su cui stanno i soldi del lead (lo stesso della scheda Pagamenti). */
+  function paymentsApptOf(leadId) { const l = leadById(leadId); return l ? lastClosedAppt(l) : null; }
+  /** Rata spuntata "Pagato" fuori dalla scheda (Dashboard): stessa riga di storico della scheda. */
+  function onInstallmentPaid(a, r) {
+    const l = a && a.leadId && leadById(a.leadId); if (!l || !r) return;
+    addHistory(l, { k: 'soldi', t: 'Rata pagata ' + euro(r.amount), s: '' });
+  }
+
   /** Per il report Appuntamenti Venditore: prossima azione e ultima nota del lead. */
   function reportInfo(a) {
     const l = a.leadId && leadById(a.leadId); if (!l) return {};
@@ -1006,6 +1015,6 @@ const LeadCRM = (function () {
   return {
     isOn, applyNav, ensureLeads, dashboardTaskItems, renderLeadList, renderLead, renderNewStatsSection, newStatsValues,
     apptRowExtraHtml, wireRowButtons, onDealStageChanged, onApptNameChanged, accountToggleHtml, wireAccountToggle,
-    parseApptName, handlesRecovery, onApptDeleted, reportInfo
+    parseApptName, handlesRecovery, onApptDeleted, reportInfo, paymentsApptOf, onInstallmentPaid
   };
 })();
