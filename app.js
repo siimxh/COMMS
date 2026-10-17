@@ -12,8 +12,8 @@ let uiState = {
   editingGoal: null,           // { role, timeframe, step } quando un target obiettivo è in modifica inline
   goalsTimeframe: 'month',     // timeframe attivo (day|week|month) per le card Obiettivi (stile Hero + Sparkline)
   goalsPeriodMode: 'current',  // 'current' (giorno/settimana/mese corrente) | 'best' (il migliore di sempre per commissioni) per le card Obiettivi
-  settingTab: 'appuntamenti',  // sotto-tab attiva dentro la sezione Setting: 'appuntamenti' | 'sessioni'
-  venditoreTab: 'lead',        // sotto-tab attiva dentro la sezione Venditore: 'lead' | 'appuntamenti'
+  settingTab: 'appuntamenti',  // tab attiva dentro Setting: 'appuntamenti' | 'sessioni' | 'statistiche'
+  venditoreTab: 'lead',        // tab attiva dentro Venditore: 'lead' | 'statistiche'
   period: null,                // periodo UNICO (Dashboard, Sessioni, Statistiche): vedi getPeriod()
   andamentoCommRole: 'all',    // 'all' | 'setter' | 'venditore' — filtro ruolo solo per il grafico Commissioni
   sessionMinimized: false      // true quando l'utente è "uscito" dalla sessione attiva per navigare altrove, senza terminarla (vedi renderActiveSessionIndicator)
@@ -359,12 +359,30 @@ function isCashDay(dayTotal) {
 
 /* ---------- Router ---------- */
 
-// Route "macro" che raggruppano più sotto-schermate sotto un solo bottone di nav
-// (richiesto esplicitamente dall'utente: un solo "Setting" e un solo "Venditore" in nav,
-// con la scelta Appuntamenti/Sessioni (Setting) o Appuntamenti/Statistiche (Venditore)
-// fatta DENTRO la schermata tramite sotto-tab, non con più voci di nav separate).
-const SETTING_SUBROUTES = { appuntamenti: 'setting-appuntamenti', sessioni: 'sessioni' };
-const VENDITORE_SUBROUTES = { lead: 'venditore-lead', appuntamenti: 'venditore-appuntamenti' };
+/* ---------- Route (restyling 17/10, step 2) ----------
+ * Barra laterale: Dashboard / Setting / Venditore. Dentro Setting e Venditore la scelta
+ * si fa con le tab centrate in alto (barra della pagina):
+ *   Setting   = Appuntamenti · Sessioni · Stats
+ *   Venditore = Lead · Statistiche
+ * Route piatte con trattino. Le vecchie restano valide e vengono girate:
+ *   #/oggi -> #/dashboard, #/venditore-appuntamenti -> #/venditore-lead.
+ * La pagina Oggi (lead.js renderOggi) non si apre più (il suo contenuto andrà nelle
+ * Task della Dashboard, step 5). La tabella Appuntamenti Venditore resta raggiungibile
+ * SOLO da un link nella pagina Lead (#/venditore-tabella), finché la scheda lead non fa
+ * tutto quello che si fa lì (nuovo appuntamento, rate, registrazioni): step 15. */
+const SETTING_SUBROUTES = { appuntamenti: 'setting-appuntamenti', sessioni: 'sessioni', statistiche: 'setting-statistiche' };
+const VENDITORE_SUBROUTES = { lead: 'venditore-lead', statistiche: 'venditore-statistiche' };
+const VENDITORE_TABLE_ROUTE = 'venditore-tabella';
+const ROUTE_REDIRECTS = { oggi: 'dashboard', 'venditore-appuntamenti': 'venditore-lead' };
+const SETTING_TAB_LABELS = { appuntamenti: 'Appuntamenti', sessioni: 'Sessioni', statistiche: 'Stats' };
+const VENDITORE_TAB_LABELS = { lead: 'Lead', statistiche: 'Statistiche' };
+
+function isSettingRouteName(route) {
+  return route === 'setting' || Object.values(SETTING_SUBROUTES).includes(route);
+}
+function isVenditoreRouteName(route) {
+  return route === 'venditore' || route === 'lead' || route === VENDITORE_TABLE_ROUTE || Object.values(VENDITORE_SUBROUTES).includes(route);
+}
 
 function renderRoute() {
   // Indicatore fisso "sessione in corso" + etichetta del tasto "+ Nuova sessione" — vanno
@@ -373,6 +391,7 @@ function renderRoute() {
   renderActiveSessionIndicator();
   updateNuovaSessioneButtonLabel();
   renderConfirmAlertBanner();
+  closeMobileSidebar();
 
   // La schermata di una chiamata di richiamo ("Chiama" su un lead "Da richiamare") ha
   // SEMPRE priorità, anche su una sessione attiva: è un flusso "sopra" la sessione, che
@@ -401,39 +420,123 @@ function renderRoute() {
   document.body.classList.remove('in-session');
   clearInterval(sessionTimerInterval);
 
-  // Parte Venditore (lead.js): con l'interruttore acceso si apre su "Oggi", spento
-  // spariscono Oggi e Venditore e si apre la Dashboard (vedi 👤 Account).
+  // Parte Venditore (lead.js): spenta = spariscono la voce Venditore e le sue pagine.
   LeadCRM.applyNav();
   const venditoreOn = LeadCRM.isOn();
-  const hash = location.hash || (venditoreOn ? '#/oggi' : '#/dashboard');
-  const parts = hash.replace('#/', '').split('/');
+  let parts = (location.hash || '#/dashboard').replace('#/', '').split('/');
   let route = parts[0] || 'dashboard';
-  if (!venditoreOn && (route === 'oggi' || route === 'lead' || route === 'venditore' || Object.values(VENDITORE_SUBROUTES).includes(route))) route = 'dashboard';
+  if (ROUTE_REDIRECTS[route]) {
+    route = ROUTE_REDIRECTS[route];
+    parts = [route];
+    try { history.replaceState(null, '', '#/' + route); } catch (e) { /* solo l'indirizzo, la pagina va lo stesso */ }
+  }
+  if (!venditoreOn && isVenditoreRouteName(route)) route = 'dashboard';
 
-  // Le due macro-voci di nav "Setting"/"Venditore" sono attive quando la route corrente
-  // è una qualunque delle loro sotto-schermate, non solo quando l'hash è esattamente
-  // 'setting' o 'venditore' — altrimenti il bottone si spegnerebbe entrando in una tab.
-  const isSettingRoute = route === 'setting' || Object.values(SETTING_SUBROUTES).includes(route);
-  const isVenditoreRoute = route === 'venditore' || route === 'lead' || Object.values(VENDITORE_SUBROUTES).includes(route);
-  document.querySelectorAll('.navlink').forEach(l => {
-    const r = l.dataset.route;
-    const active = (r === 'setting' && isSettingRoute) || (r === 'venditore' && isVenditoreRoute) || r === route;
-    l.classList.toggle('active', active);
-  });
+  // Sezione e tab attive (barra laterale + tab in alto).
+  let section = 'dashboard';
+  let tab = null;
+  if (isSettingRouteName(route)) {
+    section = 'setting';
+    if (route === 'sessioni') tab = 'sessioni';
+    else if (route === 'setting-appuntamenti') tab = 'appuntamenti';
+    else if (route === 'setting-statistiche') tab = 'statistiche';
+    else tab = SETTING_TAB_LABELS[uiState.settingTab] ? uiState.settingTab : 'appuntamenti';
+    uiState.settingTab = tab;
+  } else if (isVenditoreRouteName(route)) {
+    section = 'venditore';
+    if (route === 'venditore-statistiche') tab = 'statistiche';
+    else if (route === 'venditore') tab = VENDITORE_TAB_LABELS[uiState.venditoreTab] ? uiState.venditoreTab : 'lead';
+    else tab = 'lead';
+    uiState.venditoreTab = tab;
+  } else if (route === 'impostazioni') {
+    section = 'impostazioni';
+  }
+  updateSidebarActive(section);
+  renderPageBar(section, tab);
 
   applyTheme(db.settings);
 
-  if (route === 'sessioni' && parts[1]) { uiState.settingTab = 'sessioni'; renderSessioneDetail(parts[1]); }
-  else if (route === 'sessioni') { uiState.settingTab = 'sessioni'; renderSettingPage(); }
-  else if (route === 'setting-appuntamenti') { uiState.settingTab = 'appuntamenti'; renderSettingPage(); }
-  else if (route === 'setting') renderSettingPage();
-  else if (route === 'oggi') LeadCRM.renderOggi();
+  if (route === 'sessioni' && parts[1]) renderSessioneDetail(parts[1]);
+  else if (section === 'setting') renderSettingPage();
   else if (route === 'lead' && parts[1]) LeadCRM.renderLead(parts[1]);
-  else if (route === 'venditore-lead') { uiState.venditoreTab = 'lead'; renderVenditorePage(); }
-  else if (route === 'venditore-appuntamenti') { uiState.venditoreTab = 'appuntamenti'; renderVenditorePage(); }
-  else if (route === 'venditore') renderVenditorePage();
+  else if (route === VENDITORE_TABLE_ROUTE) renderVenditoreAppuntamenti();
+  else if (section === 'venditore') renderVenditorePage();
   else if (route === 'impostazioni') renderBuilderPage();
   else renderDashboard();
+}
+
+/** Voce attiva della barra laterale. */
+function updateSidebarActive(section) {
+  document.querySelectorAll('#sidebar .navlink[data-route]').forEach(l => {
+    l.classList.toggle('active', l.dataset.route === section);
+    if (l.dataset.route === section) l.setAttribute('aria-current', 'page');
+    else l.removeAttribute('aria-current');
+  });
+}
+
+/** Barra in cima alla pagina: titolo della sezione + tab centrate (Setting / Venditore). */
+function renderPageBar(section, tab) {
+  const titles = { dashboard: 'Dashboard', setting: 'Setting', venditore: 'Venditore', impostazioni: 'Aspetto' };
+  const titleEl = document.getElementById('pageTitle');
+  if (titleEl) titleEl.textContent = titles[section] || 'Dashboard';
+  const tabsEl = document.getElementById('pageTabs');
+  if (!tabsEl) return;
+  let defs = null;
+  if (section === 'setting') defs = Object.keys(SETTING_TAB_LABELS).map(k => [k, SETTING_TAB_LABELS[k], SETTING_SUBROUTES[k]]);
+  if (section === 'venditore') defs = Object.keys(VENDITORE_TAB_LABELS).map(k => [k, VENDITORE_TAB_LABELS[k], VENDITORE_SUBROUTES[k]]);
+  tabsEl.innerHTML = defs ? `<div class="tabs" role="tablist">${defs.map(([k, label, r]) =>
+    `<button class="tab ${k === tab ? 'active' : ''}" role="tab" aria-selected="${k === tab}" data-tab-route="${r}">${label}</button>`).join('')}</div>` : '';
+}
+
+/* ---------- Barra laterale: compressa / menu a scomparsa ---------- */
+const SIDEBAR_STORE_KEY = 'comms_barraCompatta';
+
+function initSidebar() {
+  let compact = false;
+  try { compact = localStorage.getItem(SIDEBAR_STORE_KEY) === '1'; } catch (e) { compact = false; }
+  document.body.classList.toggle('sb-collapsed', compact);
+  updateSidebarCollapseButton();
+
+  document.getElementById('btnSidebarCollapse').addEventListener('click', () => {
+    const now = !document.body.classList.contains('sb-collapsed');
+    document.body.classList.toggle('sb-collapsed', now);
+    try { localStorage.setItem(SIDEBAR_STORE_KEY, now ? '1' : '0'); } catch (e) { /* solo comodità */ }
+    updateSidebarCollapseButton();
+  });
+  document.getElementById('btnMenu').addEventListener('click', () => {
+    if (document.body.classList.contains('sb-open')) closeMobileSidebar();
+    else openMobileSidebar();
+  });
+  document.getElementById('sidebarBackdrop').addEventListener('click', closeMobileSidebar);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMobileSidebar(); });
+  document.getElementById('pageTabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-tab-route]');
+    if (btn) location.hash = '#/' + btn.dataset.tabRoute;
+  });
+}
+
+function updateSidebarCollapseButton() {
+  const btn = document.getElementById('btnSidebarCollapse');
+  if (!btn) return;
+  const compact = document.body.classList.contains('sb-collapsed');
+  btn.title = compact ? 'Allarga la barra' : 'Comprimi la barra';
+  btn.setAttribute('aria-label', btn.title);
+}
+
+function openMobileSidebar() {
+  document.body.classList.add('sb-open');
+  const bd = document.getElementById('sidebarBackdrop');
+  if (bd) bd.hidden = false;
+  const m = document.getElementById('btnMenu');
+  if (m) m.setAttribute('aria-expanded', 'true');
+}
+
+function closeMobileSidebar() {
+  document.body.classList.remove('sb-open');
+  const bd = document.getElementById('sidebarBackdrop');
+  if (bd) bd.hidden = true;
+  const m = document.getElementById('btnMenu');
+  if (m) m.setAttribute('aria-expanded', 'false');
 }
 
 /**
@@ -476,64 +579,93 @@ function updateNuovaSessioneButtonLabel() {
   btn.textContent = db.activeSession ? '↩ Torna alla sessione' : '+ Nuova sessione';
 }
 
-/**
- * Barra sotto-tab condivisa da renderSettingPage/renderVenditorePage: HTML da anteporre
- * al contenuto della schermata scelta (Appuntamenti/Sessioni o Appuntamenti/Statistiche).
- * Le funzioni di rendering delle sotto-schermate restano quelle esistenti (renderAppuntamenti,
- * renderSessioniList, renderVenditoreAppuntamenti, renderVenditoreStatistiche): accettano un
- * parametro opzionale subTabBarHtml da anteporre al proprio markup, così tutto il resto del
- * loro wiring interno (appRoot.querySelectorAll/getElementById) resta invariato.
- */
-function renderSubTabsBar(kind, active) {
-  if (kind === 'setting') {
-    return `
-      <section class="card sub-tabs-bar">
-        <div class="sub-tabs">
-          <button class="tf-tab ${active === 'appuntamenti' ? 'active' : ''}" data-setting-tab="appuntamenti">Appuntamenti</button>
-          <button class="tf-tab ${active === 'sessioni' ? 'active' : ''}" data-setting-tab="sessioni">Sessioni</button>
-        </div>
-      </section>`;
-  }
-  return `
-    <section class="card sub-tabs-bar">
-      <div class="sub-tabs">
-        <button class="tf-tab ${active === 'lead' ? 'active' : ''}" data-venditore-tab="lead">Lead</button>
-        <button class="tf-tab ${active === 'appuntamenti' ? 'active' : ''}" data-venditore-tab="appuntamenti">Appuntamenti</button>
-      </div>
-    </section>`;
-}
+/* Sotto-tab dentro le pagine: dal restyling (step 2) le tab stanno nella barra in alto
+ * (renderPageBar). Queste due funzioni restano perché le pagine le chiamano ancora:
+ * non disegnano più niente. */
+function renderSubTabsBar() { return ''; }
+function wireSubTabsBar() { /* le tab in alto sono collegate una volta sola in initSidebar */ }
 
-function wireSubTabsBar(kind) {
-  if (kind === 'setting') {
-    appRoot.querySelectorAll('[data-setting-tab]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        uiState.settingTab = btn.dataset.settingTab;
-        location.hash = uiState.settingTab === 'sessioni' ? '#/sessioni' : '#/setting-appuntamenti';
-      });
-    });
-  } else {
-    appRoot.querySelectorAll('[data-venditore-tab]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        uiState.venditoreTab = btn.dataset.venditoreTab;
-        location.hash = '#/' + (VENDITORE_SUBROUTES[uiState.venditoreTab] || 'venditore-lead');
-      });
-    });
-  }
-}
-
-/** Wrapper "Setting": sotto-tab Appuntamenti/Sessioni, scelta dentro la schermata. */
+/** Setting: Appuntamenti · Sessioni · Stats (tab in alto). */
 function renderSettingPage() {
   const tab = uiState.settingTab || 'appuntamenti';
   if (tab === 'sessioni') renderSessioniList();
+  else if (tab === 'statistiche') renderSettingStatistiche();
   else renderAppuntamenti();
 }
 
-/** Wrapper "Venditore": sotto-tab Lead/Appuntamenti, scelta dentro la schermata.
- * "Lead" (lead.js) è la prima: la parte Venditore a lead approvata da Simone il 15/10/2026. */
+/** Venditore: Lead · Statistiche (tab in alto). */
 function renderVenditorePage() {
   const tab = uiState.venditoreTab || 'lead';
-  if (tab === 'appuntamenti') renderVenditoreAppuntamenti();
-  else LeadCRM.renderLeadList(renderSubTabsBar('venditore', 'lead'));
+  if (tab === 'statistiche') renderVenditoreStatistiche();
+  else LeadCRM.renderLeadList(renderVenditoreTableLink());
+}
+
+/** Link alla tabella Appuntamenti Venditore (fuori dal menu dal restyling). Serve finché
+ * la scheda lead non ha "+ Appuntamento", rate e registrazioni (step 15). */
+function renderVenditoreTableLink() {
+  return `<div class="stats-page-link"><a class="btn-ghost" href="#/${VENDITORE_TABLE_ROUTE}" title="Nuovo appuntamento, stato trattativa, rate e registrazioni">📋 Tabella appuntamenti</a></div>`;
+}
+
+/* ============================================================================
+ * Pagine statistiche (restyling 17/10, step 2). Erano state tolte il 16/10 (i tassi
+ * stavano sotto le card Obiettivi della Dashboard); tornano come tab "Stats" in
+ * Setting e "Statistiche" in Venditore, con la barra del periodo unica.
+ * Stesse funzioni di calcolo di sempre: computeSetterStats / computeVenditoreStats
+ * (utils.js) e LeadCRM.newStatsValues. Niente "Esiti nel periodo" (Simone, 16/10).
+ * ==========================================================================*/
+
+function statsPeriodNote() {
+  return `<p class="text-dim stats-note">${getPeriod().tf === 'all' ? 'Tutto lo storico registrato.' : 'Periodo: ' + periodLabelText() + '.'}</p>`;
+}
+
+function renderSettingStatistiche() {
+  const range = getPeriodRangeOrNull();
+  const st = computeSetterStats(db, range);
+  const comm = computeFunnelValues(db, 'setter', range || getPeriodRange());
+  appRoot.innerHTML = `
+    ${renderPeriodBar({ after: statsPeriodNote() })}
+    <section class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-value">${st.fissati}</div><div class="kpi-label">Appuntamenti fissati</div></div>
+      <div class="kpi-card"><div class="kpi-value">${st.presentati}</div><div class="kpi-label">Presentati</div></div>
+      <div class="kpi-card"><div class="kpi-value">${st.showUpRate}%</div><div class="kpi-label">Show rate · ${st.presentatiSvolti} su ${st.svolti} svolti</div></div>
+      <div class="kpi-card"><div class="kpi-value">${st.closingRate}%</div><div class="kpi-label">Closing · chiusi su presentati</div></div>
+    </section>
+    <section class="card">
+      <h3>Ritmo e commissioni</h3>
+      <div class="rates-row">
+        ${rateCell(String(st.mediaFissatiGiorno).replace('.', ','), 'Fissati al giorno', 'giorni lun-ven')}
+        ${rateCell(st.svolti, 'Già svolti', 'presentati, no show e annullati')}
+        ${rateCell('€' + round2(comm.commissioniShowUp || 0), 'Commissioni show', '40 € a presentato')}
+        ${rateCell('€' + round2(comm.commissioniChiusure || 0), 'Commissioni venduto', '3% dell\'incassato')}
+      </div>
+    </section>
+  `;
+  wirePeriodBar(renderSettingStatistiche);
+}
+
+function renderVenditoreStatistiche() {
+  const range = getPeriodRangeOrNull();
+  const st = computeVenditoreStats(db, range);
+  appRoot.innerHTML = `
+    ${renderPeriodBar({ after: statsPeriodNote() })}
+    <section class="kpi-grid">
+      <div class="kpi-card"><div class="kpi-value">${st.assegnati}</div><div class="kpi-label">Assegnati</div></div>
+      <div class="kpi-card"><div class="kpi-value">${st.presentati}</div><div class="kpi-label">Presentati</div></div>
+      <div class="kpi-card"><div class="kpi-value">${st.chiusi}</div><div class="kpi-label">Chiusi</div></div>
+      <div class="kpi-card"><div class="kpi-value">€${round2(st.commissioniTot)}</div><div class="kpi-label">Commissioni</div></div>
+    </section>
+    <section class="card">
+      <h3>Tassi</h3>
+      <div class="rates-row">
+        ${rateCell(st.showRate + '%', 'Show rate', `${st.presentati} presentati su ${st.showRateBase}`)}
+        ${rateCell(st.conversionRate + '%', 'Closing', 'chiusi su presentati in target')}
+        ${rateCell('€' + round2(st.scontrinoMedio), 'Scontrino medio', `${st.chiusi} chiusi`)}
+        ${rateCell('€' + round2(st.totalVenduto), 'Totale venduto', 'appuntamenti chiusi')}
+      </div>
+    </section>
+    ${LeadCRM.renderNewStatsSection(range)}
+  `;
+  wirePeriodBar(renderVenditoreStatistiche);
 }
 
 /* ---------- Dashboard ---------- */
@@ -2768,8 +2900,9 @@ function renderConfirmAlertBanner() {
     el = document.createElement('div');
     el.id = 'confirmAlertBanner';
     el.className = 'confirm-alert-banner';
-    const topbar = document.getElementById('topbar');
-    topbar.insertAdjacentElement('afterend', el);
+    // Sotto la barra della pagina (restyling, step 2: la topbar non c'è più).
+    const pageBar = document.getElementById('pageBar');
+    pageBar.insertAdjacentElement('afterend', el);
   }
 
   const sorted = [...pending].sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
@@ -3404,7 +3537,7 @@ function applyDealStage(apt, stageKey) {
 }
 
 function renderVenditoreAppuntamenti() {
-  uiState.venditoreTab = 'appuntamenti';
+  uiState.venditoreTab = 'lead'; // la tabella sta sotto la tab Lead (restyling, step 2)
   if (LeadCRM.ensureLeads()) persist(); // ogni appuntamento Venditore ha il suo lead (lead.js)
   const filter = uiState.crmVenditoreFilter || 'all'; // 'all' | 'trattativa' | 'no_show' | 'perso'
   const search = uiState.crmVenditoreSearch || '';
@@ -3417,7 +3550,7 @@ function renderVenditoreAppuntamenti() {
   const noResults = search.trim() && !rows.length;
 
   appRoot.innerHTML = `
-    ${renderSubTabsBar('venditore', 'appuntamenti')}
+    <a class="back-link" href="#/venditore-lead">← Lead</a>
     <section class="card crm-toolbar">
       <div class="crm-filters">
         <button class="pill ${filter === 'all' ? 'active' : ''}" data-crm-vnd-filter="all">Tutti</button>
@@ -5426,9 +5559,19 @@ function wireBuilderEvents() {
 
 /* ---------- Init ---------- */
 
-document.querySelectorAll('.navlink').forEach(l => {
-  l.addEventListener('click', () => { location.hash = '#/' + l.dataset.route; });
+document.querySelectorAll('#sidebar .navlink[data-route]').forEach(l => {
+  l.addEventListener('click', () => {
+    const r = l.dataset.route;
+    // Setting e Venditore riaprono l'ultima tab usata (uiState.settingTab / venditoreTab).
+    const target = r === 'setting' ? (SETTING_SUBROUTES[uiState.settingTab] || 'setting-appuntamenti')
+      : r === 'venditore' ? (VENDITORE_SUBROUTES[uiState.venditoreTab] || 'venditore-lead')
+      : r;
+    if (location.hash === '#/' + target) { closeMobileSidebar(); renderRoute(); }
+    else location.hash = '#/' + target;
+  });
 });
+document.getElementById('btnLogoutSide').addEventListener('click', () => { closeMobileSidebar(); logoutAction(); });
+initSidebar();
 document.getElementById('btnNuovaSessione').addEventListener('click', () => {
   // Una sessione è già in corso (magari minimizzata) -> il tasto rientra invece di
   // aprirne una seconda, che sovrascriverebbe db.activeSession perdendo la prima.
@@ -5439,7 +5582,7 @@ document.getElementById('btnNuovaSessione').addEventListener('click', () => {
   }
   openNewSessionModal();
 });
-document.getElementById('btnAccount').addEventListener('click', openAccountModal);
+document.getElementById('btnAccount').addEventListener('click', () => { closeMobileSidebar(); openAccountModal(); });
 
 document.getElementById('loginForm').addEventListener('submit', loginSubmitAction);
 

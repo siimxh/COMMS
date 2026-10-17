@@ -14,23 +14,47 @@
 </head>
 <body>
 
-  <header id="topbar">
-    <div class="brand">Chiamate Tracker</div>
-    <nav id="mainNav">
-      <button class="navlink" data-route="oggi" data-venditore-only>Oggi</button>
-      <button class="navlink" data-route="dashboard">Dashboard</button>
-      <button class="navlink" data-route="setting">Setting</button>
-      <button class="navlink" data-route="venditore" data-venditore-only>Venditore</button>
-    </nav>
-    <div class="topbar-actions">
-      <span id="syncStatus" class="sync-status" style="display:none;"></span>
-      <!-- Esporta, Importa e 🎨 stanno dentro 👤 (Simone, 16/10: in alto solo quello che si usa sempre). -->
-      <button id="btnAccount" class="btn-ghost" title="Account, backup e aspetto">👤</button>
-      <button id="btnNuovaSessione" class="btn-primary">+ Nuova sessione</button>
-    </div>
-  </header>
+  <!-- Restyling 17/10 (step 2): barra laterale a sinistra + barra della pagina in
+       alto (titolo, tab centrate, "Salvato" e "+ Nuova sessione" a destra). -->
+  <div id="shell" class="shell">
+    <aside id="sidebar" class="sidebar" aria-label="Menu principale">
+      <div class="sb-head">
+        <a class="sb-logo" href="#/dashboard" title="Comms">
+          <span class="sb-logo-mark" aria-hidden="true">C</span>
+          <span class="sb-label sb-logo-text">Comms</span>
+        </a>
+        <button id="btnSidebarCollapse" class="btn-icon sb-collapse" title="Comprimi la barra" aria-label="Comprimi la barra">«</button>
+      </div>
+      <div class="sb-section sb-label">Menu</div>
+      <nav id="mainNav" class="sb-nav">
+        <button class="navlink" data-route="dashboard" title="Dashboard"><svg class="sb-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/></svg><span class="sb-label">Dashboard</span></button>
+        <button class="navlink" data-route="setting" title="Setting"><svg class="sb-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z"/></svg><span class="sb-label">Setting</span></button>
+        <button class="navlink" data-route="venditore" data-venditore-only title="Venditore"><svg class="sb-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="7.5" width="17" height="12" rx="2"/><path d="M8.5 7.5V6a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v1.5M3.5 13h17"/></svg><span class="sb-label">Venditore</span></button>
+      </nav>
+      <div class="sb-bottom">
+        <!-- Esporta, Importa e Interruttore Venditore stanno dentro Account. -->
+        <button id="btnAccount" class="navlink" title="Account, backup e parte Venditore"><svg class="sb-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.5" r="4"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/></svg><span class="sb-label">Account</span></button>
+        <button class="navlink" data-route="impostazioni" title="Aspetto"><svg class="sb-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5a8.5 8.5 0 1 0 0 17c1.2 0 1.8-.8 1.8-1.7 0-1-.8-1.4-.8-2.3 0-.9.7-1.5 1.6-1.5H17a3.5 3.5 0 0 0 3.5-3.5c0-4.4-3.8-8-8.5-8z"/><circle cx="7.8" cy="11" r="1"/><circle cx="10.5" cy="7.5" r="1"/><circle cx="14.8" cy="7.8" r="1"/></svg><span class="sb-label">Aspetto</span></button>
+        <button id="btnLogoutSide" class="navlink" title="Esci"><svg class="sb-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 4.5h3a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2h-3M10 16.5 14.5 12 10 7.5M14.5 12H4.5"/></svg><span class="sb-label">Esci</span></button>
+      </div>
+    </aside>
+    <div id="sidebarBackdrop" class="sb-backdrop" hidden></div>
 
-  <main id="app"></main>
+    <div class="main-col">
+      <header id="pageBar" class="page-bar">
+        <div class="page-bar-left">
+          <button id="btnMenu" class="btn-icon menu-btn" title="Menu" aria-label="Apri il menu" aria-controls="sidebar" aria-expanded="false">☰</button>
+          <h1 id="pageTitle" class="page-title">Dashboard</h1>
+        </div>
+        <nav id="pageTabs" class="page-tabs" aria-label="Sezioni"></nav>
+        <div class="page-bar-actions">
+          <span id="syncStatus" class="sync-status" style="display:none;"></span>
+          <button id="btnNuovaSessione" class="btn-ghost btn-new-session">+ Nuova sessione</button>
+        </div>
+      </header>
+      <main id="app"></main>
+    </div>
+  </div>
 
   <div id="loginScreen" class="login-screen" hidden>
     <form id="loginForm" class="login-card">

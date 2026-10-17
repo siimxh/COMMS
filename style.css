@@ -212,59 +212,8 @@ p { margin: 0 0 8px; }
   color: var(--accent);
 }
 
-/* ---------- Topbar ---------- */
-
-#topbar {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  padding: 14px 24px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg-elev);
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  flex-wrap: wrap;
-}
-
-.brand {
-  font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: 0.01em;
-  margin-right: 8px;
-  white-space: nowrap;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-.brand::before {
-  content: "";
-  width: 9px;
-  height: 9px;
-  background: var(--accent);
-  box-shadow: 0 0 8px var(--accent-dim);
-  flex-shrink: 0;
-}
-
-#mainNav { display: flex; gap: 22px; flex: 1; }
-
-.navlink {
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  padding: 6px 0;
-  cursor: pointer;
-  color: var(--text-dim);
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-}
-.navlink.active { color: var(--text); border-bottom-color: var(--accent); }
-.navlink:hover { color: var(--text); }
-
-.topbar-actions { display: flex; gap: 8px; align-items: center; }
+/* La vecchia topbar con le schede (Oggi / Dashboard / Setting / Venditore) è stata
+   sostituita dalla barra laterale: vedi "Barra laterale" in fondo al file. */
 
 .btn-primary, .btn-ghost, .btn-danger-ghost {
   border: 1px solid var(--border);
@@ -297,7 +246,7 @@ p { margin: 0 0 8px; }
 .sync-status[data-status="pending"] { color: var(--danger); font-weight: 700; }
 
 /* Login (vedi app.js, sezione "Login e avvio") */
-body.logged-out #topbar, body.logged-out #app { display: none; }
+body.logged-out .shell { display: none; }
 .login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; }
 .login-screen[hidden] { display: none; }
 .login-card { width: 100%; max-width: 380px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--radius-md); padding: 28px 24px; }
@@ -305,14 +254,15 @@ body.logged-out #topbar, body.logged-out #app { display: none; }
 .login-card .btn-primary { width: 100%; padding: 12px; font-size: 1rem; }
 .login-error { color: var(--danger); font-size: 0.9rem; min-height: 1.2em; margin-bottom: 12px; }
 
-body.in-session #topbar { display: none; }
+body.in-session .sidebar, body.in-session .page-bar, body.in-session .sb-backdrop { display: none; }
 
 /* ---------- Layout ---------- */
 
 #app {
-  max-width: 1080px;
+  width: 100%;
+  max-width: 1180px;
   margin: 0 auto;
-  padding: 24px 20px;
+  padding: 24px 28px 40px;
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -2329,3 +2279,123 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 
 /* Indicatore "In sessione — torna": in basso a destra, così non copre i tasti in alto. */
 .active-session-indicator { top: auto; bottom: 18px; right: 18px; font-family: var(--font-sans); font-weight: 600; font-size: 0.82rem; }
+
+/* ============================================================================
+ * Barra laterale + barra della pagina (restyling 17/10, step 2)
+ * Struttura in index.html: .shell > aside.sidebar + .main-col > header.page-bar + main#app.
+ * Sidebar bianca con bordo destro; voce attiva bianca con bordo leggero e barretta
+ * accent-500 di 3 px a sinistra. « la comprime a sole icone (ricordato nel browser).
+ * Sotto i 900 px diventa un menu a scomparsa aperto dal tasto ☰.
+ * ==========================================================================*/
+.shell { display: flex; min-height: 100vh; width: 100%; }
+.main-col { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+
+.sidebar {
+  position: sticky; top: 0; height: 100vh;
+  flex: 0 0 248px; width: 248px;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 16px 12px;
+  background: var(--neutral-0);
+  border-right: var(--border-line);
+  overflow-y: auto; overflow-x: hidden;
+  z-index: 30;
+}
+.sb-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 0 14px; }
+.sb-logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--neutral-900); min-width: 0; }
+.sb-logo-mark {
+  width: 34px; height: 34px; flex: 0 0 34px; border-radius: var(--radius-control);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--neutral-900); color: var(--neutral-0); font-weight: 700; font-size: 1.05rem;
+}
+.sb-logo-text { font-weight: 700; font-size: 1.08rem; }
+.sb-collapse { width: 30px; height: 30px; font-size: 0.95rem; color: var(--neutral-600); }
+.sb-section { font-size: 0.72rem; font-weight: 600; color: var(--neutral-400); padding: 8px 12px 4px; }
+.sb-nav, .sb-bottom { display: flex; flex-direction: column; gap: 2px; }
+.sb-bottom { margin-top: auto; padding-top: 10px; border-top: var(--border-line); }
+
+.sidebar .navlink {
+  position: relative;
+  display: flex; align-items: center; gap: 11px;
+  width: 100%; padding: 9px 12px;
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-control);
+  color: var(--neutral-900);
+  font-family: var(--font-sans); font-size: 0.9rem; font-weight: 500;
+  text-align: left; cursor: pointer; white-space: nowrap;
+}
+.sidebar .navlink:hover { background: var(--neutral-50); color: var(--neutral-900); }
+.sidebar .navlink.active {
+  background: var(--neutral-0); border-color: var(--neutral-200);
+  box-shadow: var(--shadow-active); font-weight: 600;
+}
+.sidebar .navlink.active::before {
+  content: ""; position: absolute; left: -13px; top: 7px; bottom: 7px;
+  width: 3px; border-radius: 0 3px 3px 0; background: var(--accent-500);
+}
+.sb-ico {
+  width: 19px; height: 19px; flex: 0 0 19px;
+  fill: none; stroke: var(--neutral-600); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+}
+.sidebar .navlink.active .sb-ico { stroke: var(--neutral-900); }
+
+/* Barra della pagina: titolo a sinistra, tab al centro, azioni a destra. */
+.page-bar {
+  position: sticky; top: 0; z-index: 20;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center; gap: 12px;
+  padding: 12px 28px;
+  background: var(--neutral-50);
+  border-bottom: var(--border-line);
+}
+.page-bar-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.page-title { margin: 0; font-size: 1.35rem; font-weight: 700; color: var(--neutral-900); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.page-tabs { display: flex; justify-content: center; min-width: 0; }
+.page-bar-actions { display: flex; align-items: center; justify-content: flex-end; gap: 10px; min-width: 0; }
+.btn-new-session { white-space: nowrap; }
+.menu-btn { display: none; }
+.sb-backdrop { position: fixed; inset: 0; background: var(--overlay); z-index: 150; }
+.sb-backdrop[hidden] { display: none; }
+
+/* Il banner delle conferme sta sotto la barra della pagina, non più appiccicato in alto. */
+.confirm-alert-banner { position: relative; top: auto; }
+
+/* Barra compressa (solo schermi larghi). */
+@media (min-width: 900px) {
+  body.sb-collapsed .sidebar { flex-basis: 72px; width: 72px; padding: 16px 10px; }
+  body.sb-collapsed .sb-label { display: none; }
+  body.sb-collapsed .sb-head { flex-direction: column; justify-content: flex-start; gap: 10px; }
+  body.sb-collapsed .sb-logo { justify-content: center; }
+  body.sb-collapsed .sidebar .navlink { justify-content: center; padding: 10px 0; }
+  body.sb-collapsed .sidebar .navlink.active::before { left: -11px; }
+  body.sb-collapsed .sb-collapse { transform: rotate(180deg); }
+}
+
+/* Sotto i 900 px: menu a scomparsa. */
+@media (max-width: 899px) {
+  .menu-btn { display: inline-flex; }
+  .sb-collapse { display: none; }
+  .sidebar {
+    position: fixed; left: 0; top: 0; bottom: 0; height: auto;
+    width: 264px; transform: translateX(-100%); transition: transform 0.2s ease;
+    z-index: 200;
+  }
+  body.sb-open .sidebar { transform: none; box-shadow: var(--shadow-active); }
+  .page-bar { grid-template-columns: minmax(0, 1fr) auto; padding: 10px 16px; row-gap: 10px; }
+  .page-tabs { grid-column: 1 / -1; grid-row: 2; }
+  .page-tabs:empty { display: none; }
+  .page-title { font-size: 1.15rem; }
+  #app { padding: 16px 16px 32px; }
+}
+@media (max-width: 600px) {
+  .sync-status:not([data-status="pending"]) { display: none !important; }
+  .btn-new-session { padding: 8px 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
+
+/* Pagine Stats (Setting) e Statistiche (Venditore). */
+.stats-note { font-size: 0.82rem; margin: 0; }
+.stats-page-link { display: flex; justify-content: flex-end; }
+#app > .back-link { align-self: flex-start; }
+
+/* Tasti della barra strumenti delle liste: vanno a capo invece di uscire dallo schermo. */
+.crm-toolbar > div { flex-wrap: wrap; max-width: 100%; }
+a.btn-ghost, a.btn-primary { text-decoration: none; }

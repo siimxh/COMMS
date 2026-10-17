@@ -12,6 +12,9 @@
  * non solo 1440x900). Passa anche per il dettaglio dell'ultima sessione e per
  * la scheda del primo lead, se ci sono.
  * Errori: conta sia gli errori JavaScript sia i console.error della pagina.
+ * Schermo: VIEWPORT=390x844 per provare il telefono (default 1440x900). Su ogni
+ * pagina controlla anche che non ci sia scroll orizzontale (conta come errore).
+ * Le route vecchie (#/oggi, #/venditore-appuntamenti) devono finire sulla nuova.
  *
  * Dati finti per la prova: tools/dati-finti.js (vedi commento in testa al file).
  *
@@ -41,7 +44,8 @@ function loadPlaywright() {
   const [backupPath, fakeNow] = process.argv.slice(2);
   const exe = process.env.PLAYWRIGHT_CHROMIUM || (fs.existsSync('/opt/pw-browsers/chromium') ? '/opt/pw-browsers/chromium' : undefined);
   const browser = await chromium.launch(exe ? { executablePath: exe } : {});
-  const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, timezoneId: 'Europe/Rome' });
+  const [vw, vh] = (process.env.VIEWPORT || '1440x900').split('x').map(Number);
+  const ctx = await browser.newContext({ viewport: { width: vw, height: vh }, timezoneId: 'Europe/Rome' });
 
   if (fakeNow) {
     await ctx.addInitScript(iso => {
@@ -115,7 +119,18 @@ function loadPlaywright() {
 
   const outDir = process.env.CARTELLA_SCREENSHOT || '/tmp/prova-tracker';
   fs.mkdirSync(outDir, { recursive: true });
-  const routes = ['#/oggi', '#/venditore-lead', '#/dashboard', '#/setting-appuntamenti', '#/sessioni', '#/venditore-appuntamenti', '#/impostazioni'];
+  // Route del restyling (step 2). venditore-tabella = tabella Appuntamenti Venditore,
+  // fuori dal menu ma raggiungibile dalla pagina Lead.
+  const routes = ['#/dashboard', '#/setting-appuntamenti', '#/sessioni', '#/setting-statistiche',
+    '#/venditore-lead', '#/venditore-statistiche', '#/venditore-tabella', '#/impostazioni'];
+  // Route vecchie: devono portare alla nuova.
+  const redirects = [['#/oggi', '#/dashboard'], ['#/venditore-appuntamenti', '#/venditore-lead']];
+  for (const [from, to] of redirects) {
+    await page.evaluate(h => { location.hash = h; renderRoute(); }, from);
+    await page.waitForTimeout(150);
+    const now = await page.evaluate(() => location.hash);
+    if (now !== to) errors.push(`redirect: ${from} porta a ${now}, non a ${to}`);
+  }
   // Dettagli: la sessione più recente con chiamate e il primo lead (nomi file fissi).
   const details = await page.evaluate(() => {
     const s = db.sessions.filter(x => (x.calls || []).length).slice(-1)[0];
@@ -131,6 +146,8 @@ function loadPlaywright() {
     // Il messaggio del primo accesso ("Ho trovato i tuoi dati...") coprirebbe la pagina.
     await page.evaluate(() => { const t = document.getElementById('appToast'); if (t) t.className = 'toast'; });
     await page.screenshot({ path: path.join(outDir, name + '.png'), fullPage: process.env.PAGINA_INTERA === '1' });
+    const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    if (wide > 0) errors.push(`scroll orizzontale di ${wide}px su ${r}`);
   }
 
   const stats = await page.evaluate(() => {
