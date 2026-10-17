@@ -7,7 +7,13 @@
  *
  * Cosa fa: apre index.html, carica i dati, passa per tutte le pagine, stampa le
  * statistiche principali del mese corrente e gli eventuali errori JavaScript.
- * Salva uno screenshot di ogni pagina in /tmp/prova-tracker/.
+ * Salva uno screenshot di ogni pagina in /tmp/prova-tracker/ (o nella cartella
+ * indicata con CARTELLA_SCREENSHOT=/percorso; PAGINA_INTERA=1 = pagina intera,
+ * non solo 1440x900). Passa anche per il dettaglio dell'ultima sessione e per
+ * la scheda del primo lead, se ci sono.
+ * Errori: conta sia gli errori JavaScript sia i console.error della pagina.
+ *
+ * Dati finti per la prova: tools/dati-finti.js (vedi commento in testa al file).
  *
  * Login: il database Supabase qui è FINTO (in memoria, intercettato da
  * Playwright), così la prova non tocca i dati veri e non serve una password.
@@ -68,12 +74,25 @@ function loadPlaywright() {
       });
       return reply(201);
     }
+    if (req.method() === 'DELETE') {
+      // Cancellazioni del tool (cloud-sync _deleteIds): ?id=in.(a,b,c)
+      const m = /^in\.\((.*)\)$/.exec(url.searchParams.get('id') || '');
+      const ids = m ? m[1].split(',').map(x => x.replace(/^"|"$/g, '')) : [];
+      fake[table] = fake[table].filter(r => !ids.includes(r.id));
+      return reply(204);
+    }
     return reply(204);
   });
 
   const page = await ctx.newPage();
   const errors = [];
   page.on('pageerror', e => errors.push(e.message));
+  page.on('console', m => {
+    if (m.type() !== 'error') return;
+    // Il 404 della tabella "lead" mancante è voluto (SENZA_TABELLA_LEAD=1): non è un errore.
+    if (noLeadTable && /status of 404/.test(m.text())) return;
+    errors.push('console.error: ' + m.text());
+  });
 
   const indexUrl = 'file://' + path.resolve(__dirname, '..', 'index.html');
   await page.goto(indexUrl);
@@ -94,13 +113,24 @@ function loadPlaywright() {
   await page.waitForFunction(() => document.getElementById('loginScreen').hidden && !!document.querySelector('#app *'));
   await page.waitForTimeout(500);
 
-  const outDir = '/tmp/prova-tracker';
+  const outDir = process.env.CARTELLA_SCREENSHOT || '/tmp/prova-tracker';
   fs.mkdirSync(outDir, { recursive: true });
   const routes = ['#/oggi', '#/venditore-lead', '#/dashboard', '#/setting-appuntamenti', '#/sessioni', '#/venditore-appuntamenti', '#/impostazioni'];
-  for (const r of routes) {
+  // Dettagli: la sessione più recente con chiamate e il primo lead (nomi file fissi).
+  const details = await page.evaluate(() => {
+    const s = db.sessions.filter(x => (x.calls || []).length).slice(-1)[0];
+    const l = (db.leads || [])[0];
+    return { sessione: s ? '#/sessioni/' + s.id : null, lead: l ? '#/lead/' + l.id : null };
+  });
+  const shots = routes.map(r => [r, r.replace(/[#/]+/g, '_').replace(/^_/, '')]);
+  if (details.sessione) shots.push([details.sessione, 'sessioni_dettaglio']);
+  if (details.lead) shots.push([details.lead, 'lead_scheda']);
+  for (const [r, name] of shots) {
     await page.evaluate(h => { location.hash = h; renderRoute(); }, r);
     await page.waitForTimeout(400);
-    await page.screenshot({ path: path.join(outDir, r.replace(/[#/]+/g, '_').replace(/^_/, '') + '.png') });
+    // Il messaggio del primo accesso ("Ho trovato i tuoi dati...") coprirebbe la pagina.
+    await page.evaluate(() => { const t = document.getElementById('appToast'); if (t) t.className = 'toast'; });
+    await page.screenshot({ path: path.join(outDir, name + '.png'), fullPage: process.env.PAGINA_INTERA === '1' });
   }
 
   const stats = await page.evaluate(() => {
