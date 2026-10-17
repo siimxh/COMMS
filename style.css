@@ -2620,3 +2620,76 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
   .live-checklist { width: 100%; position: static; order: 2; }
   .session-callback-sidebar { order: 3; }
 }
+
+/* ============================================================================
+ * Setting → Sessioni (restyling step 13): ricerca per giorno + grafico checklist.
+ * Barre: il giorno più alto (o quello cercato) accent-500, gli altri accent-300; valore
+ * sopra in neutral-900, data sotto. Griglia tratteggiata neutral-200.
+ * ==========================================================================*/
+.day-search-card { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
+.day-search-head h3 { margin: 0; }
+.day-search-row { display: flex; gap: 10px; flex-wrap: wrap; }
+.day-search-input { flex: 1 1 220px; min-width: 0; font-size: 0.95rem; padding: 10px 12px; }
+.day-search-date { flex: 0 0 auto; font-size: 0.95rem; padding: 9px 12px; }
+.day-search-msg { margin: 0; }
+.day-search-count { margin: 0 0 8px; font-size: 0.875rem; font-weight: 600; color: var(--neutral-900); }
+#sessDayResults:empty { display: none; }
+
+.checklist-chart-card { margin-top: 18px; display: flex; flex-direction: column; gap: 16px; }
+.cchart-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px 20px; flex-wrap: wrap; }
+.cchart-head h3 { margin: 0; }
+.cchart-sub { margin: 4px 0 0; font-size: 0.8125rem; }
+.cchart-period { max-width: 100%; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+.cchart-period .tab { white-space: nowrap; flex-shrink: 0; }
+.checklist-chart-empty { margin: 0; padding: 24px 0; text-align: center; }
+.cchart-layout { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
+.cchart-wrap { position: relative; min-width: 0; padding-left: 40px; }
+.cchart-grid { position: absolute; left: 40px; right: 0; top: 26px; height: 200px; pointer-events: none; }
+.cchart-grid span { position: absolute; left: 0; right: 0; height: 0; border-top: 1px dashed var(--neutral-200); }
+.cchart-grid span:nth-child(1) { top: 0; }
+.cchart-grid span:nth-child(2) { top: 50%; }
+.cchart-grid span:nth-child(3) { top: 100%; border-top-style: solid; }
+.cchart-grid i { position: absolute; right: calc(100% + 8px); top: -0.5em; font-style: normal; font-size: 0.72rem; line-height: 1; color: var(--neutral-400); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cchart-scroll { overflow-x: auto; overflow-y: hidden; position: relative; }
+.cchart-cols { display: flex; align-items: flex-end; gap: 6px; min-width: 100%; width: max-content; padding: 0 4px; }
+.cchart-col {
+  flex: 1 0 48px;
+  max-width: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 26px 0 0;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.cchart-col:focus-visible { outline: 2px solid var(--neutral-900); outline-offset: 2px; }
+.cchart-plot { position: relative; width: 100%; height: 200px; display: flex; align-items: flex-end; justify-content: center; }
+.cchart-bar { position: relative; width: 60%; min-width: 22px; max-width: 44px; background: var(--accent-300); border-radius: 10px 10px 3px 3px; transition: background .12s; }
+.cchart-val { position: absolute; bottom: 100%; left: 50%; transform: translate(-50%, -5px); font-size: 0.78rem; font-weight: 600; color: var(--neutral-900); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cchart-date { font-size: 0.78rem; color: var(--neutral-600); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.cchart-col:hover .cchart-bar { background: var(--accent-400); }
+.cchart-col.is-top .cchart-bar,
+.cchart-layout.has-selected .cchart-col.is-selected .cchart-bar { background: var(--accent-500); }
+.cchart-layout.has-selected .cchart-col.is-top:not(.is-selected) .cchart-bar { background: var(--accent-300); }
+.cchart-col.is-top .cchart-date,
+.cchart-layout.has-selected .cchart-col.is-selected .cchart-date { color: var(--neutral-900); font-weight: 700; }
+.cchart-layout.has-selected .cchart-col.is-top:not(.is-selected) .cchart-date { color: var(--neutral-600); font-weight: 400; }
+.cchart-tooltip { position: absolute; z-index: 5; transform: translateX(-50%); pointer-events: none; white-space: nowrap; padding: 6px 10px; border-radius: var(--radius-control); background: var(--neutral-900); color: var(--neutral-0); font-size: 0.8125rem; font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, .04); }
+.cchart-tooltip[hidden] { display: none; }
+.cchart-legend { border: var(--border-line); border-radius: var(--radius-card); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.cchart-legend-title { font-size: 0.875rem; font-weight: 600; color: var(--neutral-900); }
+.cchart-legend-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.cchart-legend-item { display: flex; align-items: baseline; gap: 10px; padding: 8px 0; border-top: var(--border-line); font-size: 0.875rem; }
+.cchart-legend-item:first-child { border-top: none; padding-top: 0; }
+.cchart-legend-rank { width: 20px; height: 20px; flex-shrink: 0; border-radius: var(--radius-pill); background: var(--neutral-100); color: var(--neutral-600); font-size: 0.75rem; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; align-self: center; }
+.cchart-legend-label { flex: 1; color: var(--neutral-600); }
+.cchart-legend-pct { font-weight: 700; color: var(--neutral-900); font-variant-numeric: tabular-nums; }
+.cchart-legend-note { margin: 0; font-size: 0.78rem; color: var(--neutral-600); }
+@media (max-width: 900px) {
+  .cchart-layout { grid-template-columns: 1fr; }
+}

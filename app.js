@@ -2029,11 +2029,37 @@ function renderSessioniList() {
   const sessions = allSessions.slice(0, shown);
   const remaining = allSessions.length - sessions.length;
 
-  const rows = sessions.length ? sessions.map(s => {
-    const totalCalls = s.calls.length;
-    const totalLeads = countSessionLeads(s, db.sessions);
-    const duration = (s.endedAt ? (new Date(s.endedAt) - new Date(s.startedAt)) : (Date.now() - new Date(s.startedAt))) - (s.pausedTotalMs || 0);
-    return `
+  const rows = sessions.length ? sessions.map(sessionCardHtml).join('') : '<p class="text-dim">Nessuna sessione registrata ancora. Inizia la prima!</p>';
+
+  const activityHtml = renderCallActivitySection();
+
+  appRoot.innerHTML = `
+    ${renderSubTabsBar('setting', 'sessioni')}
+    ${activityHtml}
+    <div class="section-separator"><span class="eyebrow">Elenco sessioni${filterId !== 'all' ? ' · ' + escapeHtml((db.pipelines.find(p => p.id === filterId) || {}).name || '') : ''}</span></div>
+    <section class="session-list">${rows}</section>
+    ${remaining > 0 ? `<div class="show-more-wrap"><button class="btn-ghost" id="btnMoreSessions">Mostra altre ${Math.min(20, remaining)} (ne restano ${remaining})</button></div>` : ''}
+    ${renderSessionDaySearch()}
+    ${renderChecklistChartSection()}
+  `;
+
+  wireSubTabsBar('setting');
+  wireCallActivitySection();
+  wireSessionDaySearch();
+  wireChecklistChart();
+  const moreBtn = document.getElementById('btnMoreSessions');
+  if (moreBtn) moreBtn.addEventListener('click', () => { uiState.sessioniShown = shown + 20; renderSessioniList(); });
+  appRoot.querySelectorAll('.session-list .session-card').forEach(card => {
+    card.addEventListener('click', () => { location.hash = '#/sessioni/' + card.dataset.sid; });
+  });
+  animateKpiValues(appRoot);
+}
+
+function sessionCardHtml(s) {
+  const totalCalls = s.calls.length;
+  const totalLeads = countSessionLeads(s, db.sessions);
+  const duration = (s.endedAt ? (new Date(s.endedAt) - new Date(s.startedAt)) : (Date.now() - new Date(s.startedAt))) - (s.pausedTotalMs || 0);
+  return `
       <div class="session-card" data-sid="${s.id}">
         <div class="session-card-main">
           <div class="session-card-title">Sessione ${s.number} - ${fmtDate(s.startedAt)}</div>
@@ -2045,26 +2071,241 @@ function renderSessioniList() {
           <span>${totalLeads} lead</span>
         </div>
       </div>`;
-  }).join('') : '<p class="text-dim">Nessuna sessione registrata ancora. Inizia la prima!</p>';
+}
 
-  const activityHtml = renderCallActivitySection();
+/* ---------- Sessioni: ricerca per giorno (restyling 5.3, step 13) ----------
+ * Accetta "14/10", "14/10/2026", "14-10", "14.10.26", "14 ottobre", "14 ott 2026",
+ * "oggi", "ieri" + il selettore data. Senza anno: l'anno in corso, o quello prima se la
+ * data sarebbe nel futuro (le sessioni sono sempre passate). Cerca in TUTTE le sessioni
+ * (anche le automatiche), senza il filtro pipeline. Risultati ridisegnati da soli, senza
+ * ridisegnare la pagina (così il campo non perde il fuoco). */
+const IT_MONTHS = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
 
-  appRoot.innerHTML = `
-    ${renderSubTabsBar('setting', 'sessioni')}
-    ${activityHtml}
-    <div class="section-separator"><span class="eyebrow">Elenco sessioni${filterId !== 'all' ? ' · ' + escapeHtml((db.pipelines.find(p => p.id === filterId) || {}).name || '') : ''}</span></div>
-    <section class="session-list">${rows}</section>
-    ${remaining > 0 ? `<div class="show-more-wrap"><button class="btn-ghost" id="btnMoreSessions">Mostra altre ${Math.min(20, remaining)} (ne restano ${remaining})</button></div>` : ''}
-  `;
+/** Testo → 'YYYY-MM-DD' oppure null (vuoto) oppure false (non riconosciuto). */
+function parseDaySearch(text, now) {
+  const t = String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!t) return null;
+  now = now || new Date();
+  if (t === 'oggi') return dateInputValue(now);
+  if (t === 'ieri') { const d = new Date(now); d.setDate(d.getDate() - 1); return dateInputValue(d); }
+  let day, month, year = null;
+  let m = /^(\d{1,2})\s*[\/.\-]\s*(\d{1,2})(?:\s*[\/.\-]\s*(\d{2}|\d{4}))?$/.exec(t);
+  if (m) { day = +m[1]; month = +m[2]; if (m[3]) year = +m[3]; }
+  else if ((m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t))) { year = +m[1]; month = +m[2]; day = +m[3]; }
+  else if ((m = /^(\d{1,2})\s+([a-zà]+)\.?(?:\s+(\d{2}|\d{4}))?$/.exec(t))) {
+    day = +m[1];
+    const name = m[2];
+    const idx = name.length >= 3 ? IT_MONTHS.findIndex(x => x.startsWith(name)) : -1;
+    if (idx < 0) return false;
+    month = idx + 1;
+    if (m[3]) year = +m[3];
+  } else return false;
+  if (year !== null && year < 100) year += 2000;
+  const guessYear = year === null;
+  if (guessYear) year = now.getFullYear();
+  let d = new Date(year, month - 1, day);
+  if (isNaN(d) || d.getDate() !== day || d.getMonth() !== month - 1) return false;
+  if (guessYear && d > endOfDay(now)) d = new Date(year - 1, month - 1, day);
+  return dateInputValue(d);
+}
 
-  wireSubTabsBar('setting');
-  wireCallActivitySection();
-  const moreBtn = document.getElementById('btnMoreSessions');
-  if (moreBtn) moreBtn.addEventListener('click', () => { uiState.sessioniShown = shown + 20; renderSessioniList(); });
-  appRoot.querySelectorAll('.session-card').forEach(card => {
-    card.addEventListener('click', () => { location.hash = '#/sessioni/' + card.dataset.sid; });
+/** 'YYYY-MM-DD' → "14/10" (con l'anno solo se non è quello in corso). */
+function fmtDayShort(key) {
+  const [y, m, d] = key.split('-');
+  return `${d}/${m}` + (+y !== new Date().getFullYear() ? `/${y}` : '');
+}
+
+/** 'YYYY-MM-DD' → "14/10/2026". */
+function fmtDayFull(key) { const [y, m, d] = key.split('-'); return `${d}/${m}/${y}`; }
+
+function sessionDayResultsHtml() {
+  const text = uiState.sessionDaySearch || '';
+  const key = parseDaySearch(text);
+  if (key === null) return '';
+  if (key === false) return '<p class="text-dim day-search-msg">Data non riconosciuta. Scrivi per esempio 14/10, 14 ottobre, oggi o ieri.</p>';
+  const list = (db.sessions || []).concat(db.activeSession ? [db.activeSession] : [])
+    .filter(s => s.startedAt && dateInputValue(new Date(s.startedAt)) === key)
+    .sort((a, b) => new Date(a.startedAt) - new Date(b.startedAt));
+  if (!list.length) return `<p class="text-dim day-search-msg" data-day-empty>Nessuna sessione il ${fmtDayShort(key)}</p>`;
+  return `<p class="day-search-count">${list.length} ${list.length === 1 ? 'sessione' : 'sessioni'} il ${fmtDayShort(key)}</p>
+    <div class="session-list">${list.map(sessionCardHtml).join('')}</div>`;
+}
+
+function renderSessionDaySearch() {
+  const key = parseDaySearch(uiState.sessionDaySearch || '');
+  return `
+    <section class="card day-search-card">
+      <div class="day-search-head">
+        <h3>Cerca per giorno</h3>
+      </div>
+      <div class="day-search-row">
+        <input type="search" id="sessDaySearch" class="crm-search-input day-search-input" placeholder="14/10, 14 ottobre, oggi, ieri…" value="${escapeHtml(uiState.sessionDaySearch || '')}" aria-label="Cerca sessioni per giorno" autocomplete="off">
+        <input type="date" id="sessDayPicker" class="crm-search-input day-search-date" value="${key || ''}" aria-label="Scegli il giorno">
+      </div>
+      <div id="sessDayResults">${sessionDayResultsHtml()}</div>
+    </section>`;
+}
+
+function setSessionDaySearch(text, opts) {
+  uiState.sessionDaySearch = text;
+  const box = document.getElementById('sessDayResults');
+  if (box) box.innerHTML = sessionDayResultsHtml();
+  const key = parseDaySearch(text);
+  const picker = document.getElementById('sessDayPicker');
+  if (picker && !(opts && opts.fromPicker)) picker.value = key || '';
+  markChecklistChartSelected(key || null);
+}
+
+function wireSessionDaySearch() {
+  const input = document.getElementById('sessDaySearch');
+  const picker = document.getElementById('sessDayPicker');
+  const box = document.getElementById('sessDayResults');
+  if (!input) return;
+  input.addEventListener('input', () => setSessionDaySearch(input.value));
+  picker.addEventListener('change', () => {
+    const v = picker.value;
+    input.value = v ? fmtDayFull(v) : '';
+    setSessionDaySearch(input.value, { fromPicker: true });
   });
-  animateKpiValues(appRoot);
+  box.addEventListener('click', e => {
+    const card = e.target.closest('.session-card');
+    if (card) location.hash = '#/sessioni/' + card.dataset.sid;
+  });
+}
+
+/* ---------- Sessioni: grafico checklist (restyling 5.3, step 13) ----------
+ * Una barra per giorno con appuntamenti Setter fissati (createdAt, spostati esclusi
+ * come per i Fissati: isCountedAsNewBooking) nel periodo unico e con la checklist
+ * salvata. Altezza = % media della checklist di quel giorno (0-100). Gli appuntamenti
+ * fissati prima della checklist non contano. Legenda: le 3 voci prese meno spesso. */
+function checklistChartData(range) {
+  const appts = (db.appointments || []).filter(a => a.role === 'setter'
+    && a.checklist && typeof a.checklist === 'object'
+    && isCountedAsNewBooking(a) && a.createdAt
+    && (!range || inRange(a.createdAt, range)));
+  const byDay = {};
+  appts.forEach(a => {
+    const k = dateInputValue(new Date(a.createdAt));
+    const pctV = a.checklistPct != null ? Number(a.checklistPct) : checklistPctOf(a.checklist);
+    (byDay[k] = byDay[k] || []).push(pctV);
+  });
+  const days = Object.keys(byDay).sort().map(k => ({
+    key: k,
+    count: byDay[k].length,
+    avg: Math.round(byDay[k].reduce((x, y) => x + y, 0) / byDay[k].length * 10) / 10
+  }));
+  const items = CHECKLIST_ITEMS.map((it, i) => ({
+    id: it.id, label: it.label, order: i,
+    pct: appts.length ? Math.round(appts.filter(a => a.checklist[it.id] === true).length / appts.length * 1000) / 10 : 0
+  })).sort((a, b) => a.pct - b.pct || a.order - b.order);
+  return { days, total: appts.length, leastTaken: items.slice(0, 3) };
+}
+
+/** Etichetta corta della voce per la legenda (senza la parte tra parentesi). */
+function checklistShortLabel(label) { return label.replace(/\s*\(.*\)\s*$/, ''); }
+
+function renderChecklistChartSection() {
+  const range = getPeriodRangeOrNull();
+  const data = checklistChartData(range);
+  const p = getPeriod();
+  const pills = PERIOD_KEYS.map(k => `<button class="tab ${p.tf === k ? 'active' : ''}" data-period="${k}">${PERIOD_LABELS[k]}</button>`).join('')
+    + (p.tf === 'custom' ? `<button class="tab active" data-period="custom">Personalizzato</button>` : '');
+  const selKey = parseDaySearch(uiState.sessionDaySearch || '') || null;
+  let body;
+  if (!data.days.length) {
+    body = `<p class="text-dim checklist-chart-empty">Nessun appuntamento fissato con la checklist in questo periodo.</p>`;
+  } else {
+    const maxAvg = Math.max(...data.days.map(d => d.avg));
+    const topKey = data.days.find(d => d.avg === maxAvg).key; // a pari merito il primo
+    const bars = data.days.map(d => {
+      const tip = `${d.count} ${d.count === 1 ? 'fissato' : 'fissati'} · ${fmtPctIt(d.avg)} medio`;
+      return `<button type="button" class="cchart-col${d.key === topKey ? ' is-top' : ''}${d.key === selKey ? ' is-selected' : ''}" data-cchart-day="${d.key}" data-tip="${escapeHtml(tip)}" aria-label="${escapeHtml(fmtDayShort(d.key) + ': ' + tip)}">
+          <span class="cchart-plot"><span class="cchart-bar" style="height:${Math.max(0, Math.min(100, d.avg))}%"><span class="cchart-val">${fmtPctIt(d.avg)}</span></span></span>
+          <span class="cchart-date">${fmtDayShort(d.key)}</span>
+        </button>`;
+    }).join('');
+    const legend = data.leastTaken.map((it, i) => `
+        <li class="cchart-legend-item">
+          <span class="cchart-legend-rank">${i + 1}</span>
+          <span class="cchart-legend-label">${escapeHtml(checklistShortLabel(it.label))}</span>
+          <span class="cchart-legend-pct">${fmtPctIt(it.pct)}</span>
+        </li>`).join('');
+    body = `
+      <div class="cchart-layout${selKey && data.days.some(d => d.key === selKey) ? ' has-selected' : ''}">
+        <div class="cchart-wrap">
+          <div class="cchart-grid" aria-hidden="true"><span><i>100%</i></span><span><i>50%</i></span><span><i>0%</i></span></div>
+          <div class="cchart-scroll"><div class="cchart-cols">${bars}</div></div>
+          <div class="cchart-tooltip" hidden></div>
+        </div>
+        <aside class="cchart-legend">
+          <div class="cchart-legend-title">Prese meno spesso</div>
+          <ol class="cchart-legend-list">${legend}</ol>
+          <p class="cchart-legend-note">${data.total} ${data.total === 1 ? 'appuntamento' : 'appuntamenti'} con checklist nel periodo</p>
+        </aside>
+      </div>`;
+  }
+  return `
+    <section class="card checklist-chart-card" data-checklist-chart>
+      <div class="cchart-head">
+        <div>
+          <h3>Checklist degli appuntamenti fissati</h3>
+          <p class="text-dim cchart-sub">% media delle informazioni prese, per giorno · ${p.tf === 'all' ? 'tutto lo storico' : escapeHtml(periodRangeShort(getPeriodRange()))}</p>
+        </div>
+        <div class="tabs cchart-period">${pills}</div>
+      </div>
+      ${body}
+    </section>`;
+}
+
+/** Barra evidenziata: il giorno cercato se è nel grafico, altrimenti il giorno più alto. */
+function markChecklistChartSelected(key) {
+  const layout = appRoot.querySelector('.cchart-layout');
+  if (!layout) return;
+  let found = false;
+  layout.querySelectorAll('[data-cchart-day]').forEach(col => {
+    const on = col.dataset.cchartDay === key;
+    if (on) found = true;
+    col.classList.toggle('is-selected', on);
+  });
+  layout.classList.toggle('has-selected', found);
+}
+
+function wireChecklistChart() {
+  // Telefono: le tab del periodo scorrono, porta in vista quella attiva.
+  const per = appRoot.querySelector('.cchart-period');
+  const act = per && per.querySelector('.tab.active');
+  if (per && act && per.scrollWidth > per.clientWidth) per.scrollLeft = Math.max(0, act.offsetLeft - per.offsetLeft - 8);
+  const wrap = appRoot.querySelector('.cchart-wrap');
+  if (!wrap) return;
+  const tipEl = wrap.querySelector('.cchart-tooltip');
+  const show = col => {
+    const bar = col.querySelector('.cchart-bar');
+    const wr = wrap.getBoundingClientRect();
+    const br = bar.getBoundingClientRect();
+    tipEl.textContent = col.dataset.tip;
+    tipEl.hidden = false;
+    const x = br.left - wr.left + br.width / 2;
+    const half = tipEl.offsetWidth / 2;
+    tipEl.style.left = Math.max(half, Math.min(wr.width - half, x)) + 'px';
+    tipEl.style.top = Math.max(0, br.top - wr.top - 34) + 'px';
+  };
+  wrap.querySelectorAll('[data-cchart-day]').forEach(col => {
+    col.addEventListener('mouseenter', () => show(col));
+    col.addEventListener('focus', () => show(col));
+    col.addEventListener('mouseleave', () => { tipEl.hidden = true; });
+    col.addEventListener('blur', () => { tipEl.hidden = true; });
+    // Clic su una barra = cerca le sessioni di quel giorno.
+    col.addEventListener('click', () => {
+      const text = fmtDayFull(col.dataset.cchartDay);
+      const input = document.getElementById('sessDaySearch');
+      if (input) input.value = text;
+      setSessionDaySearch(text);
+      const box = document.querySelector('.day-search-card');
+      if (box) box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  });
+  const sc = wrap.querySelector('.cchart-scroll');
+  if (sc) sc.scrollLeft = sc.scrollWidth; // i giorni più recenti in vista
 }
 
 /**

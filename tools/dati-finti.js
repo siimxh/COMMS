@@ -289,6 +289,22 @@ settingBookings.forEach((b, i) => {
   db.appointments.push(appt('setter', person(), { createdAt: iso(TODAY, '09:40'), scheduledAt: local(addDays(TODAY, 4), '16:00') }));
 }
 
+// Setter: checklist delle informazioni (restyling step 12-13) sugli appuntamenti fissati
+// negli ultimi 14 giorni (non gli spostati). Quelli più vecchi restano senza: sono gli
+// "appuntamenti precedenti". Voci in ordine di quanto spesso vengono prese (id come
+// CHECKLIST_ITEMS in storage.js): fatturato e obiettivo le meno prese.
+{
+  const ORDER = ['dove', 'struttura', 'pain', 'esperienze', 'agenzia', 'vendita', 'obiettivo', 'fatturato'];
+  const since = addDays(TODAY, -14);
+  db.appointments.filter(a => a.role === 'setter' && !a.rescheduledFromId && a.createdAt >= iso(since, '00:00'))
+    .forEach((a, k) => {
+      const taken = 2 + (k * 5) % 7; // 2..8 voci
+      a.checklist = {};
+      ORDER.forEach((id, i) => { a.checklist[id] = i < taken; });
+      a.checklistPct = Math.round(taken / 8 * 1000) / 10;
+    });
+}
+
 /* ---------- Appuntamenti Venditore ---------- */
 // I nomi a volte hanno la sigla del setter ("Nome - MJ - N"), come nei dati veri.
 // Giorno a dayOffset da oggi; se cade nel weekend si sposta al giorno lavorativo più vicino
