@@ -121,6 +121,11 @@ function defaultData() {
   return {
     pipelines: [],       // { id, name, createdAt, outcomes: [...] }
     sessions: [],         // sessioni concluse
+    // Chiamata dentro session.calls[]: { id, timestamp, outcomeId, outcomeLabel, isConversion,
+    //   isNoAnswer, isSecondAttempt, groupId (= il lead), undoState? } + UN flag di tipo:
+    //   isCallbackCall (Da richiamare), isConfirmCall (Round Conferme), isRecoveryCall (Round
+    //   Recupero / recupero no show dal lead), isLeadFollowUpCall (follow-up dei lead Venditore,
+    //   restyling 17/10/2026). Senza flag = chiamata di una sessione normale.
     activeSession: null,  // sessione in corso (o null)
     sessionCounter: 0,
 
@@ -160,6 +165,9 @@ function defaultData() {
     //   callCount, lastCalledAt, resolvedOutcomeLabel, resolvedAt,
     //   inCallAttempts, inCallRetryPending, inCallGroupId } — i campi inCall* sono stato
     // transitorio della singola chiamata in corso (vedi renderCallbackCallScreen).
+    // Campi aggiunti col restyling (17/10/2026), assenti nei dati vecchi:
+    //   notifiedAt  — ISO: quando è comparsa la notifica "Richiama X adesso" (una volta sola)
+    //   dismissedAt — ISO: quando è stata chiusa con la X (non ricompare per quel giorno)
     callbacks: [],
     callbackCallActiveId: null, // id del callback attualmente aperto a schermo intero (o null)
 
@@ -172,7 +180,14 @@ function defaultData() {
     confirmRoundActive: false,           // true mentre si è nella schermata a schermo intero del round
     confirmRoundCurrentApptId: null,     // appuntamento attualmente mostrato (stabile tra i re-render)
     confirmRoundReturnMode: null,        // 'standalone' | 'session' — cosa fare quando il round finisce
-    confirmRoundPendingPipelineId: null  // solo con returnMode 'session': pipeline da avviare a fine round
+    confirmRoundPendingPipelineId: null, // solo con returnMode 'session': pipeline da avviare a fine round
+
+    // --- Task da fare (Dashboard, restyling 17/10/2026) — cose generiche scritte a mano
+    // con "+ Task". Restano finché non vengono spuntate (doneAt), data rossa se scadute.
+    // Vanno nella riga "stato" online come tutto il resto (vedi cloud-sync.js dbToState).
+    // { id, text, role: 'setter'|'venditore', dueDate: 'YYYY-MM-DD', dueTime: 'HH:MM'|'',
+    //   createdAt (ISO), doneAt (ISO o null) }
+    tasks: []
   };
 }
 
@@ -208,6 +223,14 @@ function migrateAppointment(a) {
     confirmCallAttempts: 0,      // tentativi consecutivi di "Non risposto" nel round (doppio squillo)
     confirmRetryPending: false,  // true mentre si mostra il banner "richiama subito" nel round
     confirmLastInteractionAt: null // usato per la rotazione "meno recentemente mostrato" nel round
+
+    // Campi del restyling (17/10/2026), volutamente NON aggiunti qui: se mancano vuol dire
+    // "appuntamento di prima di questa versione" (es. "Checklist non compilata",
+    // "Centro mancante" in grigio). Vedi newAppointment in app.js.
+    //   centerName    — nome del centro, chiesto alla chiusura
+    //   venditoreName — solo Setter: chi ha preso l'appuntamento, chiesto alla chiusura
+    //   checklist     — solo Setter fissati in chiamata: { <id di CHECKLIST_ITEMS>: true/false }
+    //   checklistPct  — % voci prese (0-100), vedi checklistPctOf
   }, a);
   if (out.role === 'venditore' && !out.dealStage) {
     if (out.closed) out.dealStage = 'chiuso';
@@ -215,6 +238,30 @@ function migrateAppointment(a) {
   }
   if (!Array.isArray(out.notes)) out.notes = [];
   return out;
+}
+
+/**
+ * Checklist delle informazioni da prendere in chiamata (schermata sessione, restyling
+ * 17/10/2026). L'id è STABILE: è la chiave salvata in apt.checklist, quindi non si
+ * cambia mai. La label si può ritoccare. Se un giorno le voci cambiano, il calcolo
+ * della % (checklistPctOf) resta giusto perché conta solo le voci di questa lista.
+ */
+const CHECKLIST_ITEMS = [
+  { id: 'struttura',   label: 'Struttura del centro (Nr. cabine, dipendenti, soci)' },
+  { id: 'dove',        label: "Dov'è il centro" },
+  { id: 'fatturato',   label: 'Fatturato attuale' },
+  { id: 'obiettivo',   label: 'Obiettivo fatturato' },
+  { id: 'vendita',     label: 'Info vendita (tasso di chiusura, gestione rinnovi)' },
+  { id: 'pain',        label: 'Pain point' },
+  { id: 'esperienze',  label: 'Esperienze passate' },
+  { id: 'agenzia',     label: "Cosa faceva l'agenzia?" }
+];
+
+/** % (0-100) di voci prese in una checklist { id: bool }. null se la checklist manca. */
+function checklistPctOf(checklist) {
+  if (!checklist || typeof checklist !== 'object') return null;
+  const taken = CHECKLIST_ITEMS.filter(it => checklist[it.id] === true).length;
+  return Math.round(taken / CHECKLIST_ITEMS.length * 1000) / 10; // 5/8 = 62.5
 }
 
 /**
@@ -302,6 +349,8 @@ function mergeWithDefaults(parsed) {
   out.recoveryRoundCurrentLeadId = parsed.recoveryRoundCurrentLeadId || null;
   out.callbacks = Array.isArray(parsed.callbacks) ? parsed.callbacks : [];
   out.callbackCallActiveId = parsed.callbackCallActiveId || null;
+  // Task da fare: i dati salvati prima del restyling non le hanno (vedi defaultData).
+  out.tasks = Array.isArray(parsed.tasks) ? parsed.tasks : [];
 
   out.confirmRoundActive = !!parsed.confirmRoundActive;
   out.confirmRoundCurrentApptId = parsed.confirmRoundCurrentApptId || null;

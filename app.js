@@ -2983,7 +2983,12 @@ function newAppointment(role) {
     confirmGroupId: null,       // vedi Round Conferme più sotto
     confirmCallAttempts: 0,
     confirmRetryPending: false,
-    confirmLastInteractionAt: null
+    confirmLastInteractionAt: null,
+    // Restyling (17/10/2026) — vedi migrateAppointment in storage.js
+    centerName: '',             // nome del centro, chiesto alla chiusura
+    venditoreName: '',          // solo Setter — a chi è passato l'appuntamento, chiesto alla chiusura
+    checklist: null,            // solo Setter fissati in chiamata — { <id CHECKLIST_ITEMS>: bool }
+    checklistPct: null          // 0-100, vedi checklistPctOf
   };
 }
 
