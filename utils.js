@@ -392,7 +392,7 @@ function inRange(dateVal, range) {
 /**
  * Trova il giorno/settimana/mese con le commissioni totali più alte in assoluto su
  * tutto lo storico registrato — usato dal toggle "Migliore di sempre" delle card
- * Obiettivi in dashboard (vedi renderDashboardPeriodBar/getDashboardRange in
+ * "Migliore di sempre" della barra periodo in dashboard (vedi renderDashboardPeriodBar/getDashboardRange in
  * app.js). Raggruppa ogni evento di commissione (allCommissionEvents) nel periodo a cui
  * appartiene (giorno esatto / settimana lun-dom / mese) e ritorna il range con il
  * totale più alto. Ritorna null se non ci sono ancora commissioni registrate (es. tool
@@ -594,46 +594,6 @@ function computeFunnelValues(db, role, range) {
   };
 }
 
-/**
- * Serie storica (fino a 7 punti) per lo sparkline di una singola tappa del funnel,
- * usata dallo stile "Hero + Sparkline" della sezione Obiettivi. Divide il range della
- * card (giorno/settimana/mese) in sotto-bucket temporali e ricalcola il valore reale
- * della tappa in ciascuno con computeFunnelValues — non sono dati finti, è lo storico
- * reale ricampionato. Per timeframe "day" (un solo giorno) i bucket sono le ultime 7
- * ore-non-vuote non sono tracciate, quindi si usano gli ultimi 7 giorni fino al giorno
- * mostrato incluso (range.end — normalmente oggi, ma può essere un altro giorno quando è
- * selezionata la modalità "Migliore di sempre", vedi findBestPeriod), cosi la card
- * "Giorno" mostra comunque un trend utile invece di un solo punto.
- */
-function computeFunnelSparkline(db, role, stepKey, timeframe, range) {
-  const buckets = [];
-  if (timeframe === 'day') {
-    const anchor = range ? range.end : new Date();
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(anchor); d.setDate(d.getDate() - i);
-      buckets.push({ start: startOfDay(d), end: endOfDay(d) });
-    }
-  } else if (timeframe === 'week') {
-    const start = new Date(range.start);
-    for (let i = 0; i < 7; i++) {
-      const d = new Date(start); d.setDate(d.getDate() + i);
-      buckets.push({ start: startOfDay(d), end: endOfDay(d) });
-    }
-  } else {
-    // month: 7 bucket quasi uguali che coprono l'intero mese dall'1 a oggi/fine mese.
-    const start = new Date(range.start);
-    const end = new Date(range.end);
-    const totalMs = end.getTime() - start.getTime();
-    const stepMs = totalMs / 7;
-    for (let i = 0; i < 7; i++) {
-      const bStart = new Date(start.getTime() + stepMs * i);
-      const bEnd = i === 6 ? end : new Date(start.getTime() + stepMs * (i + 1) - 1);
-      buckets.push({ start: bStart, end: bEnd });
-    }
-  }
-  return buckets.map(b => computeFunnelValues(db, role, b)[stepKey] || 0);
-}
-
 /** Riassunto commissioni complessive (tutti i ruoli) in un range, diviso per fonte. */
 function computeCommissionSummary(db, range) {
   const events = commissionEventsInRange(db, range);
@@ -696,9 +656,35 @@ function computeVenditoreStats(db, range) {
   const commEvents = range ? commissionEventsInRange(db, range, 'venditore') : allCommissionEvents(db).filter(e => e.role === 'venditore');
   const commissioniTot = sumEvents(commEvents);
 
+  // Ciambelle della Dashboard (restyling 17/10/2026, step 8): stessi insiemi di sopra,
+  // così i numeri sono per costruzione quelli delle Statistiche.
+  // Esiti degli ASSEGNATI (scheduledAt nel periodo, spostati esclusi): ogni appuntamento
+  // finisce in una sola voce, quindi la somma = assegnati. Chiuso vince sullo stato.
+  const assegnatiPerEsito = { chiusi: 0, trattativa: 0, perso: 0, no_show: 0, annullato: 0, non_in_target: 0, altro: 0 };
+  all.filter(a => !isMovedAppointment(a) && inR(a, 'scheduledAt')).forEach(a => {
+    if (a.closed) assegnatiPerEsito.chiusi++;
+    else if (Object.prototype.hasOwnProperty.call(assegnatiPerEsito, a.dealStage) && a.dealStage !== 'chiusi' && a.dealStage !== 'altro') assegnatiPerEsito[a.dealStage]++;
+    else assegnatiPerEsito.altro++; // senza esito (da esitare / in arrivo)
+  });
+  // Commissioni divise: acconto (rata sintetica 'deposit') e rate pagate, dagli STESSI
+  // eventi di commissioniTot (acconti + rate = commissioniTot). Rate future = 10% delle
+  // rate non ancora pagate degli appuntamenti chiusi che hanno almeno un evento di
+  // commissione nel periodo: solo informazione, MAI dentro commissioniTot (CLAUDE.md).
+  const commAcconti = sumEvents(commEvents.filter(e => /_deposit$/.test(e.id)));
+  const commRatePagate = round2(commissioniTot - commAcconti);
+  const apptIdsInPeriod = new Set(commEvents.map(e => e.appointmentId));
+  let futureCents = 0;
+  all.filter(a => a.closed && apptIdsInPeriod.has(a.id)).forEach(a => {
+    (a.installments || []).forEach(inst => {
+      if (!inst.paid && inst.amount > 0) futureCents += Math.round(round2(inst.amount * 0.10) * 100);
+    });
+  });
+  const commRateFuture = futureCents / 100;
+
   return {
     assegnati, presentati, chiusi, persi, noShow, annullati, nonInTarget,
-    showRate, showRateBase, conversionRate, totalVenduto, scontrinoMedio, commissioniTot
+    showRate, showRateBase, conversionRate, totalVenduto, scontrinoMedio, commissioniTot,
+    assegnatiPerEsito, commAcconti, commRatePagate, commRateFuture
   };
 }
 
@@ -781,7 +767,17 @@ function computeSetterStats(db, range) {
   const weekdays = countWeekdays(spanStart, spanEnd);
   const mediaFissatiGiorno = weekdays > 0 ? round1(fissatiAppts.length / weekdays) : 0;
 
+  // Ciambella "Appuntamenti per esito" della Dashboard (step 8): gli stessi fissati di
+  // sopra divisi per esito attuale. Ogni appuntamento in una sola voce: somma = fissati.
+  // 'no' = nessun esito ancora (da esitare, anche quelli non ancora svolti).
+  const fissatiPerEsito = { presented: 0, no_show: 0, annullato: 0, spostato: 0, confirmed24h: 0, no: 0 };
+  fissatiAppts.forEach(a => {
+    const k = Object.prototype.hasOwnProperty.call(fissatiPerEsito, a.presentedStatus) ? a.presentedStatus : 'no';
+    fissatiPerEsito[k]++;
+  });
+
   return {
+    fissatiPerEsito,
     fissati: fissatiAppts.length,
     presentati: presentati.length,
     svolti: svolti.length,

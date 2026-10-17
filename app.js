@@ -618,16 +618,12 @@ function renderVenditoreTableLink() {
  * (utils.js) e LeadCRM.newStatsValues. Niente "Esiti nel periodo" (Simone, 16/10).
  * ==========================================================================*/
 
-function statsPeriodNote() {
-  return `<p class="text-dim stats-note">${getPeriod().tf === 'all' ? 'Tutto lo storico registrato.' : 'Periodo: ' + periodLabelText() + '.'}</p>`;
-}
-
 function renderSettingStatistiche() {
   const range = getPeriodRangeOrNull();
   const st = computeSetterStats(db, range);
   const comm = computeFunnelValues(db, 'setter', range || getPeriodRange());
   appRoot.innerHTML = `
-    ${renderPeriodBar({ after: statsPeriodNote() })}
+    ${renderPeriodBar()}
     <section class="kpi-grid">
       <div class="kpi-card"><div class="kpi-value">${st.fissati}</div><div class="kpi-label">Appuntamenti fissati</div></div>
       <div class="kpi-card"><div class="kpi-value">${st.presentati}</div><div class="kpi-label">Presentati</div></div>
@@ -676,7 +672,7 @@ function renderVenditoreStatistiche() {
   const range = getPeriodRangeOrNull();
   const st = computeVenditoreStats(db, range);
   appRoot.innerHTML = `
-    ${renderPeriodBar({ after: statsPeriodNote() })}
+    ${renderPeriodBar()}
     <section class="kpi-grid">
       <div class="kpi-card"><div class="kpi-value">${st.assegnati}</div><div class="kpi-label">Assegnati</div></div>
       <div class="kpi-card"><div class="kpi-value">${st.presentati}</div><div class="kpi-label">Presentati</div></div>
@@ -1004,6 +1000,259 @@ function wireDashboardPayments() {
   }));
 }
 
+/* ---------- Grafico a ciambella (restyling 17/10/2026, step 8) ----------
+ * Un solo componente SVG, senza librerie: renderDonut(data, opts).
+ * Forma dalla reference "Chiamata per stato": totale grande al centro con la scritta
+ * sotto, etichette fuori con linea di collegamento (nome, numero, percentuale).
+ * Colori SOLO dalla guida: fetta più grande accent-500, poi 400/300/200/100 in ordine
+ * decrescente, il resto neutral-200. Una fetta "muted" (es. rate future) è sempre
+ * neutral-200 e non entra nella classifica dei colori.
+ * - Fetta a 0: non disegnata, ma nella legenda con 0.
+ * - Totale 0: anello grigio + "Nessun dato nel periodo".
+ * - Le etichette di un lato si spingono in giù/su per non sovrapporsi; la colonna del
+ *   testo resta dentro il viewBox (l'SVG non deborda dalla card).
+ * - Card stretta (sotto 470 px, container query): niente etichette esterne, solo
+ *   l'anello + legenda sotto con numero e percentuale.
+ * data: [{ key, label, value, muted?, note? }]
+ * opts: { money, centerLabel, centerLines: [testo], id, ariaLabel }
+ */
+const DONUT_RAMP = ['var(--accent-500)', 'var(--accent-400)', 'var(--accent-300)', 'var(--accent-200)', 'var(--accent-100)'];
+const DONUT_W = 540;      // larghezza del viewBox (le etichette stanno dentro)
+const DONUT_R = 84;       // raggio esterno
+const DONUT_RI = 62;      // raggio interno (spessore 22)
+const DONUT_LH = 36;      // altezza di un'etichetta (due righe)
+
+/** Numero in italiano ("1.234,5"), con " €" se money. */
+function fmtNumIt(n, money) {
+  const v = round2(Number(n) || 0).toLocaleString('it-IT', { maximumFractionDigits: 2 });
+  return money ? v + ' €' : v;
+}
+function fmtPctIt(p) { return round1(p).toLocaleString('it-IT', { maximumFractionDigits: 1 }) + '%'; }
+
+/** Colori per rango (vedi commento sopra). Ritorna gli item con color e pct. */
+function donutItems(data) {
+  const items = (data || []).map(d => Object.assign({}, d, { value: Math.max(0, round2(Number(d.value) || 0)) }));
+  const total = round2(items.reduce((s, d) => s + d.value, 0));
+  items.filter(d => d.value > 0 && !d.muted)
+    .slice().sort((a, b) => b.value - a.value) // sort stabile: a pari valore vince l'ordine dato
+    .forEach((d, i) => { d.color = DONUT_RAMP[i] || 'var(--neutral-200)'; });
+  items.forEach(d => {
+    if (!d.color) d.color = 'var(--neutral-200)';
+    d.pct = total > 0 ? d.value / total * 100 : 0;
+  });
+  return { items, total };
+}
+
+/** Anello: un cerchio per fetta con stroke-dasharray (gestisce anche la fetta al 100%). */
+function donutRingSvg(items, total, cx, cy) {
+  const rm = (DONUT_R + DONUT_RI) / 2, sw = DONUT_R - DONUT_RI;
+  const C = 2 * Math.PI * rm;
+  const drawn = items.filter(d => d.value > 0);
+  if (!(total > 0)) {
+    return `<circle class="donut-empty-ring" cx="${cx}" cy="${cy}" r="${rm}" stroke-width="${sw}" fill="none"/>`;
+  }
+  const gap = drawn.length > 1 ? 2.5 : 0; // 2 px di superficie tra le fette
+  let cum = 0;
+  return drawn.map(d => {
+    const frac = d.value / total;
+    const len = Math.max(0.6, frac * C - gap);
+    const off = -(cum * C + gap / 2);
+    cum += frac;
+    const tip = `${d.label}: ${fmtNumIt(d.value, d.money)} (${fmtPctIt(d.pct)})`;
+    return `<circle class="donut-slice" data-key="${escapeHtml(d.key)}" cx="${cx}" cy="${cy}" r="${rm}" fill="none"
+      stroke="${d.color}" stroke-width="${sw}" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}"
+      stroke-dashoffset="${off.toFixed(2)}" transform="rotate(-90 ${cx} ${cy})"><title>${escapeHtml(tip)}</title></circle>`;
+  }).join('');
+}
+
+/** Testo al centro: totale grande + righe piccole (o "Nessun dato nel periodo"). */
+function donutCenterSvg(total, cx, cy, opts) {
+  if (!(total > 0)) {
+    return `<text class="donut-center-sub" x="${cx}" y="${cy - 3}" text-anchor="middle">Nessun dato</text>
+      <text class="donut-center-sub" x="${cx}" y="${cy + 13}" text-anchor="middle">nel periodo</text>`;
+  }
+  const big = fmtNumIt(total, opts.money);
+  const size = big.length <= 5 ? 26 : (big.length <= 8 ? 21 : 17);
+  const lines = [opts.centerLabel].concat(opts.centerLines || []).filter(Boolean);
+  const blockH = size + lines.length * 15;
+  let y = cy - blockH / 2 + size * 0.8;
+  let out = `<text class="donut-center-num" x="${cx}" y="${y.toFixed(1)}" text-anchor="middle" style="font-size:${size}px">${escapeHtml(big)}</text>`;
+  lines.forEach((t, i) => {
+    y += i === 0 ? size * 0.2 + 14 : 15;
+    out += `<text class="donut-center-sub" x="${cx}" y="${y.toFixed(1)}" text-anchor="middle">${escapeHtml(t)}</text>`;
+  });
+  return out;
+}
+
+/** Etichette esterne con linea: per lato, ordinate per altezza e spinte per non toccarsi. */
+function donutLabelsSvg(items, total, cx, cy, H) {
+  if (!(total > 0)) return '';
+  let cum = 0;
+  const labels = [];
+  items.forEach(d => {
+    if (!(d.value > 0)) return;
+    const frac = d.value / total;
+    const th = -Math.PI / 2 + (cum + frac / 2) * 2 * Math.PI;
+    cum += frac;
+    const cos = Math.cos(th), sin = Math.sin(th);
+    labels.push({
+      d, side: cos >= 0 ? 'r' : 'l',
+      ax: cx + cos * (DONUT_R + 3), ay: cy + sin * (DONUT_R + 3),
+      ey: cy + sin * (DONUT_R + 14)
+    });
+  });
+  const top = 14, bottom = H - DONUT_LH + 8;
+  ['l', 'r'].forEach(side => {
+    const list = labels.filter(l => l.side === side).sort((a, b) => a.ey - b.ey);
+    const push = () => list.forEach((l, i) => { l.y = Math.max(l.y, top, i ? list[i - 1].y + DONUT_LH : top); });
+    list.forEach(l => { l.y = l.ey; });
+    push(); // in giù, dall'alto
+    const over = list.length ? list[list.length - 1].y - bottom : 0;
+    if (over > 0) { list.forEach(l => { l.y -= over; }); push(); } // troppo in basso: tutto su
+  });
+  const colR = cx + DONUT_R + 40, colL = cx - DONUT_R - 40;
+  return labels.map(l => {
+    const right = l.side === 'r';
+    // Gomito alla stessa x per tutte le etichette di un lato (fuori dall'anello): le linee
+    // seguono l'ordine delle fette e non si incrociano.
+    const kneeX = right ? cx + DONUT_R + 22 : cx - DONUT_R - 22;
+    const endX = right ? colR - 6 : colL + 6;
+    const tx = right ? colR : colL;
+    const anchor = right ? 'start' : 'end';
+    const pts = [[l.ax, l.ay], [kneeX, l.y], [endX, l.y]].map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    const name = l.d.label + (l.d.note ? ' (' + l.d.note + ')' : '');
+    return `<polyline class="donut-leader" points="${pts}" fill="none"/>
+      <text class="donut-lab-name" x="${tx}" y="${(l.y + 4).toFixed(1)}" text-anchor="${anchor}">${escapeHtml(name)}</text>
+      <text class="donut-lab-val" x="${tx}" y="${(l.y + 21).toFixed(1)}" text-anchor="${anchor}"><tspan class="v">${escapeHtml(fmtNumIt(l.d.value, l.d.money))}</tspan><tspan class="p"> · ${fmtPctIt(l.d.pct)}</tspan></text>`;
+  }).join('');
+}
+
+function renderDonut(data, opts) {
+  opts = opts || {};
+  const money = !!opts.money;
+  const { items, total } = donutItems((data || []).map(d => Object.assign({ money }, d)));
+  // Altezza: abbastanza per l'anello e per tutte le etichette del lato più affollato.
+  const perSide = { l: 0, r: 0 };
+  let cum = 0;
+  items.forEach(d => {
+    if (!(d.value > 0) || !(total > 0)) return;
+    const frac = d.value / total;
+    const th = -Math.PI / 2 + (cum + frac / 2) * 2 * Math.PI; cum += frac;
+    perSide[Math.cos(th) >= 0 ? 'r' : 'l']++;
+  });
+  const H = Math.max(2 * DONUT_R + 44, Math.max(perSide.l, perSide.r) * DONUT_LH + 24);
+  const cx = DONUT_W / 2, cy = H / 2;
+  const S = 2 * DONUT_R + 8, c2 = S / 2;
+  const aria = escapeHtml(opts.ariaLabel || 'Grafico a ciambella');
+  const legend = items.map(d => `
+      <li class="donut-leg${d.value > 0 ? '' : ' zero'}" data-key="${escapeHtml(d.key)}" data-value="${d.value}">
+        <i class="donut-dot" style="background:${d.color}"></i>
+        <span class="donut-leg-lab">${escapeHtml(d.label)}${d.note ? ` <em>${escapeHtml(d.note)}</em>` : ''}</span>
+        <span class="donut-leg-val">${escapeHtml(fmtNumIt(d.value, money))}</span>
+        <span class="donut-leg-pct">${total > 0 ? fmtPctIt(d.pct) : '–'}</span>
+      </li>`).join('');
+  return `
+    <div class="donut" ${opts.id ? `data-donut="${escapeHtml(opts.id)}"` : ''} data-total="${total}">
+      <svg class="donut-wide" viewBox="0 0 ${DONUT_W} ${H}" role="img" aria-label="${aria}">
+        ${donutRingSvg(items, total, cx, cy)}
+        ${donutLabelsSvg(items, total, cx, cy, H)}
+        ${donutCenterSvg(total, cx, cy, opts)}
+      </svg>
+      <svg class="donut-narrow" viewBox="0 0 ${S} ${S}" role="img" aria-label="${aria}">
+        ${donutRingSvg(items, total, c2, c2)}
+        ${donutCenterSvg(total, c2, c2, opts)}
+      </svg>
+      <ul class="donut-legend">${legend}</ul>
+    </div>`;
+}
+
+/* ---------- Dashboard: i 4 grafici (restyling step 8, prompt 5.1.4) ----------
+ * Setting a sinistra, Venditore a destra, due ciambelle per blocco. Numeri presi dalle
+ * STESSE funzioni delle pagine Stats, con lo stesso periodo (getPeriodRangeOrNull:
+ * "Tutto" = tutto lo storico), così sono identici per costruzione:
+ * 1 Setting · Appuntamenti per esito: computeSetterStats().fissatiPerEsito (i fissati del
+ *   periodo per createdAt, spostati-nuovi esclusi, divisi per esito attuale). Centro = fissati.
+ * 2 Setting · Commissioni: computeFunnelValues('setter') come le Stats (show 40 € a
+ *   presentato + 3% dell'incassato). Centro = somma.
+ * 3 Venditore · Appuntamenti per esito: computeVenditoreStats().assegnatiPerEsito
+ *   (scheduledAt nel periodo, spostati esclusi). Centro = assegnati.
+ * 4 Venditore · Commissioni: computeVenditoreStats() → acconti + rate pagate (=
+ *   commissioniTot, la commissione effettiva) + rate future (solo informazione).
+ * In "Migliore di sempre" il periodo è quello migliore (come il resto della Dashboard). */
+function dashboardDonutRange() {
+  return uiState.goalsPeriodMode === 'best' ? getDashboardRange() : getPeriodRangeOrNull();
+}
+
+function renderDashboardDonuts() {
+  const range = dashboardDonutRange();
+  const st = computeSetterStats(db, range);
+  const sc = computeFunnelValues(db, 'setter', range || getPeriodRange());
+  const fe = st.fissatiPerEsito;
+  const setterAppts = renderDonut([
+    { key: 'presented', label: 'Presentati', value: fe.presented },
+    { key: 'no_show', label: 'No show', value: fe.no_show },
+    { key: 'annullato', label: 'Annullati', value: fe.annullato },
+    { key: 'spostato', label: 'Spostati', value: fe.spostato },
+    { key: 'confirmed24h', label: 'Confermati 24h', value: fe.confirmed24h },
+    { key: 'no', label: 'Da esitare', value: fe.no }
+  ], { id: 'setter-esiti', centerLabel: 'fissati', ariaLabel: 'Appuntamenti Setter per esito' });
+  const setterComm = renderDonut([
+    { key: 'show', label: 'Da show', value: sc.commissioniShowUp || 0 },
+    { key: 'venduto', label: 'Da venduto', value: sc.commissioniChiusure || 0 }
+  ], { id: 'setter-comm', money: true, centerLabel: 'commissioni', ariaLabel: 'Commissioni Setter' });
+
+  let venditoreBlock = '';
+  if (LeadCRM.isOn()) {
+    const vs = computeVenditoreStats(db, range);
+    const ve = vs.assegnatiPerEsito;
+    const vAppts = [
+      { key: 'chiusi', label: 'Chiusi', value: ve.chiusi },
+      { key: 'trattativa', label: 'In trattativa / follow-up', value: ve.trattativa },
+      { key: 'perso', label: 'Persi', value: ve.perso },
+      { key: 'no_show', label: 'No show', value: ve.no_show },
+      { key: 'annullato', label: 'Annullati', value: ve.annullato },
+      { key: 'non_in_target', label: 'Non in target', value: ve.non_in_target }
+    ];
+    // Senza esito (in arrivo o da esitare): fuori dalle 6 voci decise, ma senza di loro
+    // la somma non tornerebbe con gli assegnati. Compare solo se ce ne sono.
+    if (ve.altro > 0) vAppts.push({ key: 'altro', label: 'Da esitare', value: ve.altro });
+    const incassati = vs.commissioniTot;
+    venditoreBlock = `
+      <div class="card donut-block">
+        <div class="donut-block-head"><h3>Venditore</h3><a class="donut-more" href="#/venditore-statistiche">Statistiche →</a></div>
+        <div class="donut-item">
+          <h4>Appuntamenti per esito</h4>
+          ${renderDonut(vAppts, { id: 'venditore-esiti', centerLabel: 'assegnati', ariaLabel: 'Appuntamenti Venditore per esito' })}
+        </div>
+        <div class="donut-item">
+          <h4>Commissioni</h4>
+          ${renderDonut([
+            { key: 'acconti', label: 'Acconti incassati', value: vs.commAcconti },
+            { key: 'rate', label: 'Rate pagate', value: vs.commRatePagate },
+            { key: 'future', label: 'Rate future', note: 'in arrivo', value: vs.commRateFuture, muted: true }
+          ], { id: 'venditore-comm', money: true, centerLines: ['di cui ' + fmtNumIt(incassati, true), 'incassati'], ariaLabel: 'Commissioni Venditore' })}
+          <p class="donut-foot" data-incassati="${incassati}">Le rate future non sono commissioni incassate: contano quando le segni pagate.</p>
+        </div>
+      </div>`;
+  }
+
+  return `
+    <section class="donut-blocks${venditoreBlock ? '' : ' single'}">
+      <div class="card donut-block">
+        <div class="donut-block-head"><h3>Setting</h3><a class="donut-more" href="#/setting-statistiche">Stats →</a></div>
+        <div class="donut-item">
+          <h4>Appuntamenti per esito</h4>
+          ${setterAppts}
+        </div>
+        <div class="donut-item">
+          <h4>Commissioni</h4>
+          ${setterComm}
+        </div>
+      </div>
+      ${venditoreBlock}
+    </section>`;
+}
+
 /**
  * Dashboard — SOLO: Obiettivi Setter, Obiettivi Venditore, Andamento generale (KPI
  * commissioni + grafici a linea Commissioni/Totale Venduto), calendario Commissioni in
@@ -1046,8 +1295,9 @@ function renderDashboardTopSections() {
 
   return `
     ${periodBarHtml}
-    ${eyebrowsHtml}
     ${bestCaptionHtml}
+    ${renderDashboardDonuts()}
+    ${eyebrowsHtml}
     <section class="card goals-section">
       <h2><span class="role-dot setter"></span>Obiettivi Setter${renderMonthPace('setter')}</h2>
       ${setterFunnel}
@@ -1235,6 +1485,17 @@ function periodLabelText() {
   return PERIOD_LABELS[p.tf] || p.tf;
 }
 
+/** "1 – 17 ott 2026" / "18 set – 17 ott 2026" / "17 ott 2026" (testo a destra della barra). */
+function periodRangeShort(r) {
+  const f = (d, o) => new Date(d).toLocaleDateString('it-IT', o);
+  const a = new Date(r.start), b = new Date(r.end);
+  if (dateInputValue(a) === dateInputValue(b)) return f(b, { day: 'numeric', month: 'short', year: 'numeric' });
+  const sameYear = a.getFullYear() === b.getFullYear();
+  const sameMonth = sameYear && a.getMonth() === b.getMonth();
+  return (sameMonth ? a.getDate() : f(a, sameYear ? { day: 'numeric', month: 'short' } : { day: 'numeric', month: 'short', year: 'numeric' }))
+    + ' – ' + f(b, { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
 /** La barra del periodo, uguale in tutte le pagine. extraPills: tasti in più (dashboard). */
 function renderPeriodBar(opts) {
   opts = opts || {};
@@ -1249,6 +1510,7 @@ function renderPeriodBar(opts) {
         <button class="pill ${!off && p.tf === 'custom' ? 'active' : ''}" data-period="custom">Personalizzato</button>
         ${opts.extraPills || ''}
       </div>
+      ${off ? '' : `<span class="period-range-text">${p.tf === 'all' ? 'Tutto lo storico' : escapeHtml(periodRangeShort(range))}</span>`}
       ${!off && p.tf === 'custom' ? `
       <div class="custom-range">
         <label>dal <input type="date" id="periodFrom" value="${p.from || dateInputValue(range.start)}"></label>
