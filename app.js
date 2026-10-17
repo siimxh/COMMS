@@ -26,6 +26,7 @@ const modalRoot = document.getElementById('modalRoot');
 function persist() {
   Storage.save(db);
   CloudSync.schedule();
+  refreshCallbackNotifications();
 }
 
 /* ---------- Spia di salvataggio online (vedi cloud-sync.js) ---------- */
@@ -379,6 +380,7 @@ function renderRoute() {
   updateNuovaSessioneButtonLabel();
   renderConfirmAlertBanner();
   closeMobileSidebar();
+  refreshCallbackNotifications();
 
   // La schermata di una chiamata di richiamo ("Chiama" su un lead "Da richiamare") ha
   // SEMPRE priorità, anche su una sessione attiva: è un flusso "sopra" la sessione, che
@@ -5262,14 +5264,10 @@ function renderSessioneAttiva() {
     </div>
   ` : '';
 
-  // Lead "Da richiamare" ancora in attesa (status 'pending'), in ordine di data/ora:
-  // - TUTTI quelli in scadenza entro oggi, compresi gli arretrati dei giorni prima mai
-  //   richiamati, da qualunque sessione (Simone, 2026-10-08: devono restare sempre visibili);
-  // - più quelli creati in QUESTA sessione, anche se programmati per un giorno futuro.
-  const endToday = endOfDay(new Date());
-  const sessionCallbacks = (db.callbacks || [])
-    .filter(c => c.status === 'pending' && (c.sourceSessionId === s.id || new Date(c.scheduledAt) <= endToday))
-    .sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
+  // Lead "Da richiamare" ancora in attesa (status 'pending'): SOLO quelli fissati per
+  // OGGI, in ordine di ora (restyling 5.4.1). Gli arretrati dei giorni prima stanno nelle
+  // Task della Dashboard; quelli dei giorni dopo compaiono il loro giorno.
+  const sessionCallbacks = todayPendingCallbacks();
   const sidebarHtml = sessionCallbacks.length ? renderSessionCallbackSidebar(sessionCallbacks) : '';
 
   const lastCall = s.calls[s.calls.length - 1];
@@ -5390,7 +5388,7 @@ function renderSessionCallbackSidebar(sessionCallbacks) {
     <div class="session-callback-item">
       <div class="session-callback-item-name">${escapeHtml(cb.leadName)}${callbackNotesButton(cb)}<button class="callback-edit-btn" data-edit-callback="${cb.id}" title="Modifica dati del lead">✎</button><button class="callback-edit-btn" data-delete-callback="${cb.id}" title="Togli dai da richiamare">🗑</button></div>
       ${cb.phone ? `<div class="session-callback-item-phone">${escapeHtml(cb.phone)}</div>` : ''}
-      <div class="session-callback-item-when ${new Date(cb.scheduledAt) < startOfDay(new Date()) ? 'overdue' : ''}">${new Date(cb.scheduledAt) < startOfDay(new Date()) ? 'Arretrato · ' : ''}${fmtDateTime(cb.scheduledAt)}</div>
+      <div class="session-callback-item-when">Oggi · ${fmtTime(cb.scheduledAt)}</div>
       <button class="btn-ghost session-callback-item-btn" data-call-callback="${cb.id}">Chiama</button>
     </div>`).join('');
   return `
@@ -6046,6 +6044,153 @@ function removeCallback(callbackId, onDone) {
     showToast('Tolto dai da richiamare.');
     if (onDone) onDone();
   }, { confirmLabel: 'Togli' });
+}
+
+/* ---------- Notifiche delle richiamate (restyling 5.4.2) ----------
+ * Un timer globale (avviato in startForUser, ogni 20 s) guarda i "Da richiamare" di OGGI
+ * ancora in attesa con ora ≤ adesso e mostra una notifica in alto a destra, su qualsiasi
+ * pagina (anche in sessione, nei round e durante un'altra richiamata). Tool aperto dopo
+ * l'ora = la notifica compare subito. Funziona solo con il tool aperto in una scheda.
+ * - Clic sulla notifica → startCallbackCall (schermata di richiamata).
+ * - X → cb.dismissedAt: non torna più per quell'ora fissata. Se il richiamo viene spostato
+ *   a un'ora dopo, la nuova ora è dopo dismissedAt e la notifica torna (è un altro richiamo).
+ * - Notifica di sistema (Notification API): una volta sola per ora fissata (cb.notifiedAt),
+ *   solo se il permesso è stato dato col tasto in 👤 Account. */
+const CALLBACK_NOTIFY_EVERY_MS = 20000;
+let callbackNotifyTimer = null;
+
+/** "Da richiamare" in attesa fissati per oggi, in ordine di ora (sessione e notifiche). */
+function todayPendingCallbacks() {
+  const todayKey = dateInputValue(new Date());
+  return (db.callbacks || [])
+    .filter(c => c.status === 'pending' && c.scheduledAt && dateInputValue(new Date(c.scheduledAt)) === todayKey)
+    .sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
+}
+
+/** Vero se il segno (dismissedAt / notifiedAt) vale per l'ora fissata ATTUALE del richiamo. */
+function callbackMarkCovers(cb, field) {
+  if (!cb[field]) return false;
+  return new Date(cb[field]).getTime() >= new Date(cb.scheduledAt).getTime();
+}
+
+/** I richiami da notificare adesso (escluso quello che si sta già chiamando). */
+function dueCallbackNotifications() {
+  const now = Date.now();
+  return todayPendingCallbacks().filter(cb =>
+    new Date(cb.scheduledAt).getTime() <= now &&
+    cb.id !== db.callbackCallActiveId &&
+    !callbackMarkCovers(cb, 'dismissedAt'));
+}
+
+function callbackNotifyRoot() {
+  let root = document.getElementById('cbNotifyStack');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'cbNotifyStack';
+    root.className = 'cb-notify-stack';
+    root.setAttribute('aria-live', 'polite');
+    document.body.appendChild(root);
+    root.addEventListener('click', onCallbackNotifyClick);
+  }
+  return root;
+}
+
+/** Ridisegna la pila delle notifiche (chiamata dal timer, da renderRoute e da persist). */
+function refreshCallbackNotifications() {
+  if (!callbackNotifyTimer || !db) return;
+  const due = dueCallbackNotifications();
+  const root = callbackNotifyRoot();
+  const html = due.map(cb => `
+    <div class="cb-notify" data-cb-notify="${cb.id}" role="button" tabindex="0" title="Apri la richiamata">
+      <span class="cb-notify-ico" aria-hidden="true">${taskIconSvg('phone')}</span>
+      <div class="cb-notify-main">
+        <div class="cb-notify-title">Richiama <strong>${escapeHtml(cb.leadName || '(senza nome)')}</strong> adesso</div>
+        <div class="cb-notify-sub">ore ${fmtTime(cb.scheduledAt)}</div>
+      </div>
+      <button type="button" class="cb-notify-close" data-cb-notify-close="${cb.id}" aria-label="Chiudi la notifica" title="Chiudi">×</button>
+    </div>`).join('');
+  if (root.dataset.html !== html) { root.innerHTML = html; root.dataset.html = html; }
+  showSystemCallbackNotifications(due);
+}
+
+function showSystemCallbackNotifications(due) {
+  if (typeof window.Notification === 'undefined' || Notification.permission !== 'granted') return;
+  let changed = false;
+  due.forEach(cb => {
+    if (callbackMarkCovers(cb, 'notifiedAt')) return;
+    cb.notifiedAt = new Date().toISOString();
+    changed = true;
+    try {
+      const n = new Notification('Richiama ' + (cb.leadName || '(senza nome)') + ' adesso', { body: 'ore ' + fmtTime(cb.scheduledAt), tag: 'cb-' + cb.id });
+      n.onclick = () => { try { window.focus(); } catch (e) {} openCallbackFromNotification(cb.id); n.close(); };
+    } catch (e) { /* alcuni browser (es. Chrome su telefono) non le creano da qui: resta quella nella pagina */ }
+  });
+  if (changed) { Storage.save(db); CloudSync.schedule(); }
+}
+
+/** Clic su una notifica: avvia la richiamata (chiude un'eventuale modale aperta). */
+function openCallbackFromNotification(cbId) {
+  const cb = (db.callbacks || []).find(c => c.id === cbId);
+  if (!cb || cb.status !== 'pending') { refreshCallbackNotifications(); return; }
+  // Se stavo già richiamando un altro lead, lo lascio come se avessi premuto "Esci".
+  const prev = db.callbackCallActiveId && (db.callbacks || []).find(c => c.id === db.callbackCallActiveId);
+  if (prev && prev.id !== cb.id) { prev.inCallAttempts = 0; prev.inCallRetryPending = false; }
+  cb.dismissedAt = new Date().toISOString(); // aperta = gestita: non torna dopo la richiamata
+  if (modalRoot.innerHTML) closeModal();
+  startCallbackCall(cb.id);
+}
+
+function onCallbackNotifyClick(e) {
+  const close = e.target.closest('[data-cb-notify-close]');
+  if (close) {
+    e.stopPropagation();
+    const cb = (db.callbacks || []).find(c => c.id === close.dataset.cbNotifyClose);
+    if (cb) { cb.dismissedAt = new Date().toISOString(); persist(); }
+    return;
+  }
+  const card = e.target.closest('[data-cb-notify]');
+  if (card) openCallbackFromNotification(card.dataset.cbNotify);
+}
+
+function startCallbackNotifications() {
+  if (callbackNotifyTimer) return;
+  callbackNotifyTimer = setInterval(refreshCallbackNotifications, CALLBACK_NOTIFY_EVERY_MS);
+  const root = callbackNotifyRoot();
+  root.addEventListener('keydown', e => {
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-cb-notify]')) { e.preventDefault(); openCallbackFromNotification(e.target.dataset.cbNotify); }
+  });
+  refreshCallbackNotifications();
+}
+
+/** Riga "Notifiche di sistema" in 👤 Account: il permesso si chiede solo da qui. */
+function systemNotifyStateHtml() {
+  if (typeof window.Notification === 'undefined') return '<span class="text-dim">Questo browser non le supporta. Restano quelle dentro il tool.</span>';
+  if (Notification.permission === 'granted') return '<span class="text-dim">Attive ✓</span>';
+  if (Notification.permission === 'denied') return '<span class="text-dim">Bloccate: riattivale dalle impostazioni del browser.</span>';
+  return '<button type="button" class="btn-ghost btn-sm" id="btnAskNotify">Attiva</button>';
+}
+function accountNotifyHtml() {
+  return `
+    <div class="account-notify">
+      <div>
+        <div class="account-notify-title">🔔 Notifiche di sistema</div>
+        <div class="text-dim account-notify-sub">Avvisano all'ora dei Da richiamare anche se stai guardando un'altra finestra. Solo con il tool aperto in una scheda.</div>
+      </div>
+      <div class="account-notify-state" id="accountNotifyState">${systemNotifyStateHtml()}</div>
+    </div>`;
+}
+function wireAccountNotify() {
+  const box = document.getElementById('accountNotifyState');
+  if (!box) return;
+  box.addEventListener('click', async e => {
+    if (!e.target.closest('#btnAskNotify')) return;
+    try {
+      const r = Notification.requestPermission();
+      if (r && r.then) await r;
+    } catch (err) { /* vecchi Safari: solo callback, ignorato */ }
+    box.innerHTML = systemNotifyStateHtml();
+    refreshCallbackNotifications();
+  });
 }
 
 /**
@@ -6757,6 +6902,7 @@ async function startForUser() {
     window.addEventListener('hashchange', renderRoute);
   }
   renderRoute();
+  startCallbackNotifications();
 }
 
 /**
@@ -6832,6 +6978,7 @@ function openAccountModal() {
     <p>Sei entrato come <strong>${escapeHtml(email)}</strong>.</p>
     <p class="text-dim" style="font-size:0.85rem;">I dati sono salvati online e anche in questo browser.</p>
     <div class="lead-modal">${LeadCRM.accountToggleHtml()}</div>
+    ${accountNotifyHtml()}
     <div class="account-tools">
       <button class="btn-ghost" id="btnAccountBuilder">🎨 Aspetto e opzioni</button>
       <button class="btn-ghost" id="btnExport" title="Scarica un backup dei tuoi dati">⬇ Esporta backup</button>
@@ -6847,6 +6994,7 @@ function openAccountModal() {
   `);
   modalRoot.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', closeModal));
   LeadCRM.wireAccountToggle();
+  wireAccountNotify();
   document.getElementById('btnAccountBuilder').addEventListener('click', () => { closeModal(); location.hash = '#/impostazioni'; });
   document.getElementById('btnExport').addEventListener('click', () => exportData());
   document.getElementById('importFile').addEventListener('change', (e) => {

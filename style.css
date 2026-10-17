@@ -2693,3 +2693,25 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
 @media (max-width: 900px) {
   .cchart-layout { grid-template-columns: 1fr; }
 }
+
+/* ---------- Notifiche delle richiamate (restyling step 14) ----------
+   In alto a destra, sotto la barra della pagina (non copre "+ Task" / "+ Nuova sessione"). */
+.cb-notify-stack { position: fixed; top: 72px; right: 16px; z-index: 250; display: flex; flex-direction: column; gap: 8px; width: 300px; max-width: calc(100vw - 32px); pointer-events: none; }
+.cb-notify-stack:empty { display: none; }
+.cb-notify { pointer-events: auto; display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px; background: var(--neutral-0); border: 1px solid var(--neutral-200); border-left: 3px solid var(--accent-500); border-radius: var(--radius-card); box-shadow: 0 4px 16px rgba(0, 0, 0, .08); cursor: pointer; color: var(--neutral-900); animation: cb-notify-in .18s ease-out; }
+.cb-notify:hover { background: var(--accent-100); }
+.cb-notify:focus-visible { outline: 2px solid var(--neutral-900); outline-offset: 2px; }
+.cb-notify-ico { flex: none; width: 28px; height: 28px; border-radius: var(--radius-control); background: var(--accent-100); color: var(--accent-ink); display: grid; place-items: center; }
+.cb-notify-ico svg { width: 16px; height: 16px; }
+.cb-notify-main { flex: 1; min-width: 0; }
+.cb-notify-title { font-size: 0.875rem; line-height: 1.3; overflow-wrap: anywhere; }
+.cb-notify-sub { font-size: 0.75rem; color: var(--neutral-600); margin-top: 1px; }
+.cb-notify-close { flex: none; align-self: flex-start; width: 28px; height: 28px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--neutral-600); font-size: 1.25rem; line-height: 1; cursor: pointer; }
+.cb-notify-close:hover { background: var(--neutral-100); color: var(--neutral-900); }
+@keyframes cb-notify-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+/* Telefono: in basso (sopra l'indicatore "In sessione"), così non copre i tasti in alto della sessione (Esci, Skip). */
+@media (max-width: 600px) { .cb-notify-stack { top: auto; bottom: 68px; right: 16px; left: 16px; width: auto; max-width: none; flex-direction: column-reverse; } }
+.account-notify { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 14px 0; padding: 12px 14px; border: 1px solid var(--neutral-200); border-radius: var(--radius-control); }
+.account-notify-title { font-weight: 600; font-size: 0.9375rem; }
+.account-notify-sub { font-size: 0.8125rem; margin-top: 2px; }
+.account-notify-state { flex: none; text-align: right; font-size: 0.8125rem; max-width: 45%; }
