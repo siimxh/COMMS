@@ -4,7 +4,7 @@ let db = defaultData();
 let uiState = {
   pipelineFilter: 'all',
   sessioniPipelineFilter: 'all',
-  crmSetterFilter: 'aperti',   // 'aperti' | 'all' | 'no_show' — tabella Appuntamenti Setter
+  crmSetterFilter: 'prossimi', // vedi SETTER_APPT_FILTERS — lista Appuntamenti Setter
   crmSetterSearch: '',         // testo ricerca per nome/telefono — tabella Appuntamenti Setter
   crmVenditoreFilter: 'all',   // 'all' | 'trattativa' | 'no_show' | 'perso' — tabella Appuntamenti Venditore
   crmVenditoreSearch: '',      // testo ricerca per nome/telefono — tabella Appuntamenti Venditore
@@ -1880,10 +1880,11 @@ function buildAppointmentsReportText(rows, filterLabel) {
 // filtro "Solo No Show" attivo sulla tabella così il report riflette quello che si vede.
 async function generateAppointmentsReport() {
   const filter = uiState.crmSetterFilter || 'all';
+  const onlyNoShow = filter === 'noshow_annullati' || filter === 'no_show';
   let rows = db.appointments.filter(a => a.role === 'setter');
-  if (filter === 'no_show') rows = rows.filter(a => a.presentedStatus === 'no_show');
+  if (onlyNoShow) rows = rows.filter(a => a.presentedStatus === 'no_show' || a.presentedStatus === 'annullato');
   rows = [...rows].sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
-  const filterLabel = filter === 'no_show' ? 'Setter — solo No Show' : 'Setter';
+  const filterLabel = onlyNoShow ? 'Setter — no show e annullati' : 'Setter';
 
   const text = buildAppointmentsReportText(rows, filterLabel);
   const copied = await copyToClipboard(text);
@@ -2333,7 +2334,7 @@ function renderRecoveryRoundEntryCard() {
       <div class="recov-entry-action">
         <div class="recov-entry-count">${waiting}</div>
         <div class="recov-entry-count-label">da richiamare</div>
-        <button class="btn-primary" id="btnStartRecoveryRound">${waiting ? 'Inizia round' : 'Apri round'}</button>
+        <button class="btn-ghost btn-round-start" id="btnStartRecoveryRound">${waiting ? 'Inizia round' : 'Apri round'}</button>
       </div>
     </section>`;
 }
@@ -2829,7 +2830,7 @@ function renderConfirmRoundEntryCard() {
       <div class="recov-entry-action">
         <div class="recov-entry-count">${waiting}</div>
         <div class="recov-entry-count-label">da confermare</div>
-        <button class="btn-primary" id="btnStartConfirmRoundStandalone">${waiting ? 'Inizia round' : 'Apri round'}</button>
+        <button class="btn-ghost btn-round-start" id="btnStartConfirmRoundStandalone">${waiting ? 'Inizia round' : 'Apri round'}</button>
       </div>
     </section>`;
 }
@@ -3434,84 +3435,164 @@ function getEffectiveInstallments(apt) {
 
 /**
  * Sezione Appuntamenti — SOLO Setter (split Setter/Venditore): questa tabella e tutte
- * le funzioni sottostanti (renderApptRow/wireAppuntamentiEvents/addBlankAppointmentRow)
+ * le funzioni sottostanti (renderApptRow/wireAppuntamentiEvents/openNewSetterApptModal)
  * mostrano/creano sempre e solo righe role:'setter'. La versione Venditore è un sistema
  * di rendering separato (vedi renderVenditoreAppuntamenti più sotto) con un layout e un
  * modello di stato (dealStage) diversi.
  */
 function renderAppuntamenti() {
   uiState.settingTab = 'appuntamenti';
-  // Lettera F (Simone, 16/10): si apre su "Prossimi e da esitare" (prima 51 righe tutte
-  // aperte). Chiuso / Cash / Totale stanno dietro il tasto € di ogni riga.
-  const filter = uiState.crmSetterFilter || 'aperti'; // 'aperti' | 'all' | 'no_show'
+  // Filtri (restyling 17/10, step 10): Prossimi · Da esitare · Tutti · No show e annullati ·
+  // Da richiamare. Prima c'era un filtro unico "Prossimi e da esitare" (Lettera F, 16/10):
+  // ora sono due tasti separati, ognuno col suo contatore.
+  let filter = uiState.crmSetterFilter || 'prossimi';
+  if (filter === 'aperti') filter = 'prossimi';
+  if (filter === 'no_show') filter = 'noshow_annullati';
+  if (!SETTER_APPT_FILTERS.some(f => f.key === filter)) filter = 'prossimi';
+  uiState.crmSetterFilter = filter;
   const search = uiState.crmSetterSearch || '';
+  const q = search.trim();
   const allSetter = db.appointments.filter(a => a.role === 'setter');
-  let rows = allSetter;
-  if (filter === 'aperti') rows = rows.filter(isSetterApptOpen);
-  if (filter === 'no_show') rows = rows.filter(a => a.presentedStatus === 'no_show');
-  if (search.trim()) rows = allSetter.filter(a => matchesApptSearch(a, search)); // la ricerca guarda sempre tutti
-  rows = filter === 'aperti' && !search.trim()
-    ? [...rows].sort((a, b) => {
-        const da = isSetterApptToEsitare(a), dbb = isSetterApptToEsitare(b);
-        if (da !== dbb) return da ? 1 : -1; // prima i prossimi, poi quelli da esitare
-        return da ? new Date(b.scheduledAt) - new Date(a.scheduledAt) : new Date(a.scheduledAt) - new Date(b.scheduledAt);
-      })
-    : [...rows].sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
+  const pendingCbs = pendingCallbacksSorted();
+  const counts = {};
+  SETTER_APPT_FILTERS.forEach(f => { counts[f.key] = f.key === 'callbacks' ? pendingCbs.length : allSetter.filter(f.test).length; });
 
-  const rowsHtml = rows.length ? rows.map(renderApptRow).join('') : '';
-  const noResults = search.trim() && !rows.length;
+  let listHtml;
+  let shown = 0;
+  if (filter === 'callbacks') {
+    // Da richiamare: i db.callbacks in attesa, nella stessa lista e con lo stesso stile.
+    const cbs = q ? pendingCbs.filter(cb => matchesApptSearch({ clientName: cb.leadName, phone: cb.phone }, q)) : pendingCbs;
+    shown = cbs.length;
+    listHtml = cbs.length ? cbs.map(renderCallbackListRow).join('') : '';
+  } else {
+    const def = SETTER_APPT_FILTERS.find(f => f.key === filter);
+    let rows = q ? allSetter.filter(a => matchesApptSearch(a, q)) : allSetter.filter(def.test); // la ricerca guarda sempre tutti
+    rows = filter === 'prossimi' && !q
+      ? [...rows].sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt))
+      : [...rows].sort((a, b) => new Date(b.scheduledAt) - new Date(a.scheduledAt));
+    shown = rows.length;
+    listHtml = rows.map(renderApptRow).join('');
+  }
+  const emptyMsg = q
+    ? (filter === 'callbacks' ? 'Nessun "da richiamare" trovato per questa ricerca.' : 'Nessun appuntamento trovato per questa ricerca.')
+    : ({
+        prossimi: allSetter.length ? 'Nessun appuntamento in arrivo. Gli altri sono in "Tutti".' : 'Nessun appuntamento ancora. Crea il primo con "+ Nuovo Appuntamento".',
+        esitare: 'Niente da esitare: tutti gli appuntamenti passati hanno un esito.',
+        all: 'Nessun appuntamento ancora. Crea il primo con "+ Nuovo Appuntamento".',
+        noshow_annullati: 'Nessun no show o annullato.',
+        callbacks: 'Nessun lead da richiamare al momento.'
+      })[filter];
 
-  // "Round launcher" — i due round a schermo intero (No Show / Conferme), spostati qui
-  // in cima su richiesta esplicita dell'utente perché più visibili: riga 1 No Show,
-  // riga 2 Conferme (vedi renderRecoveryRoundEntryCard/renderConfirmRoundEntryCard).
-  const roundLaunchersHtml = `
+  const listOpen = isApptListOpen();
+  const listTitle = filter === 'callbacks' ? 'Lista da richiamare' : 'Lista appuntamenti';
+
+  // Tasti dei round in cima: prima Recupero, poi Conferme (restyling 5.2). Il loro tasto
+  // è secondario: l'unico pulsante nero della vista è "+ Nuovo Appuntamento".
+  appRoot.innerHTML = `
     <div class="round-launchers">
       ${renderRecoveryRoundEntryCard()}
       ${renderConfirmRoundEntryCard()}
-    </div>`;
-
-  appRoot.innerHTML = `
-    ${renderSubTabsBar('setting', 'appuntamenti')}
-    ${roundLaunchersHtml}
-    <section class="card crm-toolbar">
-      <div class="crm-filters">
-        <button class="pill ${filter === 'aperti' ? 'active' : ''}" data-crm-setter-filter="aperti">Prossimi e da esitare (${allSetter.filter(isSetterApptOpen).length})</button>
-        <button class="pill ${filter === 'all' ? 'active' : ''}" data-crm-setter-filter="all">Tutti (${allSetter.length})</button>
-        <button class="pill ${filter === 'no_show' ? 'active' : ''}" data-crm-setter-filter="no_show">No Show</button>
+    </div>
+    <section class="card crm-toolbar appt-toolbar">
+      <div class="crm-filters" role="tablist">
+        ${SETTER_APPT_FILTERS.map(f => `<button class="pill ${filter === f.key ? 'active' : ''}" data-crm-setter-filter="${f.key}">${f.label} <span class="pill-count ${f.key === 'esitare' && counts[f.key] ? 'hot' : ''}">${counts[f.key]}</span></button>`).join('')}
       </div>
-      <div class="crm-search-wrap">
-        <input type="search" class="crm-search-input" id="crmSetterSearchInput" placeholder="Cerca per nome o telefono..." value="${escapeHtml(search)}">
-      </div>
-      <div style="display:flex; gap:8px;">
-        <button class="btn-ghost" id="btnApptCalendar">📅 Calendario</button>
+      <div class="appt-toolbar-row">
+        <div class="crm-search-wrap">
+          <input type="search" class="crm-search-input" id="crmSetterSearchInput" placeholder="${filter === 'callbacks' ? 'Cerca un da richiamare per nome o telefono...' : 'Cerca per nome o telefono...'}" value="${escapeHtml(search)}">
+        </div>
         <button class="btn-ghost" id="btnApptReport">Report</button>
-        <button class="btn-ghost" id="btnOpenCallbacks">📞 Da richiamare${(db.callbacks || []).filter(c => c.status === 'pending').length ? ` (${(db.callbacks || []).filter(c => c.status === 'pending').length})` : ''}</button>
         <button class="btn-primary" id="btnNewAppt">+ Nuovo Appuntamento</button>
       </div>
     </section>
-    <section class="card crm-table-wrap">
-      ${rows.length ? `
-      <table class="crm-table">
-        <thead>
-          <tr>
-            <th>Nome / Telefono</th><th>Data/Ora</th><th>Presentato</th><th>Soldi</th><th></th>
-          </tr>
-        </thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>` : `<p class="text-dim">${noResults ? 'Nessun appuntamento trovato per questa ricerca.' : (filter === 'aperti' && allSetter.length ? 'Nessun appuntamento in arrivo o da esitare. Gli altri sono in "Tutti".' : 'Nessun appuntamento ancora. Crea il primo con "+ Nuovo Appuntamento".')}</p>`}
+    <section class="card appt-list-card ${listOpen ? 'is-open' : ''}">
+      <button class="appt-list-toggle" id="btnToggleApptList" aria-expanded="${listOpen}">
+        <span class="appt-list-title">${listTitle}</span>
+        <span class="count-pill">${shown}</span>
+        <span class="appt-list-caret" aria-hidden="true">▾</span>
+      </button>
+      ${listOpen ? (listHtml ? `
+      <div class="crm-table-wrap">
+        <table class="crm-table appt-table">
+          <thead>
+            <tr><th>Nome</th><th>Data e ora</th><th>Esito</th><th>${filter === 'callbacks' ? '' : 'Soldi'}</th><th></th></tr>
+          </thead>
+          <tbody>${listHtml}</tbody>
+        </table>
+      </div>` : `<p class="text-dim appt-list-empty">${emptyMsg}</p>`) : ''}
     </section>
   `;
 
   wireAppuntamentiEvents();
 }
 
+/** Filtri della lista Appuntamenti Setter (in ordine). "callbacks" non filtra appuntamenti:
+ * mostra i Da richiamare (db.callbacks) nella stessa lista. */
+const SETTER_APPT_FILTERS = [
+  { key: 'prossimi', label: 'Prossimi', test: a => isSetterApptUpcoming(a) },
+  { key: 'esitare', label: 'Da esitare', test: a => isSetterApptToEsitare(a) },
+  { key: 'all', label: 'Tutti', test: () => true },
+  { key: 'noshow_annullati', label: 'No show e annullati', test: a => a.presentedStatus === 'no_show' || a.presentedStatus === 'annullato' },
+  { key: 'callbacks', label: 'Da richiamare', test: () => false }
+];
+
+/** Tendina "Lista appuntamenti ▾": aperta o chiusa, ricordata nel browser. */
+const APPT_LIST_OPEN_KEY = 'comms_listaAppuntamentiAperta';
+function isApptListOpen() {
+  if (typeof uiState.apptListOpen !== 'boolean') {
+    let v = null;
+    try { v = localStorage.getItem(APPT_LIST_OPEN_KEY); } catch (e) { /* browser senza memoria: aperta */ }
+    uiState.apptListOpen = v !== '0';
+  }
+  return uiState.apptListOpen;
+}
+function setApptListOpen(open) {
+  uiState.apptListOpen = !!open;
+  try { localStorage.setItem(APPT_LIST_OPEN_KEY, open ? '1' : '0'); } catch (e) { /* niente: resta in memoria */ }
+}
+
+/** Da richiamare ancora in attesa, dal più vicino. */
+function pendingCallbacksSorted() {
+  return [...(db.callbacks || [])]
+    .filter(c => c.status === 'pending')
+    .sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
+}
+
+/** Riga di un "Da richiamare" nella lista Appuntamenti (filtro "Da richiamare"): stesso
+ * stile delle righe appuntamento. Azioni: Chiama, Modifica ✎, Note, Cestino. */
+function renderCallbackListRow(cb) {
+  const overdue = cb.scheduledAt && new Date(cb.scheduledAt) < new Date();
+  return `
+    <tr class="appt-row cb-list-row" data-cb-row="${cb.id}">
+      <td class="appt-cell-name">
+        <div class="appt-name-text">${escapeHtml(cb.leadName || '(senza nome)')}</div>
+        ${cb.sourcePipelineName ? `<div class="appt-sub">${escapeHtml(cb.sourcePipelineName)}</div>` : ''}
+      </td>
+      <td class="appt-cell-when"><span class="appt-when-text ${overdue ? 'late' : ''}">${cb.scheduledAt ? escapeHtml(fmtApptWhen(cb.scheduledAt)) : '—'}</span>${overdue ? '<div class="to-esitare-tag">scaduto</div>' : ''}</td>
+      <td><span class="appt-status-pill cb">Da richiamare</span></td>
+      <td><button class="btn-ghost btn-sm" data-call-callback="${cb.id}">Chiama</button></td>
+      <td class="crm-row-actions">
+        ${callbackNotesButton(cb)}
+        <button class="btn-icon appt-more-btn" data-edit-callback="${cb.id}" title="Modifica dati del lead" aria-label="Modifica">✎</button>
+        <button class="btn-icon appt-more-btn" data-delete-callback="${cb.id}" title="Togli dai da richiamare" aria-label="Togli">🗑</button>
+      </td>
+    </tr>`;
+}
+
+/** "sab 18/10/2026 · 11:00" — data e ora leggibili per righe e calendario. */
+function fmtApptWhen(v) {
+  const d = new Date(v);
+  if (isNaN(d)) return '';
+  const day = d.toLocaleDateString('it-IT', { weekday: 'short' }).replace('.', '');
+  return `${day} ${d.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' })} · ${fmtTime(d)}`;
+}
+
 /** Appuntamento Setter passato e ancora senza esito vero ("No" o "Confermato 24h"). */
 function isSetterApptToEsitare(a) {
   return !!a.scheduledAt && new Date(a.scheduledAt) <= new Date() && (a.presentedStatus === 'no' || a.presentedStatus === 'confirmed24h' || !a.presentedStatus);
 }
-/** "Prossimi e da esitare": in arrivo (non spostati/annullati) oppure passati senza esito. */
-function isSetterApptOpen(a) {
-  if (isSetterApptToEsitare(a)) return true;
+/** "Prossimi": in arrivo, non spostati né annullati (filtro della lista Setter). */
+function isSetterApptUpcoming(a) {
   return !!a.scheduledAt && new Date(a.scheduledAt) > new Date() && a.presentedStatus !== 'spostato' && a.presentedStatus !== 'annullato';
 }
 
@@ -3556,25 +3637,15 @@ function wireCrmSearchInput(inputId, stateKey, renderFn) {
   });
 }
 
-/**
- * Riga della tabella Appuntamenti Setter — tutti i campi sono editabili INLINE,
- * direttamente nella riga (niente modal "Nuovo Appuntamento": vedi
- * wireAppuntamentiEvents, che crea la riga vuota e la aggiunge subito a
- * db.appointments). Presentato/Chiuso sono chip cliccabili, Nome/Telefono/Data-ora sono
- * input nativi con autosave su change/blur, coerente con Cash Collected già esistente.
- *
- * "No Show" aggiunto come quarta opzione di Presentato (oltre No/Confermato24h/Presentato)
- * su richiesta esplicita dell'utente, per poter filtrare i lead da richiamare per il
- * recupero — vedi il filtro "Solo No Show" in renderAppuntamenti.
- */
 function renderApptRow(a) {
-  // Esito Setter come menu a tendina colorato, stesso stile dello "Stato trattativa"
-  // del Venditore (richiesto dall'utente al posto della fila di bottoni).
+  // Riga compatta (restyling 17/10, step 10): nome (modificabile, senza telefono: il
+  // telefono sta nella scheda ⋯), data e ora, esito a tendina, € e ⋯. Chiuso, cash e
+  // totale restano dietro il tasto €; telefono, checklist ed Elimina dietro ⋯.
   const presentedOptions = Object.entries(SETTER_PRESENTED_LABEL).map(([key, label]) =>
     `<option value="${key}" ${a.presentedStatus === key ? 'selected' : ''}>${escapeHtml(label)}</option>`
   ).join('');
   const presentedChips = `
-      <select class="deal-stage-select setter-status-select" data-pstatus="${a.presentedStatus || 'no'}" data-set-presented-sel="${a.id}">
+      <select class="deal-stage-select setter-status-select" data-pstatus="${a.presentedStatus || 'no'}" data-set-presented-sel="${a.id}" aria-label="Esito">
         ${presentedOptions}
       </select>`;
 
@@ -3585,28 +3656,26 @@ function renderApptRow(a) {
       </div>`;
 
   const totalSold = apptTotalSold(a);
-  const linkNote = a.linkedAppointmentId ? `<div class="crm-link-note">collegato</div>` : '';
+  const linkNote = a.linkedAppointmentId ? `<span class="crm-link-note">collegato</span>` : '';
   const recoveredBadge = a.recoveredFromNoShow
     ? `<span class="badge recov-badge" title="Nato dal Round Recupero Appuntamenti (appuntamento originale da ${a.recoveredFromRole === 'venditore' ? 'Venditore' : 'Setting'})">↻ Recuperato</span>`
     : '';
+  const badges = `${recoveredBadge}${rescheduleBadgesHtml(a)}${linkNote}`;
 
   const moneyOpen = !!(uiState.setterMoneyOpen && uiState.setterMoneyOpen[a.id]);
   const hasMoney = a.closed || (a.cashCollected || 0) > 0 || totalSold > 0;
   const toEsitare = isSetterApptToEsitare(a);
 
   return `
-    <tr data-appt-row="${a.id}" class="${a.presentedStatus === 'spostato' ? 'appt-row-moved' : ''} ${moneyOpen ? 'money-open' : ''}">
-      <td>
-        <input type="text" class="crm-inline-input crm-name-input" data-name-input="${a.id}" value="${escapeHtml(a.clientName || '')}" placeholder="Nome e cognome">
-        <input type="text" class="crm-inline-input crm-phone-input" data-phone-input="${a.id}" value="${escapeHtml(a.phone || '')}" placeholder="Telefono (facoltativo)">
-        ${recoveredBadge}
-        ${rescheduleBadgesHtml(a)}
-        ${linkNote}
+    <tr data-appt-row="${a.id}" class="appt-row ${a.presentedStatus === 'spostato' ? 'appt-row-moved' : ''} ${moneyOpen ? 'money-open' : ''}">
+      <td class="appt-cell-name">
+        <input type="text" class="crm-inline-input crm-name-input" data-name-input="${a.id}" value="${escapeHtml(a.clientName || '')}" placeholder="Nome e cognome" aria-label="Nome">
+        ${badges.trim() ? `<div class="appt-badges">${badges}</div>` : ''}
       </td>
-      <td class="crm-cell-center"><input type="datetime-local" class="crm-inline-input crm-datetime-input" data-scheduled-input="${a.id}" value="${(a.scheduledAt || '').slice(0, 16)}">${toEsitare ? '<div class="to-esitare-tag">da esitare</div>' : ''}</td>
+      <td class="appt-cell-when"><input type="datetime-local" class="crm-inline-input crm-datetime-input" data-scheduled-input="${a.id}" value="${(a.scheduledAt || '').slice(0, 16)}" aria-label="Data e ora">${toEsitare ? '<div class="to-esitare-tag">da esitare</div>' : ''}</td>
       <td>${presentedChips}</td>
-      <td class="crm-cell-center"><button class="money-btn ${hasMoney ? 'has-money' : ''} ${moneyOpen ? 'open' : ''}" data-toggle-money="${a.id}" title="Chiuso, cash collected e totale venduto" aria-expanded="${moneyOpen}">€${hasMoney ? ` ${round2(totalSold)}` : ''}</button></td>
-      <td class="crm-row-actions"><button class="crm-row-del" data-del-appt="${a.id}" title="Elimina">×</button></td>
+      <td><button class="money-btn ${hasMoney ? 'has-money' : ''} ${moneyOpen ? 'open' : ''}" data-toggle-money="${a.id}" title="Chiuso, cash collected e totale venduto" aria-expanded="${moneyOpen}">€${hasMoney ? ` ${round2(totalSold)}` : ''}</button></td>
+      <td class="crm-row-actions"><button class="btn-icon appt-more-btn" data-appt-more="${a.id}" title="Checklist, telefono ed elimina" aria-label="Altro">⋯</button></td>
     </tr>
     ${moneyOpen ? `<tr class="money-row" data-money-row="${a.id}">
       <td colspan="5">
@@ -3619,6 +3688,112 @@ function renderApptRow(a) {
         </div>
       </td>
     </tr>` : ''}`;
+}
+
+/* ---------- Scheda checklist (tre puntini ⋯ della riga, restyling 5.2.2) ----------
+ * Nome + data in cui è stato fissato (createdAt), barra % e le 8 voci di CHECKLIST_ITEMS
+ * con ✓/✗. Gli appuntamenti senza checklist (fissati prima, o a mano) mostrano
+ * "Checklist non compilata". Qui ci sono anche il telefono (facoltativo: serve al
+ * WhatsApp delle conferme e al collegamento dei lead) ed Elimina. La compilazione
+ * della checklist si fa in sessione (step 12). */
+function checklistBarHtml(pct) {
+  const p = Math.max(0, Math.min(100, Number(pct) || 0));
+  return `<div class="checklist-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${p}">
+      <div class="checklist-bar-track"><div class="checklist-bar-fill" style="width:${p}%"></div></div>
+      <span class="checklist-bar-pct">${fmtPctIt(p)}</span>
+    </div>`;
+}
+
+function openApptChecklistModal(apptId, onDone) {
+  const apt = db.appointments.find(x => x.id === apptId);
+  if (!apt) return;
+  const hasChecklist = apt.checklist && typeof apt.checklist === 'object';
+  const pct = hasChecklist ? (apt.checklistPct != null ? apt.checklistPct : checklistPctOf(apt.checklist)) : null;
+  const items = hasChecklist ? CHECKLIST_ITEMS.map(it => {
+    const ok = apt.checklist[it.id] === true;
+    return `<li class="checklist-item ${ok ? 'ok' : 'ko'}"><span class="checklist-mark" aria-hidden="true">${ok ? '✓' : '✗'}</span><span>${escapeHtml(it.label)}</span><span class="sr-only">${ok ? 'presa' : 'mancante'}</span></li>`;
+  }).join('') : '';
+  openModal(`
+    <h3>${escapeHtml(apt.clientName || '(senza nome)')}</h3>
+    <p class="text-dim checklist-sub">Fissato il ${apt.createdAt ? escapeHtml(fmtDateTime(apt.createdAt)) : '—'} · appuntamento ${apt.scheduledAt ? escapeHtml(fmtApptWhen(apt.scheduledAt)) : '—'}</p>
+    <div class="checklist-card">
+      <div class="checklist-head"><strong>Checklist</strong></div>
+      ${hasChecklist
+        ? `${checklistBarHtml(pct)}<ul class="checklist-items">${items}</ul>`
+        : `<p class="text-dim checklist-empty">Checklist non compilata (appuntamento precedente).</p>`}
+    </div>
+    <label class="field">Telefono (facoltativo)<input type="tel" id="apptMorePhone" value="${escapeHtml(apt.phone || '')}" placeholder="Per il WhatsApp delle conferme"></label>
+    <div class="modal-actions modal-actions-split">
+      <button class="btn-danger-ghost" id="apptMoreDel">Elimina appuntamento</button>
+      <span class="modal-actions-gap"></span>
+      <button class="btn-ghost" id="apptMoreClose">Chiudi</button>
+    </div>
+  `);
+  const phoneInput = document.getElementById('apptMorePhone');
+  const savePhone = () => {
+    const v = phoneInput.value.trim() || null;
+    if ((apt.phone || null) !== v) { apt.phone = v; persist(); }
+  };
+  phoneInput.addEventListener('change', savePhone);
+  document.getElementById('apptMoreClose').addEventListener('click', () => { savePhone(); closeModal(); if (onDone) onDone(); });
+  document.getElementById('apptMoreDel').addEventListener('click', () => {
+    showConfirm(`Eliminare l'appuntamento di "${apt.clientName || '(senza nome)'}"?`, () => {
+      unlinkRescheduleOnDelete(apt);
+      db.appointments = db.appointments.filter(x => x.id !== apt.id);
+      persist();
+      if (onDone) onDone();
+    }, { confirmLabel: 'Elimina' });
+  });
+}
+
+/** "+ Nuovo Appuntamento" (Setter): nome, telefono facoltativo, data e ora. */
+function openNewSetterApptModal() {
+  openModal(`
+    <h3>Nuovo appuntamento</h3>
+    <label class="field">Nome appuntamento<input type="text" id="newApptName" placeholder="Nome e cognome" maxlength="120"></label>
+    <label class="field">Telefono (facoltativo)<input type="tel" id="newApptPhone" placeholder="Per il WhatsApp delle conferme"></label>
+    <label class="field">Data e ora<input type="datetime-local" id="newApptWhen" value="${localDateTimeValue(new Date())}"></label>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="newApptCancel">Annulla</button>
+      <button class="btn-primary" id="newApptSave">Salva</button>
+    </div>
+  `);
+  const nameInput = document.getElementById('newApptName');
+  nameInput.focus();
+  document.getElementById('newApptCancel').addEventListener('click', closeModal);
+  document.getElementById('newApptSave').addEventListener('click', () => {
+    const name = nameInput.value.trim();
+    const when = document.getElementById('newApptWhen').value;
+    if (!name) { showToast('Inserisci il nome dell\'appuntamento.', true); nameInput.focus(); return; }
+    if (!when) { showToast('Inserisci data e ora dell\'appuntamento.', true); return; }
+    const apt = newAppointment('setter');
+    apt.clientName = name;
+    apt.phone = document.getElementById('newApptPhone').value.trim() || null;
+    apt.scheduledAt = when;
+    db.appointments.unshift(apt);
+    persist();
+    closeModal();
+    showToast('Appuntamento aggiunto.');
+    renderAppuntamenti();
+    highlightSetterApptRow(apt.id);
+  });
+}
+
+/** Porta in vista una riga della lista Setter e la fa lampeggiare (nuovo appuntamento,
+ * clic dal calendario). Se la riga non è nel filtro attivo passa a "Tutti". */
+function highlightSetterApptRow(id) {
+  let row = appRoot.querySelector(`[data-appt-row="${id}"]`);
+  if (!row) {
+    uiState.crmSetterFilter = 'all';
+    uiState.crmSetterSearch = '';
+    setApptListOpen(true);
+    renderAppuntamenti();
+    row = appRoot.querySelector(`[data-appt-row="${id}"]`);
+  }
+  if (!row) return;
+  row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  row.classList.add('row-flash');
+  setTimeout(() => row.classList.remove('row-flash'), 2200);
 }
 
 function wireAppuntamentiEvents() {
@@ -3635,29 +3810,33 @@ function wireAppuntamentiEvents() {
     });
   });
   wireCrmSearchInput('crmSetterSearchInput', 'crmSetterSearch', renderAppuntamenti);
-  document.getElementById('btnNewAppt').addEventListener('click', () => {
-    addBlankAppointmentRow('setter');
-  });
-  document.getElementById('btnOpenCallbacks').addEventListener('click', openCallbacksListModal);
+  document.getElementById('btnNewAppt').addEventListener('click', openNewSetterApptModal);
   document.getElementById('btnApptReport').addEventListener('click', generateAppointmentsReport);
-  document.getElementById('btnApptCalendar').addEventListener('click', () => openAppointmentsCalendarModal('setter'));
+  document.getElementById('btnToggleApptList').addEventListener('click', () => { setApptListOpen(!isApptListOpen()); renderAppuntamenti(); });
   wireRecoveryRoundEntryCard();
   wireConfirmRoundEntryCard();
+
+  // Tre puntini ⋯: scheda checklist (+ telefono ed Elimina).
+  appRoot.querySelectorAll('[data-appt-more]').forEach(btn => {
+    btn.addEventListener('click', () => openApptChecklistModal(btn.dataset.apptMore, renderAppuntamenti));
+  });
+  // Righe "Da richiamare": Chiama, Modifica, Note, Cestino.
+  appRoot.querySelectorAll('[data-call-callback]').forEach(btn => {
+    btn.addEventListener('click', () => startCallbackCall(btn.dataset.callCallback));
+  });
+  appRoot.querySelectorAll('[data-edit-callback]').forEach(btn => {
+    btn.addEventListener('click', () => openEditCallbackModal(btn.dataset.editCallback, renderAppuntamenti));
+  });
+  appRoot.querySelectorAll('[data-delete-callback]').forEach(btn => {
+    btn.addEventListener('click', () => removeCallback(btn.dataset.deleteCallback, renderAppuntamenti));
+  });
+  wireCallbackNotesButtons(appRoot, renderAppuntamenti);
 
   appRoot.querySelectorAll('[data-name-input]').forEach(input => {
     input.addEventListener('change', () => {
       const apt = db.appointments.find(x => x.id === input.dataset.nameInput);
       if (!apt) return;
       apt.clientName = input.value;
-      persist();
-    });
-  });
-
-  appRoot.querySelectorAll('[data-phone-input]').forEach(input => {
-    input.addEventListener('change', () => {
-      const apt = db.appointments.find(x => x.id === input.dataset.phoneInput);
-      if (!apt) return;
-      apt.phone = input.value || null;
       persist();
     });
   });
@@ -3758,32 +3937,20 @@ function wireAppuntamentiEvents() {
     btn.addEventListener('click', () => openInstallmentsModal(btn.dataset.openInstallments));
   });
 
-  appRoot.querySelectorAll('[data-del-appt]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const apt = db.appointments.find(x => x.id === btn.dataset.delAppt);
-      if (!apt) return;
-      showConfirm(`Eliminare l'appuntamento di "${apt.clientName || '(senza nome)'}"?`, () => {
-        unlinkRescheduleOnDelete(apt);
-        db.appointments = db.appointments.filter(x => x.id !== apt.id);
-        persist();
-        renderAppuntamenti();
-      }, { confirmLabel: 'Elimina' });
-    });
-  });
 }
 
 /**
- * "+ Nuovo Appuntamento": niente modal — crea subito una riga vuota (ruolo = quello del
- * filtro attivo, o Setter se il filtro è "Tutti"; data/ora = adesso) e la mette in cima
+ * "+ Nuovo Appuntamento" della tabella Venditore (il Setter usa openNewSetterApptModal,
+ * con il telefono facoltativo): niente modal — crea subito una riga vuota (data/ora = adesso) e la mette in cima
  * alla tabella, editabile inline esattamente come le righe esistenti (stesso pattern di
  * autosave su ogni campo). L'utente compila Nome/Ruolo/Data direttamente nella riga; il
  * focus va subito sul campo Nome.
  */
 function addBlankAppointmentRow(role) {
-  const apt = newAppointment(role || 'setter');
+  const apt = newAppointment(role || 'venditore');
   db.appointments.unshift(apt);
   persist();
-  if (role === 'venditore') renderVenditoreAppuntamenti(); else renderAppuntamenti();
+  renderVenditoreAppuntamenti();
   const nameInput = appRoot.querySelector(`[data-name-input="${apt.id}"]`);
   if (nameInput) nameInput.focus();
 }
@@ -4823,11 +4990,11 @@ function logCallAction(outcomeId) {
 
 /**
  * Popup aperto SOLO quando l'esito cliccato in sessione è esattamente "Appuntamento
- * Fissato" (vedi APPOINTMENT_SET_OUTCOME_LABEL). Chiede solo nome e data/ora
- * dell'appuntamento appena fissato ("da lì poi compilo il resto" — l'utente completa
+ * Fissato" (vedi APPOINTMENT_SET_OUTCOME_LABEL). Chiede solo nome, data/ora e telefono
+ * facoltativo (restyling step 10: il telefono non sta più nelle righe) dell'appuntamento appena fissato ("da lì poi compilo il resto" — l'utente completa
  * gli altri campi dopo, nella schermata Appuntamenti). Alla conferma crea una riga
  * db.appointments identica in tutto e per tutto a quella creata da "+ Nuovo
- * Appuntamento" (vedi addBlankAppointmentRow/newAppointment), con role:'setter' fisso
+ * Appuntamento" (vedi openNewSetterApptModal/newAppointment), con role:'setter' fisso
  * (il flusso da sessione è sempre lato Setter) e i campi forniti già impostati.
  */
 function openAppointmentSetModal() {
@@ -4842,6 +5009,10 @@ function openAppointmentSetModal() {
     <label class="field">
       Data e ora appuntamento
       <input type="datetime-local" id="apptSetWhen" value="${nowLocal}">
+    </label>
+    <label class="field">
+      Telefono (facoltativo)
+      <input type="tel" id="apptSetPhone" placeholder="Per il WhatsApp delle conferme">
     </label>
     <div class="modal-actions">
       <button class="btn-ghost" id="apptSetCancelBtn">Annulla</button>
@@ -4862,6 +5033,7 @@ function openAppointmentSetModal() {
     const apt = newAppointment('setter');
     apt.clientName = name;
     apt.scheduledAt = when;
+    apt.phone = (document.getElementById('apptSetPhone').value || '').trim() || null;
     // Sessione in cui è stato fissato: serve alla lista sotto gli esiti (vedi renderSessionApptList).
     apt.sourceSessionId = db.activeSession ? db.activeSession.id : null;
     apt.sourceCallId = uiState.pendingApptCallId || null;
@@ -4912,8 +5084,8 @@ function endSessionAction() {
  * stessa (vedi logCallbackCall). Due punti d'accesso per richiamarli:
  * - la colonna laterale della sessione in cui sono nati (vedi renderSessionCallbackSidebar),
  *   finché quella sessione resta aperta;
- * - l'elenco completo in Setting > Appuntamenti (vedi openCallbacksListModal), accessibile
- *   in qualunque momento, anche a sessione chiusa o giorni dopo.
+ * - il filtro "Da richiamare" della lista in Setting > Appuntamenti (renderCallbackListRow),
+ *   accessibile in qualunque momento, anche a sessione chiusa o giorni dopo.
  * In entrambi i casi il tasto "Chiama" apre la STESSA schermata a schermo intero
  * (renderCallbackCallScreen, presa in carico da renderRoute() tramite db.callbackCallActiveId
  * con priorità sulla sessione attiva — vedi lì).
@@ -5296,50 +5468,6 @@ function wireCallbackNotesButtons(root, onClose) {
     btn.addEventListener('click', () => {
       const cb = (db.callbacks || []).find(c => c.id === btn.dataset.callbackNotes);
       if (cb) openNotesEditor(cb, cb.leadName, onClose);
-    });
-  });
-}
-
-/** Elenco completo (modale) di tutti i lead "Da richiamare" ancora in attesa, da qualunque
- * sessione/giorno provengano — bottone "Da richiamare" in Setting > Appuntamenti. */
-function openCallbacksListModal() {
-  const pending = [...(db.callbacks || [])]
-    .filter(c => c.status === 'pending')
-    .sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt));
-  const now = new Date();
-
-  const rowsHtml = pending.length ? pending.map(cb => {
-    const overdue = new Date(cb.scheduledAt) < now;
-    return `
-      <div class="callback-row">
-        <div class="callback-row-main">
-          <div class="callback-row-name">${escapeHtml(cb.leadName || '(senza nome)')}${callbackNotesButton(cb)}<button class="callback-edit-btn" data-edit-callback="${cb.id}" title="Modifica dati del lead">✎</button><button class="callback-edit-btn" data-delete-callback="${cb.id}" title="Togli dai da richiamare">🗑</button></div>
-          <div class="callback-row-sub">${cb.phone ? escapeHtml(cb.phone) + ' · ' : ''}${escapeHtml(cb.sourcePipelineName || '')}</div>
-        </div>
-        <div class="callback-row-when ${overdue ? 'overdue' : ''}">${fmtDateTime(cb.scheduledAt)}</div>
-        <button class="btn-primary" data-call-callback="${cb.id}">Chiama</button>
-      </div>`;
-  }).join('') : '<p class="text-dim">Nessun lead da richiamare al momento.</p>';
-
-  openModal(`
-    <h3>Da richiamare</h3>
-    <div class="callbacks-list">${rowsHtml}</div>
-    <div class="modal-actions">
-      <button class="btn-ghost" data-close-modal="1">Chiudi</button>
-    </div>
-  `);
-  modalRoot.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', closeModal));
-  modalRoot.querySelectorAll('[data-edit-callback]').forEach(btn => {
-    btn.addEventListener('click', () => openEditCallbackModal(btn.dataset.editCallback, openCallbacksListModal));
-  });
-  wireCallbackNotesButtons(modalRoot, openCallbacksListModal);
-  modalRoot.querySelectorAll('[data-delete-callback]').forEach(btn => {
-    btn.addEventListener('click', () => removeCallback(btn.dataset.deleteCallback, () => { openCallbacksListModal(); if (location.hash.indexOf('setting') !== -1) renderRoute(); }));
-  });
-  modalRoot.querySelectorAll('[data-call-callback]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      closeModal();
-      startCallbackCall(btn.dataset.callCallback);
     });
   });
 }
