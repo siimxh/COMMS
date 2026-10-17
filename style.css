@@ -115,11 +115,9 @@
 }
 
 /* ---------- Modalità Grind (toggle 1): tinge di danger/success in base al ritmo ---------- */
-body.grind-under .goals-section .eyebrow, body.grind-under .goals-section h2 { color: var(--danger); }
-body.grind-over .goals-section .eyebrow, body.grind-over .goals-section h2 { color: var(--success); }
 
 /* ---------- Boss Mode (toggle 13): ultimi 3gg del mese sotto obiettivo ---------- */
-body.boss-mode .goals-section .card, body.boss-mode .kpi-card.accented {
+ body.boss-mode .kpi-card.accented {
   animation: boss-pulse 1.4s ease-in-out infinite;
 }
 @keyframes boss-pulse {
@@ -128,7 +126,7 @@ body.boss-mode .goals-section .card, body.boss-mode .kpi-card.accented {
 }
 
 /* ---------- Milestone pulse (toggle 11) ---------- */
-.milestone-pulse { animation: milestone-pulse 0.9s ease-out 1; }
+
 @keyframes milestone-pulse {
   0% { transform: scale(1); }
   30% { transform: scale(1.03); }
@@ -928,12 +926,6 @@ body.in-session .sidebar, body.in-session .page-bar, body.in-session .sb-backdro
  * condiviso sopra le due sezioni Setter/Venditore, 1 card a piena larghezza ciascuna.
  * ==========================================================================*/
 
-.goals-section { display: flex; flex-direction: column; gap: 16px; }
-.goals-section h2 { display: flex; align-items: center; gap: 10px; }
-.role-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: 0 0 auto; }
-.role-dot.setter { background: var(--setter-color); }
-.role-dot.venditore { background: var(--venditore-color); }
-
 .tf-tabs { display: flex; gap: 8px; margin: 4px 0 2px; }
 .tf-tab {
   font-family: var(--mono);
@@ -950,107 +942,10 @@ body.in-session .sidebar, body.in-session .page-bar, body.in-session .sb-backdro
 .tf-tab:hover { color: var(--text); }
 .tf-tab.active { background: var(--neutral-0); color: var(--neutral-900); border-color: var(--neutral-0); font-weight: 600; box-shadow: var(--shadow-active); }
 
-.funnel-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  padding: 0;
-  overflow: hidden;
-}
-.funnel-card.setter { border-top: 3px solid var(--setter-color); }
-.funnel-card.venditore { border-top: 3px solid var(--venditore-color); }
-
 /* ---------- Stile "Hero + Sparkline": prima tappa in grande, le altre come mini-tile ---------- */
-.hero-row {
-  display: grid;
-  grid-template-columns: 1.4fr repeat(5, 1fr);
-  gap: 1px;
-  background: var(--border);
-  margin: 0;
-}
-.hero-row.v3 { grid-template-columns: 1.4fr repeat(2, 1fr); }
-/* v4 = hero + 3 mini-tile (es. funnel Venditore con "Fatturato" aggiunto come 4a tappa). */
-.hero-row.v4 { grid-template-columns: 1.4fr repeat(3, 1fr); }
-.hero-row.v5 { grid-template-columns: 1.4fr repeat(4, 1fr); }
-/* Sotto ~980px le 6 colonne del funnel Setter non respirano più: 3 colonne su 2 righe. */
-@media (max-width: 980px) { .hero-row:not(.v3) { grid-template-columns: repeat(3, 1fr); } .hero-row:not(.v3) > :first-child { grid-column: 1 / -1; } }
-@media (max-width: 560px) { .hero-row, .hero-row.v3, .hero-row.v4, .hero-row.v5 { grid-template-columns: 1fr 1fr; } .hero-row > :first-child { grid-column: 1 / -1; } }
 
-.hero-main {
-  background: var(--bg-elev2);
-  padding: 22px 20px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  gap: 8px;
-  min-width: 0;
-}
-.hero-label { font-family: var(--mono); font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-dim); }
-.hero-num { font-family: var(--mono); font-weight: 800; font-size: 2.4rem; line-height: 1; color: var(--accent); }
-.hero-main.venditore .hero-num { color: var(--venditore-color); }
-.hero-of { font-size: 0.8rem; color: var(--text-dim); }
-.hero-edit-row { display: flex; align-items: center; gap: 6px; }
-.hero-num-input {
-  background: var(--bg-elev2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--accent);
-  font-family: var(--mono);
-  font-size: 2rem;
-  font-weight: 800;
-  padding: 2px 8px;
-  width: 100%;
-  max-width: 140px;
-}
-.hero-main.venditore .hero-num-input { color: var(--venditore-color); }
-.hero-bar { margin-top: 4px; }
 
-.mini {
-  background: var(--bg-elev);
-  padding: 16px 15px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  justify-content: space-between;
-  min-width: 0;
-}
-.mini-label { font-size: 0.76rem; font-weight: 700; }
-.mini-num { font-family: var(--mono); font-weight: 700; font-size: 1.15rem; }
-.mini-target { font-family: var(--mono); font-size: 0.68rem; color: var(--text-dim); display: flex; align-items: center; gap: 4px; }
 
-.funnel-target-edit {
-  background: transparent;
-  border: none;
-  color: var(--text-dim);
-  cursor: pointer;
-  font-size: 0.9rem;
-  padding: 0 2px;
-  line-height: 1;
-}
-.funnel-target-edit:hover { color: var(--accent); }
-.funnel-target-input {
-  width: 66px;
-  background: var(--bg-elev2);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  color: var(--text);
-  font-family: var(--mono);
-  font-size: 0.85rem;
-  padding: 3px 6px;
-  text-align: right;
-}
-
-.goal-bar-track { background: var(--bg-elev2); border: 1px solid var(--border); border-radius: var(--radius-sm); height: 10px; overflow: hidden; }
-.goal-bar-fill { height: 100%; background: var(--accent); transition: width 0.3s ease; }
-.funnel-card.venditore .goal-bar-fill { background: var(--venditore-color); }
-.goal-bar-fill.complete { background: var(--success); }
-
-.spark { display: flex; align-items: flex-end; gap: 2px; height: 26px; margin-top: 2px; }
-.spark i { flex: 1; background: var(--border); display: block; border-radius: 1px 1px 0 0; }
-.spark i.on { background: var(--accent); }
-.mini.venditore .spark i.on { background: var(--venditore-color); }
-
-.hero-main.assigned-input .hero-of { margin-top: -2px; }
 .assigned-edit-input {
   width: 84px;
   background: var(--bg-elev2);
@@ -1062,64 +957,6 @@ body.in-session .sidebar, body.in-session .page-bar, body.in-session .sb-backdro
   font-weight: 700;
   padding: 6px 9px;
 }
-
-.streak-badge, .personalbest-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--mono);
-  font-size: 0.7rem;
-  font-weight: 700;
-  padding: 4px 9px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  color: var(--text-dim);
-}
-.personalbest-badge { color: var(--success); border-color: var(--success); background: var(--tag-conv-bg); }
-
-.pace-note { font-family: var(--mono); font-size: 0.7rem; color: var(--text-dim); margin-top: 2px; }
-.pace-note.pace-ok { color: var(--success); }
-.pace-note.pace-bad { color: var(--danger); }
-
-/* ============================================================================
- * KPI commissioni complessive (dashboard) — riusa .kpi-grid/.kpi-card
- * ==========================================================================*/
-.kpi-card.accented { border-top-color: var(--accent); position: relative; }
-
-/* ============================================================================
- * Grafici a linea "Andamento generale" (dashboard) — SVG puro, nessuna libreria esterna
- * ==========================================================================*/
-.chart-card { display: flex; flex-direction: column; gap: 10px; }
-.chart-card-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
-.chart-card-header h3 { margin: 0; }
-.line-chart-wrap { display: flex; flex-direction: column; gap: 6px; }
-.line-chart-body { display: flex; align-items: stretch; gap: 0; }
-.line-chart-yaxis { position: relative; flex-shrink: 0; padding-right: 8px; }
-.line-chart-yaxis-tick {
-  position: absolute; right: 8px; transform: translateY(-50%);
-  font-family: var(--mono); font-size: 0.68rem; color: var(--text-dim); white-space: nowrap;
-}
-.line-chart-plot-wrap { position: relative; flex: 1 1 auto; min-width: 0; }
-.line-chart-svg { width: 100%; height: 100%; display: block; position: absolute; inset: 0; }
-.line-chart-grid { stroke: var(--border); stroke-width: 1; shape-rendering: crispEdges; }
-.line-chart-crosshair { stroke: var(--text-dim); stroke-width: 1; stroke-dasharray: 3 3; }
-.line-chart-hoverdot { stroke: var(--bg-elev); stroke-width: 2; }
-.line-chart-hit { cursor: crosshair; }
-/* L'attributo HTML "hidden" non nasconde automaticamente gli elementi SVG in tutti i
-   browser (a differenza degli elementi HTML) — regola esplicita necessaria perché il
-   cursore/hover-dot si nascondano davvero quando il mouse esce dal grafico. */
-.line-chart-crosshair[hidden], .line-chart-hoverdot[hidden] { display: none; }
-.line-chart-tooltip {
-  position: absolute; pointer-events: none; z-index: 5;
-  background: var(--bg-elev2); border: 1px solid var(--border); border-radius: 8px;
-  padding: 6px 10px; margin-top: -8px; white-space: nowrap;
-  box-shadow: var(--shadow-active);
-}
-.line-chart-tooltip-value { font-family: var(--mono); font-weight: 700; font-size: 0.86rem; color: var(--text); }
-.line-chart-tooltip-label { font-family: var(--mono); font-size: 0.66rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.04em; margin-top: 1px; }
-.line-chart-footer { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 0.74rem; padding-left: 64px; }
-.line-chart-last { font-weight: 700; }
-.chart-empty { padding: 40px 0; text-align: center; font-size: 0.86rem; }
 
 /* ============================================================================
  * Appuntamenti (mini-CRM)
@@ -1264,7 +1101,6 @@ tr.appt-row-moved > td { opacity: 0.6; }
 .deal-stage-select[data-stage="perso"] { color: var(--stage-perso); background: var(--stage-perso-bg); border-color: var(--stage-perso); }
 .deal-stage-select[data-stage="spostato"] { color: var(--stage-spostato); background: var(--stage-spostato-bg); border-color: var(--stage-spostato); }
 .deal-stage-select[data-stage="non_in_target"] { color: var(--stage-non_in_target); background: var(--stage-non_in_target-bg); border-color: var(--stage-non_in_target); }
-
 
 /* Modale Note — ispirato allo screenshot fornito: lista scrollabile di note passate,
    più recenti in cima, ognuna con autore e data; textarea + tasto per aggiungerne una. */
@@ -1627,8 +1463,6 @@ body.in-session #confirmAlertBanner { display: none; }
 
 .builder-actions { display: flex; justify-content: flex-end; gap: 10px; padding-top: 4px; }
 
-
-
 /* ============================================================================
    LEGGIBILITÀ — base di tutto il tool (ex skin "Carta", resa predefinita su
    richiesta esplicita dell'utente: dopo ore di schermo faceva fatica a leggere).
@@ -1647,8 +1481,6 @@ body, body * {
 }
 body { line-height: 1.45; }
 
-
-
 /* Esito Setter a tendina (stessi colori del calendario/chip). */
 .setter-status-select[data-pstatus="no"] { color: var(--text-dim); background: var(--bg-elev2); border-color: var(--border); }
 .setter-status-select[data-pstatus="confirmed24h"] { color: var(--stage-trattativa); background: var(--stage-trattativa-bg); border-color: var(--stage-trattativa); }
@@ -1657,28 +1489,11 @@ body { line-height: 1.45; }
 .setter-status-select[data-pstatus="annullato"] { color: var(--stage-annullato); background: var(--stage-annullato-bg); border-color: var(--stage-annullato); }
 .setter-status-select[data-pstatus="spostato"] { color: var(--stage-spostato); background: var(--stage-spostato-bg); border-color: var(--stage-spostato); }
 
-
 /* Pace del mese accanto al titolo Obiettivi Setter/Venditore. */
-.goals-section h2 { flex-wrap: wrap; }
-.month-pace { margin-left: auto; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-family: var(--mono); color: var(--text); }
-.month-pace-label { font-size: 0.8rem; font-weight: 500; color: var(--text-dim); }
-.month-pace-num { font-size: 1.35rem; font-weight: 700; color: var(--accent); }
-.month-pace-sub { font-size: 0.78rem; font-weight: 400; color: var(--text-dim); }
 
 /* Obiettivi, design "Ritmo": barra + tacca "dove dovresti essere adesso" + stato. */
-.pace-wrap { position: relative; margin-top: 8px; }
-.pace-wrap .goal-bar-track { height: 12px; }
-.funnel-card .goal-bar-fill.pace-ok { background: var(--success); }
-.funnel-card .goal-bar-fill.pace-late { background: var(--warning); }
-.pace-mark { position: absolute; top: -5px; bottom: -5px; width: 3px; margin-left: -1px; border-radius: 2px; background: var(--text); }
-.pace-status { font-size: 0.78rem; font-weight: 700; margin-top: 6px; }
-.pace-status.ok { color: var(--success); }
-.pace-status.late { color: var(--warning); }
-.pace-status.dim { color: var(--text-dim); font-weight: 400; }
 
 /* Riquadro "Pace del mese" in Andamento generale: una riga, come le pace degli Obiettivi. */
-.pace-box { padding-top: 12px; padding-bottom: 12px; }
-.pace-box .month-pace { margin-left: 0; }
 
 /* Pennetta ✎ per modificare un "Da richiamare" (sidebar sessione ed elenco). */
 .callback-edit-btn { background: none; border: none; padding: 0 4px; margin-left: 6px; cursor: pointer; color: var(--text-dim); font-size: 0.95rem; line-height: 1; }
@@ -1743,8 +1558,6 @@ body { line-height: 1.45; }
 .page-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .page-head h1 { margin: 0; font-size: 1.6rem; letter-spacing: -0.01em; }
 .page-head .d { color: var(--text-dim); }
-
-
 
 .who { font-weight: 700; background: none; border: 0; padding: 0; color: var(--text); font: inherit; font-weight: 700; cursor: pointer; text-align: left; }
 .who:hover { color: var(--accent); text-decoration: underline; }
@@ -2069,8 +1882,7 @@ a { color: var(--neutral-900); }
 .crm-search-input, .crm-inline-input, .ld-input, .inline-add input, .installment-row input[type="text"],
 .installment-row input[type="number"], .installment-row input[type="date"], .call-rec-add-row input[type="text"],
 .add-outcome-row input[type="text"], .note-add-row textarea, #cbNote, .custom-range input[type="date"],
-.pipeline-filter select, #sessioniPipelineFilter, .toggle-row-extra input[type="number"], .assigned-edit-input,
-.funnel-target-input, .hero-num-input, .color-field input[type="text"] {
+.pipeline-filter select, #sessioniPipelineFilter, .toggle-row-extra input[type="number"], .assigned-edit-input, .color-field input[type="text"] {
   background: var(--neutral-0);
   border: 1px solid var(--neutral-200);
   border-radius: var(--radius-control);
@@ -2085,7 +1897,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .crm-phone-input { color: var(--neutral-600); }
 
 /* ---------- Badge ---------- */
-.badge, .tag, .role-badge, .stpill, .apstate, .nchip, .moved-badge, .recov-badge, .streak-badge, .personalbest-badge {
+.badge, .tag, .role-badge, .stpill, .apstate, .nchip, .moved-badge, .recov-badge{
   font-family: var(--font-sans);
   border-radius: var(--radius-pill);
   font-weight: 600;
@@ -2136,13 +1948,11 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .vnd-stats-grid > .card { border: none; border-radius: 0; }
 .kpi-value { font-family: var(--font-sans); font-size: 1.6rem; font-weight: 700; color: var(--neutral-900); }
 .kpi-label { font-family: var(--font-sans); font-size: 0.8rem; font-weight: 500; color: var(--neutral-600); }
-.stat-block .stat-label, .productivity-grid .stat-label, .trend-label, .hero-label, .mini-target, .pace-note,
-.cal-dow, .cal-daynum, .cal-detail-source, .session-card-sub, .bar-row, .breakdown-chip, .line-chart-yaxis-tick,
-.line-chart-footer, .callback-row-sub, .callback-row-when, .session-callback-item-phone, .session-callback-item-when,
+.stat-block .stat-label, .productivity-grid .stat-label, .trend-label,
+.cal-dow, .cal-daynum, .cal-detail-source, .session-card-sub, .bar-row, .breakdown-chip, .line-chart-yaxis-tick, .callback-row-sub, .callback-row-when, .session-callback-item-phone, .session-callback-item-when,
 .session-callback-sidebar-title, .session-pipeline-name, .preset-name, .color-field label, .slider-row label,
-.checkbox-inline, .recov-entry-count-label, .crm-link-note, .note-card-meta, .sync-status, .month-pace,
-.cal-month-label, .back-link, .tf-tab, .stat-value, .trend-value, .bar-value, .kpi-value, #sessionTimer,
-.hero-num, .mini-num, .crm-amount, .crm-amount-link, .installment-total-row, .cal-day-total, .recov-entry-count,
+.checkbox-inline, .recov-entry-count-label, .crm-link-note, .note-card-meta, .sync-status,
+.cal-month-label, .back-link, .tf-tab, .stat-value, .trend-value, .bar-value, .kpi-value, #sessionTimer, .crm-amount, .crm-amount-link, .installment-total-row, .cal-day-total, .recov-entry-count,
 .recov-hero-phone, .confirm-hero-phone, .confirm-hero-when, .outcome-btn-sub, .confirm-alert-toggle,
 .pause-banner, .second-call-banner, .active-session-indicator, .chip-select, .deal-stage-select, .crm-chip {
   font-family: var(--font-sans);
@@ -2156,19 +1966,10 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .pay-sum div, .num-split div { background: var(--neutral-0); border-radius: var(--radius-control); }
 
 /* ---------- Obiettivi e barre (accento sul dato raggiunto, resto neutro) ---------- */
-.funnel-card.setter, .funnel-card.venditore { border-top: var(--border-line); }
-.hero-row { background: var(--neutral-200); }
-.hero-main { background: var(--neutral-50); }
-.hero-num, .hero-main.venditore .hero-num, .hero-num-input, .hero-main.venditore .hero-num-input { color: var(--neutral-900); }
-.goal-bar-track, .bar-track, .meter { background: var(--neutral-100); border: none; border-radius: var(--radius-pill); }
-.goal-bar-fill, .bar-fill { background: var(--accent-500); border-radius: var(--radius-pill); }
-.funnel-card.venditore .goal-bar-fill { background: var(--neutral-900); }
-.goal-bar-fill.complete { background: var(--accent-500); }
-.funnel-card .goal-bar-fill.pace-late { background: var(--accent-300); }
-.spark i { background: var(--neutral-200); }
-.spark i.on { background: var(--accent-500); }
-.mini.venditore .spark i.on { background: var(--neutral-900); }
-.month-pace-num { color: var(--neutral-900); }
+
+ .bar-track, .meter { background: var(--neutral-100); border: none; border-radius: var(--radius-pill); }
+ .bar-fill { background: var(--accent-500); border-radius: var(--radius-pill); }
+
 .meter i { background: var(--accent-500); }
 
 /* ---------- Liste, sessioni, round ---------- */
@@ -2198,7 +1999,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .confirm-alert-item-time { color: var(--accent-ink); }
 .crm-amount-link, .linkish, .ld-small-link, .call-rec-row a { color: var(--accent-ink); }
 .crm-amount-link:hover { color: var(--neutral-900); }
-.who:hover, .ld-back:hover, .copy-mini:hover, .callback-edit-btn:hover, .funnel-target-edit:hover { color: var(--accent-ink); }
+.who:hover, .ld-back:hover, .copy-mini:hover, .callback-edit-btn:hover{ color: var(--accent-ink); }
 .copy-mini:hover, .crm-copy-phone-btn:hover { border-color: var(--neutral-400); color: var(--neutral-900); }
 .call-rec-count { background: var(--accent-500); color: var(--on-accent); }
 .ev .mk i.k-appt { background: var(--neutral-900); border-color: var(--neutral-900); }
@@ -2224,10 +2025,6 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .modal-box { border: var(--border-line); border-top: var(--border-line); border-radius: var(--radius-card); box-shadow: var(--shadow-active); }
 .toast { background: var(--neutral-900); color: var(--neutral-0); border: none; border-radius: var(--radius-control); box-shadow: var(--shadow-active); }
 .toast-error { background: var(--danger); color: var(--neutral-0); }
-.line-chart-tooltip { background: var(--neutral-900); border-color: var(--neutral-900); border-radius: var(--radius-control); }
-.line-chart-tooltip-value { color: var(--neutral-0); }
-.line-chart-tooltip-label { color: var(--neutral-400); }
-.line-chart-grid { stroke: var(--neutral-200); stroke-dasharray: 3 3; }
 .choice button { border-radius: var(--radius-control); background: var(--neutral-0); }
 .choice button.sel { background: var(--neutral-900); border-color: var(--neutral-900); color: var(--neutral-0); }
 .choice button.yes.sel { background: var(--accent-500); border-color: var(--accent-500); color: var(--on-accent); }
@@ -2500,3 +2297,102 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
 .period-bar .period-range-text { margin-left: auto; font-size: 0.84rem; color: var(--neutral-600); white-space: nowrap; }
 .period-bar > p, .period-bar .stats-note { margin: 0 !important; flex-basis: 100%; }
 .period-bar .custom-range { margin-left: 0; }
+
+/* ============================================================================
+ * Dashboard: sezioni a tutta larghezza (restyling step 9) — Pace mese, Commissioni
+ * totali, grafici a linee, calendario commissioni. Solo token della guida.
+ * ==========================================================================*/
+.dash-section { display: flex; flex-direction: column; gap: 14px; }
+.dash-section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px 14px; flex-wrap: wrap; }
+.dash-section-head h3 { margin: 0; font-size: 1rem; font-weight: 600; color: var(--neutral-900); }
+.dash-section-note { font-size: 0.84rem; color: var(--neutral-600); }
+
+/* Pace mese */
+.pace-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 1px; background: var(--neutral-200); border: var(--border-line); border-radius: var(--radius-card); overflow: hidden; }
+.pace-cell { background: var(--neutral-0); padding: 16px 20px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.pace-cell-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.pace-cell-label { font-size: 0.86rem; font-weight: 500; color: var(--neutral-900); }
+.pace-cell-num { font-size: 1.6rem; font-weight: 700; color: var(--neutral-900); font-variant-numeric: tabular-nums; }
+.pace-cell-sub { font-size: 0.8rem; color: var(--neutral-600); }
+.pace-goal-btn { background: none; border: none; padding: 2px 0; font: inherit; font-size: 0.8rem; color: var(--neutral-600); cursor: pointer; }
+.pace-goal-btn:hover { color: var(--neutral-900); }
+.pace-goal-edit { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: var(--neutral-600); }
+.pace-goal-edit input { width: 100px; padding: 4px 8px; }
+.pace-goal-bar { height: 8px; border-radius: var(--radius-pill); background: var(--neutral-100); overflow: hidden; margin-top: 6px; }
+.pace-goal-bar i { display: block; height: 100%; background: var(--accent-500); border-radius: var(--radius-pill); }
+
+/* Commissioni totali: card KPI della guida con badge di trend */
+.dash-kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.dash-kpis.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 900px) { .dash-kpis, .dash-kpis.three { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.dash-kpis .kpi-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.dash-kpis .kpi-label { order: -1; margin: 0; color: var(--neutral-900); font-size: 0.84rem; font-weight: 500; }
+.kpi-vs { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 0.78rem; color: var(--neutral-600); }
+.trend-badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: var(--radius-pill); font-size: 0.74rem; font-weight: 600; white-space: nowrap; }
+.trend-badge.up { color: var(--success); background: var(--success-bg); }
+.trend-badge.down { color: var(--danger); background: var(--danger-bg); }
+.trend-badge.flat { color: var(--neutral-600); background: var(--neutral-100); }
+
+/* Grafici a linee */
+.line-chart-wrap { display: flex; flex-direction: column; gap: 6px; }
+.line-chart-body { display: flex; align-items: stretch; }
+.line-chart-yaxis { position: relative; flex: 0 0 64px; }
+.line-chart-yaxis-tick { position: absolute; right: 10px; transform: translateY(-50%); font-size: 0.72rem; color: var(--neutral-400); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.line-chart-plot-wrap { position: relative; flex: 1 1 auto; min-width: 0; height: 240px; }
+.line-chart-svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; overflow: visible; }
+.line-chart-grid { stroke: var(--neutral-200); stroke-width: 1; stroke-dasharray: 4 4; }
+.line-chart-line { stroke: var(--accent-500); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.line-chart-crosshair { stroke: var(--neutral-400); stroke-width: 1; stroke-dasharray: 3 3; }
+.line-chart-crosshair[hidden] { display: none; }
+.line-chart-hit { cursor: crosshair; }
+.line-chart-dot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; background: var(--neutral-0); border: 2px solid var(--accent-500); pointer-events: none; }
+.line-chart-dot[hidden] { display: none; }
+.line-chart-tooltip { position: absolute; z-index: 5; pointer-events: none; white-space: nowrap; padding: 7px 10px; border-radius: var(--radius-control); background: var(--neutral-900); box-shadow: 0 1px 2px rgba(0, 0, 0, .04); }
+.line-chart-tooltip[hidden] { display: none; }
+.line-chart-tooltip-label { font-size: 0.72rem; color: var(--neutral-400); }
+.line-chart-tooltip-value { font-size: 0.86rem; font-weight: 700; color: var(--neutral-0); margin-top: 1px; }
+.line-chart-xaxis { position: relative; height: 18px; margin-left: 64px; }
+.line-chart-xtick { position: absolute; top: 0; transform: translateX(-50%); font-size: 0.72rem; color: var(--neutral-400); white-space: nowrap; }
+.line-chart-xtick.first { transform: none; }
+.line-chart-xtick.last { transform: translateX(-100%); }
+.chart-empty { padding: 40px 0; text-align: center; font-size: 0.86rem; color: var(--neutral-400); }
+@media (max-width: 600px) {
+  .line-chart-plot-wrap { height: 190px; }
+  .line-chart-yaxis { flex-basis: 52px; }
+  .line-chart-xaxis { margin-left: 52px; }
+  .line-chart-xtick:not(.first):not(.last) { display: none; }
+}
+
+/* Calendario commissioni: heatmap della guida (4 livelli della rampa accento) */
+.comm-cal .cal-nav { gap: 8px; }
+.comm-cal .cal-nav .btn-icon { width: 34px; height: 34px; padding: 0; font-size: 1.1rem; line-height: 1; }
+.comm-cal .cal-month-label { min-width: 130px; font-size: 0.9rem; font-weight: 600; text-transform: capitalize; letter-spacing: 0; color: var(--neutral-900); }
+.comm-cal .cal-grid { margin-top: 0; }
+.comm-cal .cal-dow { text-transform: none; font-size: 0.74rem; letter-spacing: 0; }
+.comm-cal .cal-cell { min-height: 84px; background: var(--neutral-0); }
+.comm-cal .cal-cell.empty { background: var(--neutral-50); }
+.comm-cal .cal-daynum { font-size: 0.78rem; color: var(--neutral-600); }
+.comm-cal .cal-day-total { font-size: 0.9rem; font-weight: 700; color: var(--neutral-900); }
+.comm-cal .cal-day-detail { font-size: 0.68rem; color: var(--neutral-600); }
+.comm-cal .cal-cell.lvl-1 { background: var(--accent-100); }
+.comm-cal .cal-cell.lvl-2 { background: var(--accent-200); }
+.comm-cal .cal-cell.lvl-3 { background: var(--accent-300); }
+.comm-cal .cal-cell.lvl-4 { background: var(--accent-500); }
+.comm-cal .cal-cell.lvl-4 .cal-daynum, .comm-cal .cal-cell.lvl-4 .cal-day-total, .comm-cal .cal-cell.lvl-4 .cal-day-detail { color: var(--on-accent); }
+.comm-cal .cal-cell.has-events:hover { box-shadow: inset 0 0 0 1px var(--neutral-900); }
+.comm-cal .cal-cell.today { box-shadow: inset 0 0 0 2px var(--neutral-900); }
+.comm-cal .cal-cell.today .cal-daynum { color: var(--neutral-900); font-weight: 700; }
+.cal-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 0.82rem; color: var(--neutral-600); }
+.cal-foot strong { color: var(--neutral-900); }
+.cal-heat-legend { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; color: var(--neutral-400); }
+.cal-heat-legend i { width: 14px; height: 10px; border-radius: var(--radius-pill); }
+.cal-heat-legend i.lvl-1 { background: var(--accent-100); }
+.cal-heat-legend i.lvl-2 { background: var(--accent-200); }
+.cal-heat-legend i.lvl-3 { background: var(--accent-300); }
+.cal-heat-legend i.lvl-4 { background: var(--accent-500); }
+@media (max-width: 720px) {
+  .comm-cal .cal-cell { min-height: 54px; padding: 4px; }
+  .comm-cal .cal-day-total { font-size: 0.7rem; }
+  .comm-cal .cal-day-detail { display: none; }
+}
+.dash-kpis .kpi-card { position: relative; }

@@ -9,9 +9,9 @@ let uiState = {
   crmVenditoreFilter: 'all',   // 'all' | 'trattativa' | 'no_show' | 'perso' — tabella Appuntamenti Venditore
   crmVenditoreSearch: '',      // testo ricerca per nome/telefono — tabella Appuntamenti Venditore
   calMonthOffset: 0,           // scostamento in mesi dal mese corrente, per la navigazione del calendario
-  editingGoal: null,           // { role, timeframe, step } quando un target obiettivo è in modifica inline
-  goalsTimeframe: 'month',     // timeframe attivo (day|week|month) per le card Obiettivi (stile Hero + Sparkline)
-  goalsPeriodMode: 'current',  // 'current' (giorno/settimana/mese corrente) | 'best' (il migliore di sempre per commissioni) per le card Obiettivi
+  editingPaceGoal: null,       // 'setter' | 'venditore' quando l'obiettivo del mese di Pace mese è in modifica
+  goalsTimeframe: 'month',     // "Migliore di sempre" della Dashboard: giorno | settimana | mese (day|week|month)
+  goalsPeriodMode: 'current',  // 'current' (periodo della barra) | 'best' ("Migliore di sempre" per commissioni) in Dashboard
   settingTab: 'appuntamenti',  // tab attiva dentro Setting: 'appuntamenti' | 'sessioni' | 'statistiche'
   venditoreTab: 'lead',        // tab attiva dentro Venditore: 'lead' | 'statistiche'
   period: null,                // periodo UNICO (Dashboard, Sessioni, Statistiche): vedi getPeriod()
@@ -333,19 +333,6 @@ function animateKpiValues(root) {
         else el.textContent = el.dataset.kpiDisplay || String(target);
       }
       requestAnimationFrame(step);
-    }
-  });
-}
-
-/* ---------- Milestone pulse (toggle 11): applica una classe quando una barra supera 50%/75% ---------- */
-function applyMilestonePulses(root) {
-  if (!db.settings.toggles || !db.settings.toggles.midMilestone) return;
-  root.querySelectorAll('[data-goal-pct]').forEach(bar => {
-    const p = parseFloat(bar.dataset.goalPct);
-    if (p >= 50) {
-      bar.classList.remove('milestone-pulse');
-      void bar.offsetWidth;
-      bar.classList.add('milestone-pulse');
     }
   });
 }
@@ -1254,131 +1241,37 @@ function renderDashboardDonuts() {
 }
 
 /**
- * Dashboard — SOLO: Obiettivi Setter, Obiettivi Venditore, Andamento generale (KPI
- * commissioni + grafici a linea Commissioni/Totale Venduto), calendario Commissioni in
- * fondo. La vecchia sezione "Attività di chiamata" (chiamate/lead/esiti/pipeline/
- * produttività) è stata spostata in Setting > Sessioni su richiesta esplicita
- * dell'utente — vedi renderCallActivitySection.
+ * Dashboard (restyling 17/10/2026, prompt 5.1), in quest'ordine e nient'altro:
+ * 1 Task da fare · 2 Prossimi pagamenti · 3 barra del periodo · 4 i quattro grafici a
+ * ciambella (Setting a sinistra, Venditore a destra) · 5 sezioni a tutta larghezza:
+ * Pace mese, Commissioni totali, Commissioni nel tempo, Totale venduto nel tempo ·
+ * 6 Calendario commissioni.
+ * Tolti (Simone, 17/10): funnel e barre degli obiettivi, righe dei tassi (stanno nelle
+ * pagine Stats), countdown/frase/streak, ritmo di chiusura, personal best.
+ * db.goals resta: l'obiettivo del mese serve a Pace mese.
+ * Un solo pulsante nero nella vista: "+ Task" in alto a destra.
  */
 function renderDashboard() {
-  const tasksHtml = renderDashboardTasks();
-  const topSectionsHtml = renderDashboardTopSections();
-  const commissioniCalHtml = renderCommissioniCalendarSection();
-
   appRoot.innerHTML = `
-    ${tasksHtml}
+    ${renderDashboardTasks()}
     ${renderDashboardPayments()}
-    ${topSectionsHtml}
-    ${commissioniCalHtml}
+    ${renderDashboardPeriodBar()}
+    ${renderBestPeriodCaption()}
+    ${renderDashboardDonuts()}
+    ${renderMonthPaceSection()}
+    ${renderCommissionKpiSection()}
+    ${renderAndamentoCharts()}
+    ${renderCommissioniCalendarSection()}
   `;
-
   wireDashboardTasks();
   wireDashboardPayments();
-  wireDashboardTopSectionEvents();
+  wireDashboardSections();
   wireCommissioniCalendarSection();
   animateKpiValues(appRoot);
-  applyMilestonePulses(appRoot);
-}
-
-/**
- * Costruisce il markup delle nuove sezioni in cima alla dashboard:
- * countdown/frase motivazionale, funnel Setter, funnel Venditore, KPI commissioni.
- * La logica di eventi (wiring) è in wireDashboardTopSectionEvents().
- */
-function renderDashboardTopSections() {
-  const periodBarHtml = renderDashboardPeriodBar();
-  const eyebrowsHtml = renderEyebrows();
-  const bestCaptionHtml = renderBestPeriodCaption();
-  const setterFunnel = renderFunnelSection('setter', 'Obiettivi Setter', FUNNEL_STEPS_SETTER);
-  const venditoreFunnel = renderFunnelSection('venditore', 'Obiettivi Venditore', FUNNEL_STEPS_VENDITORE);
-  const commKpi = renderCommissionKpiSection();
-
-  return `
-    ${periodBarHtml}
-    ${bestCaptionHtml}
-    ${renderDashboardDonuts()}
-    ${eyebrowsHtml}
-    <section class="card goals-section">
-      <h2><span class="role-dot setter"></span>Obiettivi Setter${renderMonthPace('setter')}</h2>
-      ${setterFunnel}
-      ${renderSetterRatesRow()}
-    </section>
-    ${LeadCRM.isOn() ? `<section class="card goals-section">
-      <h2><span class="role-dot venditore"></span>Obiettivi Venditore${renderMonthPace('venditore')}</h2>
-      ${venditoreFunnel}
-      ${renderVenditoreRatesRow()}
-    </section>` : ''}
-    ${commKpi}
-  `;
-}
-
-/* Lettera D (Simone, 16/10): le tab Statistiche di Setting e Venditore sono sparite.
- * I numeri che c'erano solo lì (tassi, media fissati, numeri dei lead) stanno
- * in una riga sotto ogni card Obiettivi e seguono il periodo scelto in cima. */
-function dashboardStatsRange() {
-  // "Tutto" (range null) non esiste in dashboard: si usa sempre il periodo della dashboard.
-  return getDashboardRange();
 }
 
 function rateCell(value, label, sub) {
   return `<div class="rate-cell"><div class="rate-val">${value}</div><div class="rate-lab">${escapeHtml(label)}</div>${sub ? `<div class="rate-sub">${sub}</div>` : ''}</div>`;
-}
-
-function renderSetterRatesRow() {
-  const st = computeSetterStats(db, dashboardStatsRange());
-  return `<div class="rates-row">
-    ${rateCell(st.showUpRate + '%', 'Show rate', `${st.presentatiSvolti} presentati su ${st.svolti} svolti`)}
-    ${rateCell(st.closingRate + '%', 'Closing', 'chiusi su presentati')}
-    ${rateCell(String(st.mediaFissatiGiorno).replace('.', ','), 'Fissati al giorno', 'giorni lun-ven')}
-    ${rateCell(st.svolti, 'Già svolti', 'presentati, no show e annullati')}
-  </div>`;
-}
-
-function renderVenditoreRatesRow() {
-  const range = dashboardStatsRange();
-  const st = computeVenditoreStats(db, range);
-  const ls = LeadCRM.newStatsValues(range);
-  return `<div class="rates-row">
-    ${rateCell(st.showRate + '%', 'Show rate', `${st.presentati} presentati su ${st.showRateBase}`)}
-    ${rateCell(st.conversionRate + '%', 'Closing', 'chiusi su presentati in target')}
-    ${rateCell('€' + round2(st.scontrinoMedio), 'Scontrino medio', `${st.chiusi} chiusi`)}
-    ${rateCell(ls.show2 + '%', 'Show rate 2° app.', `${ls.p2} presentati · ${ls.n2} no show`)}
-    ${rateCell(ls.pctFu + '%', 'Chiuse in follow-up', `${ls.cFu} su ${ls.clienti} clienti`)}
-    ${rateCell(`${ls.inT} · <span class="late-tag">${ls.rit}</span>`, 'Follow-up', 'in tempo · in ritardo')}
-  </div>`;
-}
-
-/** Pace del mese (richiesto 2026-10-08): a che cifra di commissioni chiudi il mese se
- * tieni il ritmo attuale. Sempre sul mese corrente, a prescindere dal tab scelto. */
-function renderMonthPace(role) {
-  const p = computeMonthPace(db, role);
-  return `<span class="month-pace" title="Commissioni del mese finora divise per i giorni lavorativi passati, moltiplicate per quelli del mese">
-    <span class="month-pace-label">Pace mese</span>
-    <span class="month-pace-num">€${p.pace}</span>
-    <span class="month-pace-sub">finora €${p.soFar} · giorno ${p.elapsed} di ${p.total} (lun-ven)</span>
-  </span>`;
-}
-
-function renderEyebrows() {
-  const t = db.settings.toggles || {};
-  const parts = [];
-  if (t.monthCountdown) {
-    const now = new Date();
-    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-    const daysLeft = lastDay - now.getDate();
-    parts.push(`<div class="eyebrow">⏳ ${daysLeft} ${daysLeft === 1 ? 'giorno' : 'giorni'} al termine del mese</div>`);
-  }
-  if (t.dailyQuote) {
-    const quotes = motivationalQuotes();
-    const idx = dayOfYear(new Date()) % quotes.length;
-    parts.push(`<div class="eyebrow">"${escapeHtml(quotes[idx])}"</div>`);
-  }
-  if (t.dailyStreak) {
-    const streak = computeStreak();
-    parts.push(`<div class="eyebrow streak-eyebrow">🔥 ${streak} ${streak === 1 ? 'giorno' : 'giorni'} di fila</div>`);
-  }
-  if (!parts.length) return '';
-  return `<section class="card" style="display:flex; flex-direction:column; gap:6px;">${parts.join('')}</section>`;
 }
 
 function trendItem(label, t) {
@@ -1391,51 +1284,103 @@ function trendItem(label, t) {
     </div>`;
 }
 
-/* ============================================================================
- * Obiettivi (goals) — funnel Setter (6 tappe) e Venditore (3 tappe)
- * ==========================================================================*/
+/** Badge di trend della guida (↑ verde / ↓ rosso / = grigio). Unico posto con verde e rosso. */
+function trendBadge(cur, prev) {
+  if (!(prev > 0)) return '';
+  const t = trendDelta(cur, prev);
+  const sym = t.dir === 'up' ? '↑' : (t.dir === 'down' ? '↓' : '=');
+  return `<span class="trend-badge ${t.dir}">${sym} ${String(t.diff).replace('.', ',')}%</span>`;
+}
 
-const FUNNEL_STEPS_SETTER = [
-  { key: 'appuntamentiFissati', label: 'Appuntamenti Fissati', money: false },
-  { key: 'presentati', label: 'Presentati', money: false },
-  { key: 'chiusi', label: 'Chiusi', money: false },
-  { key: 'commissioniShowUp', label: 'Commissioni Show Up', money: true },
-  { key: 'commissioniChiusure', label: 'Commissioni Chiusure', money: true },
-  { key: 'commissioniTot', label: 'Commissioni Tot.', money: true }
-];
+/* ---------- Pace mese (5.1.5 n. 1) ----------
+ * A che cifra di commissioni chiudi il mese se tieni il ritmo attuale (computeMonthPace,
+ * sempre sul mese corrente, non segue la barra del periodo). Con l'obiettivo del mese
+ * (db.goals[ruolo].month) una barra pace / obiettivo; l'obiettivo si cambia con ✎. */
+const MONTH_PACE_GOAL_KEY = { setter: 'commissioniTot', venditore: 'commissioniVendita' };
 
-// Per il venditore, "appuntamentiFissati" è in realtà "Appuntamenti Assegnati": conteggio
-// AUTOMATICO delle righe CRM create con ruolo Venditore nel periodo selezionato (stesso
-// meccanismo con cui il Setter conta "Appuntamenti Fissati" — vedi computeFunnelValues).
-// CORREZIONE (segnalata dall'utente): prima era un campo inserito a mano, ma il numero
-// giusto è quello che risulta da "quando selezioni il ruolo venditore" nel CRM, non un
-// valore digitato separatamente — vedi isAutoAssignedField in renderFunnelHero.
-const FUNNEL_STEPS_VENDITORE = [
-  { key: 'appuntamentiFissati', label: 'Appuntamenti Assegnati', money: false, isAutoAssignedField: true },
-  { key: 'presentati', label: 'Presentati', money: false },
-  { key: 'chiusi', label: 'Chiusi', money: false },
-  // 4a tappa richiesta esplicitamente dall'utente: il totale VENDUTO (non le commissioni)
-  // sugli appuntamenti Venditore chiusi nel periodo — vedi "fatturato" in computeFunnelValues.
-  { key: 'fatturato', label: 'Fatturato', money: true },
-  // 5a tappa: commissioni Venditore = 10% dell'incassato (cash collected + rate pagate), vedi computeFunnelValues.
-  { key: 'commissioniVendita', label: 'Commissioni', money: true }
-];
+function renderMonthPaceCell(role, label) {
+  const p = computeMonthPace(db, role);
+  const key = MONTH_PACE_GOAL_KEY[role];
+  const goal = Number(((db.goals[role] || {}).month || {})[key]) || 0;
+  const editing = uiState.editingPaceGoal === role;
+  const pctGoal = goal > 0 ? Math.min(100, Math.round(p.pace / goal * 100)) : 0;
+  const goalHtml = editing
+    ? `<label class="pace-goal-edit">Obiettivo del mese <input type="number" min="0" step="50" id="paceGoalInput" data-role="${role}" value="${goal || ''}" placeholder="€"></label>`
+    : `<button class="pace-goal-btn" data-pace-goal="${role}" title="Modifica l'obiettivo del mese">${goal > 0 ? 'Obiettivo ' + fmtNumIt(goal, true) : 'Imposta obiettivo'} ✎</button>`;
+  return `
+    <div class="pace-cell">
+      <div class="pace-cell-head"><span class="pace-cell-label">${escapeHtml(label)}</span>${goalHtml}</div>
+      <div class="pace-cell-num" data-kpi-num="${p.pace}" data-kpi-money="0" data-kpi-display="${fmtNumIt(p.pace, true)}">${fmtNumIt(p.pace, true)}</div>
+      <div class="pace-cell-sub">finora ${fmtNumIt(p.soFar, true)} · giorno ${p.elapsed} di ${p.total} (lun-ven)</div>
+      ${goal > 0 ? `<div class="pace-goal-bar" title="Pace sul ${pctGoal}% dell'obiettivo"><i style="width:${pctGoal}%"></i></div>
+      <div class="pace-cell-sub">${p.pace >= goal ? 'Al ritmo attuale arrivi all\'obiettivo' : 'Al ritmo attuale mancano ' + fmtNumIt(goal - p.pace, true)}</div>` : ''}
+    </div>`;
+}
+
+function renderMonthPaceSection() {
+  const month = new Date().toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+  return `
+    <section class="card dash-section">
+      <div class="dash-section-head">
+        <h3>Pace mese</h3>
+        <span class="dash-section-note">${escapeHtml(month)} · commissioni a fine mese se tieni questo ritmo</span>
+      </div>
+      <div class="pace-grid">
+        ${renderMonthPaceCell('setter', 'Setter')}
+        ${LeadCRM.isOn() ? renderMonthPaceCell('venditore', 'Venditore') : ''}
+      </div>
+    </section>`;
+}
+
+/** Eventi delle sezioni sotto i pagamenti (periodo, Migliore di sempre, obiettivo Pace
+ * mese, filtro ruolo del grafico Commissioni, cursore dei grafici a linee). */
+function wireDashboardSections() {
+  wirePeriodBar(renderDashboard, () => { uiState.goalsPeriodMode = 'current'; });
+  appRoot.querySelectorAll('[data-goals-tf]').forEach(btn => btn.addEventListener('click', () => {
+    uiState.goalsTimeframe = btn.dataset.goalsTf;
+    renderDashboard();
+  }));
+  appRoot.querySelectorAll('[data-goals-period-mode]').forEach(btn => btn.addEventListener('click', () => {
+    uiState.goalsPeriodMode = 'best';
+    renderDashboard();
+  }));
+  appRoot.querySelectorAll('[data-pace-goal]').forEach(btn => btn.addEventListener('click', () => {
+    uiState.editingPaceGoal = btn.dataset.paceGoal;
+    renderDashboard();
+    const inp = document.getElementById('paceGoalInput');
+    if (inp) { inp.focus(); inp.select(); }
+  }));
+  const goalInput = document.getElementById('paceGoalInput');
+  if (goalInput) {
+    let done = false;
+    const commit = (save) => {
+      if (done) return; done = true;
+      const role = goalInput.dataset.role;
+      if (save) {
+        db.goals[role].month[MONTH_PACE_GOAL_KEY[role]] = Math.max(0, parseFloat(goalInput.value) || 0);
+        persist();
+      }
+      uiState.editingPaceGoal = null;
+      renderDashboard();
+    };
+    goalInput.addEventListener('keydown', e => { if (e.key === 'Enter') commit(true); if (e.key === 'Escape') commit(false); });
+    goalInput.addEventListener('blur', () => commit(true));
+  }
+  appRoot.querySelectorAll('[data-andamento-comm-role]').forEach(btn => btn.addEventListener('click', () => {
+    uiState.andamentoCommRole = btn.dataset.andamentoCommRole;
+    renderDashboard();
+  }));
+  wireLineCharts(appRoot);
+}
 
 const TIMEFRAME_KEYS = ['day', 'week', 'month'];
 const BEST_PERIOD_LABELS = { day: 'Miglior giorno', week: 'Migliore settimana', month: 'Miglior mese' };
 
-/* ---------- Periodo unico della dashboard (Simone, 2026-10-15) ----------
- * Una sola barra in cima (Oggi / Ieri / 7 giorni / 30 giorni / 90 giorni / Mese corrente /
- * Mese scorso / Personalizzato + "🏆 Migliore di sempre") che vale per TUTTA la dashboard:
- * Obiettivi Setter, Obiettivi Venditore e Andamento generale. Regole decise da Simone:
- * - Oggi / Ieri -> obiettivo del giorno; 7 giorni -> della settimana; 30 giorni / Mese
- *   corrente / Mese scorso -> del mese; 90 giorni / Personalizzato -> numeri senza barra
- *   obiettivo.
- * - "Migliore di sempre": il giorno/settimana/mese con più commissioni (scelta Giorno /
- *   Settimana / Mese visibile solo in quella modalità), usato da tutta la dashboard.
- * - Pace mese e calendario commissioni restano sul mese, come prima.
+/* ---------- "Migliore di sempre" (Simone, 2026-10-15) ----------
+ * Tasto in più nella barra del periodo, solo in Dashboard: il giorno/settimana/mese con
+ * più commissioni (scelta Giorno / Settimana / Mese visibile solo in quella modalità),
+ * usato da tutta la dashboard. Pace mese e calendario commissioni restano sul mese.
  */
-const DASH_GOAL_TF = { oggi: 'day', ieri: 'day', '7g': 'week', '30g': 'month', mese_corrente: 'month', mese_scorso: 'month' };
 
 /* ---------- Periodo unico (Simone, 16/10) ----------
  * Prima Dashboard, Sessioni e le due Statistiche avevano quattro selettori diversi e,
@@ -1556,15 +1501,6 @@ function getDashboardRange() {
 }
 
 /** Quale obiettivo (day/week/month) usare per il periodo scelto; null = nessuno. */
-function getDashboardGoalTf() {
-  if (uiState.goalsPeriodMode === 'best') return uiState.goalsTimeframe;
-  return DASH_GOAL_TF[getPeriod().tf] || null;
-}
-
-function renderFunnelSection(role, title, steps) {
-  return renderFunnelCard(role, getDashboardGoalTf(), steps, getDashboardRange());
-}
-
 /** Barra del periodo in cima alla dashboard: la barra unica + "Migliore di sempre". */
 function renderDashboardPeriodBar() {
   const best = uiState.goalsPeriodMode === 'best';
@@ -1594,261 +1530,59 @@ function renderBestPeriodCaption() {
   return `<div class="eyebrow">🏆 ${BEST_PERIOD_LABELS[tf]}: ${label} — €${best.total} di commissioni</div>`;
 }
 
-function renderFunnelCard(role, timeframe, steps, range) {
-  const values = computeFunnelValues(db, role, range);
-  // timeframe null (90 giorni / Personalizzato): numeri senza obiettivo.
-  const goalSet = timeframe ? db.goals[role][timeframe] : null;
-  const heroStep = steps[0];
-  const miniSteps = steps.slice(1);
-  const heroHtml = renderFunnelHero(role, timeframe, heroStep, values, goalSet, range);
-  const miniHtml = miniSteps.map(step => renderFunnelMini(role, timeframe, step, values, goalSet, range)).join('');
-  const rowClass = miniSteps.length <= 2 ? 'v3' : (miniSteps.length === 3 ? 'v4' : (miniSteps.length === 4 ? 'v5' : ''));
-  return `
-    <div class="card funnel-card ${role}">
-      <div class="hero-row ${rowClass}">
-        ${heroHtml}
-        ${miniHtml}
-      </div>
-    </div>`;
-}
-
-/** Prima tappa del funnel, resa in grande ("hero") — sempre la tappa "di ingresso"
- * (Appuntamenti Fissati per il setter, Appuntamenti Assegnati — manuale — per il venditore). */
-function renderFunnelHero(role, timeframe, step, values, goalSet, range) {
-  const current = values[step.key] || 0;
-  const isMoney = step.money;
-  const fmtVal = (n) => isMoney ? `€${round2(n)}` : String(n);
-
-  if (step.isAutoAssignedField) {
-    // Conteggio automatico dal CRM (righe con ruolo Venditore nel periodo) — non più un
-    // campo manuale: "current" arriva già da computeFunnelValues come le altre tappe.
-    const assigned = current;
-    // Bug 7 (Simone, 16/10): qui c'era "presentati su assegnati" (45%) mentre le Statistiche
-    // davano lo show rate (53%). Ora è lo stesso show rate ovunque (computeVenditoreStats).
-    const presentedPct = computeVenditoreStats(db, range).showRate;
-    const closedPct = assigned > 0 ? pct(values.chiusi, assigned) : 0;
-    return `
-      <div class="hero-main ${role}">
-        <div class="hero-label">${escapeHtml(step.label)}</div>
-        <div class="hero-num" data-kpi-num="${assigned}" data-kpi-money="0" data-kpi-display="${assigned}">${assigned}</div>
-        <div class="hero-of">${presentedPct}% show rate · ${closedPct}% chiusi su assegnati</div>
-      </div>`;
-  }
-
-  if (!goalSet) {
-    return `
-      <div class="hero-main ${role}">
-        <div class="hero-label">${escapeHtml(step.label)}</div>
-        <div class="hero-num" data-kpi-num="${current}" data-kpi-money="${isMoney ? '1' : '0'}" data-kpi-display="${fmtVal(current)}">${fmtVal(current)}</div>
-        <div class="hero-of">nessun obiettivo per questo periodo</div>
-      </div>`;
-  }
-
-  const target = goalSet[step.key] || 0;
-  const progressPct = target > 0 ? Math.min(100, pct(current, target)) : 0;
-  const complete = target > 0 && current >= target;
-  const editing = uiState.editingGoal && uiState.editingGoal.role === role && uiState.editingGoal.timeframe === timeframe && uiState.editingGoal.step === step.key;
-
-  const editRow = editing
-    ? `<input type="number" min="0" class="funnel-target-input" id="goalEditInput" value="${target}">`
-    : `<span class="hero-of">obiettivo ${fmtVal(target)}${target > 0 ? (complete ? ' — superato' : '') : ''}</span><button class="funnel-target-edit" data-edit-goal="1" data-role="${role}" data-tf="${timeframe}" data-step="${step.key}" title="Modifica obiettivo">✎</button>`;
-
-  return `
-    <div class="hero-main ${role}">
-      <div class="hero-label">${escapeHtml(step.label)}</div>
-      <div class="hero-num" data-kpi-num="${current}" data-kpi-money="${isMoney ? '1' : '0'}" data-kpi-display="${fmtVal(current)}">${fmtVal(current)}</div>
-      <div class="hero-edit-row">${editRow}</div>
-      ${renderPaceBar(current, target, timeframe, isMoney, 'hero-bar')}
-    </div>`;
-}
-
-/**
- * Design "Ritmo" (scelto da Simone il 2026-10-08): ogni obiettivo ha una barra con una
- * tacca che segna dove dovresti essere ADESSO nel periodo, e sotto se sei in linea o
- * quanto sei indietro.
- * Quota di periodo trascorsa: Giorno = ore lavorative 9-19; Settimana e Mese = giorni
- * lavorativi lun-ven passati (oggi incluso). Un periodo già finito (es. "Migliore di
- * sempre") vale 1.
- */
-function goalElapsedFraction(timeframe) {
-  const range = getDashboardRange();
-  const now = new Date();
-  if (now > range.end) return 1;
-  if (now < range.start) return 0;
-  if (timeframe === 'day') {
-    const h = now.getHours() + now.getMinutes() / 60;
-    return Math.max(0, Math.min(1, (h - 9) / 10));
-  }
-  const total = countWeekdays(range.start, range.end);
-  return total > 0 ? Math.min(1, countWeekdays(range.start, now) / total) : 1;
-}
-
-function renderPaceBar(current, target, timeframe, isMoney, extraCls) {
-  const fmt = (n) => isMoney ? `€${Math.round(n)}` : String(n);
-  if (!(target > 0)) {
-    return `<div class="pace-wrap ${extraCls}"><div class="goal-bar-track"><div class="goal-bar-fill" style="width:0%"></div></div></div>
-      <div class="pace-status dim">Imposta un obiettivo</div>`;
-  }
-  const frac = goalElapsedFraction(timeframe);
-  const progressPct = Math.min(100, pct(current, target));
-  const expected = target * frac;
-  let cls, msg;
-  if (current >= target) { cls = 'ok'; msg = 'Obiettivo raggiunto'; }
-  else if (current >= expected) { cls = 'ok'; msg = 'In linea col ritmo'; }
-  else {
-    const gap = isMoney ? Math.round(expected - current) : Math.ceil(expected - current - 1e-9);
-    cls = 'late'; msg = `Indietro di ${fmt(gap)}`;
-  }
-  return `<div class="pace-wrap ${extraCls}" data-goal-pct="${progressPct}">
-      <div class="goal-bar-track"><div class="goal-bar-fill pace-${cls}" style="width:${progressPct}%"></div></div>
-      ${frac > 0 && frac < 1 ? `<div class="pace-mark" style="left:${Math.round(frac * 100)}%" title="Dove dovresti essere adesso"></div>` : ''}
-    </div>
-    <div class="pace-status ${cls}">${msg}</div>`;
-}
-
-/** Tappe successive del funnel, rese come tile compatte con barra "Ritmo" (vedi renderPaceBar). */
-function renderFunnelMini(role, timeframe, step, values, goalSet, range) {
-  const current = values[step.key] || 0;
-  const isMoney = step.money;
-  const fmtVal = (n) => isMoney ? `€${round2(n)}` : String(n);
-  if (!goalSet) {
-    return `
-    <div class="mini ${role}">
-      <div class="mini-label">${escapeHtml(step.label)}</div>
-      <div class="mini-num" data-kpi-num="${current}" data-kpi-money="${isMoney ? '1' : '0'}" data-kpi-display="${fmtVal(current)}">${fmtVal(current)}</div>
-    </div>`;
-  }
-  const target = goalSet[step.key] || 0;
-  const progressPct = target > 0 ? Math.min(100, pct(current, target)) : 0;
-  const complete = target > 0 && current >= target;
-  const editing = uiState.editingGoal && uiState.editingGoal.role === role && uiState.editingGoal.timeframe === timeframe && uiState.editingGoal.step === step.key;
-
-  const targetHtml = editing
-    ? `<input type="number" min="0" class="funnel-target-input" id="goalEditInput" value="${target}">`
-    : `<span>${fmtVal(target)}</span><button class="funnel-target-edit" data-edit-goal="1" data-role="${role}" data-tf="${timeframe}" data-step="${step.key}" title="Modifica obiettivo">✎</button>`;
-
-  return `
-    <div class="mini ${role}">
-      <div class="mini-label">${escapeHtml(step.label)}</div>
-      <div class="mini-num" data-kpi-num="${current}" data-kpi-money="${isMoney ? '1' : '0'}" data-kpi-display="${fmtVal(current)}">${fmtVal(current)}</div>
-      <div class="mini-target">/ ${targetHtml}</div>
-      ${renderPaceBar(current, target, timeframe, isMoney, '')}
-    </div>`;
-}
-
-function wireDashboardTopSectionEvents() {
-  appRoot.querySelectorAll('[data-goals-tf]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      uiState.goalsTimeframe = btn.dataset.goalsTf;
-      renderDashboard();
-    });
-  });
-  appRoot.querySelectorAll('[data-goals-period-mode]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      uiState.goalsPeriodMode = 'best';
-      renderDashboard();
-    });
-  });
-  appRoot.querySelectorAll('[data-edit-goal]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      uiState.editingGoal = { role: btn.dataset.role, timeframe: btn.dataset.tf, step: btn.dataset.step };
-      renderDashboard();
-      const input = document.getElementById('goalEditInput');
-      if (input) { input.focus(); input.select(); }
-    });
-  });
-  const goalInput = document.getElementById('goalEditInput');
-  if (goalInput) {
-    const commit = () => {
-      const g = uiState.editingGoal;
-      if (!g) return;
-      const val = Math.max(0, parseFloat(goalInput.value) || 0);
-      db.goals[g.role][g.timeframe][g.step] = val;
-      uiState.editingGoal = null;
-      persist();
-      renderDashboard();
-    };
-    goalInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') commit();
-      if (e.key === 'Escape') { uiState.editingGoal = null; renderDashboard(); }
-    });
-    goalInput.addEventListener('blur', commit);
-  }
-
-  wirePeriodBar(renderDashboard, () => { uiState.goalsPeriodMode = 'current'; });
-  appRoot.querySelectorAll('[data-andamento-comm-role]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      uiState.andamentoCommRole = btn.dataset.andamentoCommRole;
-      renderDashboard();
-    });
-  });
-
-  wireLineCharts(appRoot);
-}
-
 /* ============================================================================
- * Andamento generale (dashboard) — KPI commissioni timeframe-aware + due grafici a
- * linea (Commissioni, Totale Venduto). Prima era fissa sul mese corrente; su richiesta
- * esplicita dell'utente ora ha gli stessi timeframe delle sessioni (incluso un periodo
- * personalizzato), e il grafico Commissioni ha in più un filtro Tutti/Setter/Venditore
- * per vedere come sono cresciute le due parti separatamente nel tempo.
+ * Commissioni totali e grafici nel tempo (dashboard, 5.1.5 n. 2-4). Seguono la barra
+ * del periodo. Card KPI della guida: etichetta, numero grande, "vs periodo prima" con
+ * badge di trend verde/rosso (periodo precedente della stessa durata, previousPeriod).
+ * Con "Tutto" non c'è un periodo prima: niente badge.
+ * Stesso range delle Stats Setting per "Tutto" (dal primo dato a oggi).
  * ==========================================================================*/
 
 function renderCommissionKpiSection() {
   const tf = getPeriod().tf;
+  const best = uiState.goalsPeriodMode === 'best';
   const range = getDashboardRange();
   const summary = computeCommissionSummary(db, range);
-  const pace = db.settings.toggles.closingPace ? renderClosingPaceNote() : '';
-  const personalBest = db.settings.toggles.personalBest ? renderPersonalBestBadge() : '';
+  const prev = (!best && tf === 'all') ? null : computeCommissionSummary(db, previousPeriod(range));
+  const vOn = LeadCRM.isOn();
+  const cell = (label, val, prevVal, anchor) => `
+      <div class="kpi-card${anchor ? ' accented' : ''}"${anchor ? ' data-ticker-anchor="1"' : ''}>
+        <div class="kpi-label">${escapeHtml(label)}</div>
+        <div class="kpi-value" data-kpi-num="${val}" data-kpi-money="0" data-kpi-display="${fmtNumIt(val, true)}">${fmtNumIt(val, true)}</div>
+        <div class="kpi-vs">${prev ? `${trendBadge(val, prevVal)}<span>vs periodo prima (${fmtNumIt(prevVal, true)})</span>` : '<span>tutto lo storico</span>'}</div>
+      </div>`;
+  const p = prev || { total: 0, showup: 0, setting: 0, vendita: 0 };
+  return `
+    <section class="card dash-section">
+      <div class="dash-section-head"><h3>Commissioni totali</h3><span class="dash-section-note">${best ? '' : escapeHtml(tf === 'all' ? 'Tutto lo storico' : periodRangeShort(range))}</span></div>
+      <div class="kpi-grid dash-kpis${vOn ? '' : ' three'}">
+        ${cell('Totale', summary.total, p.total, true)}
+        ${cell('Setter · da show', summary.showup, p.showup)}
+        ${cell('Setter · da venduto', summary.setting, p.setting)}
+        ${vOn ? cell('Venditore · incassato', summary.vendita, p.vendita) : ''}
+      </div>
+    </section>`;
+}
 
+function renderAndamentoCharts() {
+  const tf = getPeriod().tf;
+  const range = getDashboardRange();
   const commRole = uiState.andamentoCommRole || 'all';
   const commSeries = buildAndamentoSeries(range, tf, 'commissioni', commRole);
   const venditoSeries = buildAndamentoSeries(range, tf, 'venduto', 'all');
-
-  const commChart = renderLineChart(commSeries.values, commSeries.labels, { color: commRole === 'setter' ? 'var(--setter-color)' : (commRole === 'venditore' ? 'var(--venditore-color)' : 'var(--accent)'), money: true });
-  const vendutoChart = renderLineChart(venditoSeries.values, venditoSeries.labels, { color: 'var(--accent)', money: true });
-
+  const roleTab = (k, l) => `<button class="tab ${commRole === k ? 'active' : ''}" data-andamento-comm-role="${k}">${l}</button>`;
   return `
-    <div class="section-separator"><span class="eyebrow">Andamento generale</span></div>
-
-    <section class="kpi-grid">
-      <div class="card kpi-card accented" data-ticker-anchor="1">
-        <div class="kpi-value" data-kpi-num="${summary.total}" data-kpi-money="1" data-kpi-display="€${summary.total}">€${summary.total}</div>
-        <div class="kpi-label">Commissioni Tot.</div>
+    <section class="card dash-section chart-card">
+      <div class="dash-section-head">
+        <h3>Commissioni nel tempo</h3>
+        <div class="tabs">${roleTab('all', 'Tutti')}${roleTab('setter', 'Setter')}${LeadCRM.isOn() ? roleTab('venditore', 'Venditore') : ''}</div>
       </div>
-      <div class="card kpi-card">
-        <div class="kpi-value" data-kpi-num="${summary.setting}" data-kpi-money="1" data-kpi-display="€${summary.setting}">€${summary.setting}</div>
-        <div class="kpi-label">Da Setting (chiusure)</div>
-      </div>
-      <div class="card kpi-card">
-        <div class="kpi-value" data-kpi-num="${summary.vendita}" data-kpi-money="1" data-kpi-display="€${summary.vendita}">€${summary.vendita}</div>
-        <div class="kpi-label">Da Vendita</div>
-      </div>
-      <div class="card kpi-card">
-        <div class="kpi-value" data-kpi-num="${summary.showup}" data-kpi-money="1" data-kpi-display="€${summary.showup}">€${summary.showup}</div>
-        <div class="kpi-label">Show Up (setter)</div>
-      </div>
+      ${renderLineChart(commSeries.values, commSeries.labels, { money: true, name: 'Commissioni' })}
     </section>
-    ${pace}${personalBest}
-
-    <section class="two-col">
-      <div class="card chart-card">
-        <div class="chart-card-header">
-          <h3>Commissioni nel tempo</h3>
-          <div class="chip-select-row" style="gap:4px;">
-            <button class="chip-select ${commRole === 'all' ? 'active' : ''}" data-andamento-comm-role="all">Tutti</button>
-            <button class="chip-select ${commRole === 'setter' ? 'active' : ''}" data-andamento-comm-role="setter">Setter</button>
-            <button class="chip-select ${commRole === 'venditore' ? 'active' : ''}" data-andamento-comm-role="venditore">Venditore</button>
-          </div>
-        </div>
-        ${commChart}
-      </div>
-      <div class="card chart-card">
-        <h3>Totale Venduto nel tempo</h3>
-        ${vendutoChart}
-      </div>
-    </section>
-  `;
+    <section class="card dash-section chart-card">
+      <div class="dash-section-head"><h3>Totale venduto nel tempo</h3><span class="dash-section-note">appuntamenti chiusi, Setter e Venditore</span></div>
+      ${renderLineChart(venditoSeries.values, venditoSeries.labels, { money: true, name: 'Venduto' })}
+    </section>`;
 }
 
 /**
@@ -1933,97 +1667,81 @@ function niceTicks(maxVal, tickCount) {
 }
 
 /**
- * Grafico a linea SVG minimale (nessuna libreria esterna): stroke colorato + area
- * riempita con gradiente leggero sotto la linea. Oltre alla linea colorata, il grafico
- * ha (su richiesta esplicita dell'utente):
- * - un asse Y a sinistra con valori in euro puliti (0/500/1.000/...), "come un normale
- *   grafico", invece di lasciare i valori solo nel footer;
- * - un cursore (crosshair) che segue il mouse/tocco e si aggancia al punto più vicino,
- *   con una mini-card che mostra il giorno/microperiodo e la commissione/importo esatti
- *   di quel punto — vedi wireLineCharts per l'interazione.
- * Il rendering usa un viewBox con lo STESSO rapporto d'aspetto del box CSS (via
- * aspect-ratio), quindi niente preserveAspectRatio="none": cerchi e testo non si
- * deformano più con la larghezza del contenitore.
- * opts.color accetta qualunque valore CSS valido (anche var(--...) del tema attivo).
+ * Grafico a linee SVG (nessuna libreria). Restyling 17/10 (step 9), stile della guida:
+ * griglia orizzontale tratteggiata neutral-200, assi in neutral-400, una linea accent-500
+ * da 2 px con un'area tenue sotto, niente pallini fissi (solo quello del cursore),
+ * tooltip neutral-900. Asse Y in euro "puliti" (niceTicks) e qualche data sotto.
+ * Altezza fissa da CSS (.line-chart-plot-wrap): l'SVG si stira in larghezza
+ * (preserveAspectRatio none) e le linee restano da 2 px (vector-effect); il pallino del
+ * cursore è un elemento HTML, così resta tondo.
+ * Il cursore segue il mouse/tocco e si aggancia al punto più vicino: vedi wireLineCharts.
  */
 let lineChartIdCounter = 0;
 let lineChartRegistry = {};
 function renderLineChart(series, labels, opts) {
   opts = opts || {};
-  const color = opts.color || 'var(--accent)';
   const money = !!opts.money;
-  const w = 640, h = 220, padX = 10, padY = 14, axisW = 64;
-  const plotX0 = axisW, plotW = w - axisW - padX;
+  const w = 1000, h = 240, padY = 12;
   const gradId = 'lcGrad' + (lineChartIdCounter++);
   const chartId = 'lc' + lineChartIdCounter;
 
   if (!series.length || series.every(v => v === 0)) {
-    return `<div class="chart-empty text-dim">Nessun dato nel periodo selezionato.</div>`;
+    return `<div class="chart-empty">Nessun dato nel periodo selezionato.</div>`;
   }
 
   const ticks = niceTicks(Math.max(...series), 4);
   const domainMax = ticks[ticks.length - 1] || 1;
   const n = series.length;
-  const xStep = n > 1 ? plotW / (n - 1) : 0;
+  const xFor = (i) => n > 1 ? (w * i) / (n - 1) : w / 2;
   const yFor = (v) => padY + (1 - v / domainMax) * (h - padY * 2);
-  const points = series.map((v, i) => [plotX0 + xStep * i, yFor(v)]);
+  const points = series.map((v, i) => [xFor(i), yFor(v)]);
+  const fmtVal = (v) => money ? fmtNumIt(v, true) : String(v);
 
   const linePath = points.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
   const areaPath = linePath + ` L${points[n - 1][0].toFixed(1)},${(h - padY).toFixed(1)} L${points[0][0].toFixed(1)},${(h - padY).toFixed(1)} Z`;
-
-  const lastVal = series[series.length - 1];
-  const firstVal = series[0];
-  const fmtVal = (v) => money ? `€${round2(v)}` : String(v);
-
-  const gridlinesHtml = ticks.map(t => {
-    const y = yFor(t).toFixed(1);
-    return `<line class="line-chart-grid" x1="${plotX0}" y1="${y}" x2="${(w - padX).toFixed(1)}" y2="${y}"/>`;
-  }).join('');
-  const axisLabelsHtml = ticks.map(t => {
-    const topPct = ((yFor(t) / h) * 100).toFixed(2);
-    return `<div class="line-chart-yaxis-tick" style="top:${topPct}%;">${fmtVal(t)}</div>`;
+  const gridlinesHtml = ticks.map(t => `<line class="line-chart-grid" x1="0" y1="${yFor(t).toFixed(1)}" x2="${w}" y2="${yFor(t).toFixed(1)}" vector-effect="non-scaling-stroke"/>`).join('');
+  const axisLabelsHtml = ticks.map(t => `<div class="line-chart-yaxis-tick" style="top:${((yFor(t) / h) * 100).toFixed(2)}%;">${fmtVal(t)}</div>`).join('');
+  // Date sotto: al massimo 5, distribuite (prima e ultima sempre).
+  const xIdx = n <= 5 ? series.map((_, i) => i) : [0, Math.round((n - 1) / 4), Math.round((n - 1) / 2), Math.round(3 * (n - 1) / 4), n - 1];
+  const xLabelsHtml = [...new Set(xIdx)].map((i, k, arr) => {
+    const cls = k === 0 ? ' first' : (k === arr.length - 1 ? ' last' : '');
+    return `<span class="line-chart-xtick${cls}" style="left:${(xFor(i) / w * 100).toFixed(2)}%">${escapeHtml(labels[i] || '')}</span>`;
   }).join('');
 
-  lineChartRegistry[chartId] = { points, values: series, labels: labels || [], color, money, w, h, padY };
+  lineChartRegistry[chartId] = { points, values: series, labels: labels || [], money, w, h, name: opts.name || '' };
 
   return `
     <div class="line-chart-wrap" data-chart-id="${chartId}">
       <div class="line-chart-body">
-        <div class="line-chart-yaxis" style="width:${axisW}px;">${axisLabelsHtml}</div>
-        <div class="line-chart-plot-wrap" style="aspect-ratio:${(w - axisW)} / ${h};">
-          <svg class="line-chart-svg" viewBox="${plotX0} 0 ${w - plotX0} ${h}" preserveAspectRatio="none">
+        <div class="line-chart-yaxis">${axisLabelsHtml}</div>
+        <div class="line-chart-plot-wrap">
+          <svg class="line-chart-svg" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(opts.name || 'Grafico')}">
             <defs>
               <linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>
-                <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+                <stop offset="0%" stop-color="var(--accent-500)" stop-opacity="0.16"/>
+                <stop offset="100%" stop-color="var(--accent-500)" stop-opacity="0"/>
               </linearGradient>
             </defs>
             ${gridlinesHtml}
             <path d="${areaPath}" fill="url(#${gradId})" stroke="none"/>
-            <path d="${linePath}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-            ${points.map(p => `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.4" fill="${color}"/>`).join('')}
-            <line class="line-chart-crosshair" x1="0" y1="${padY}" x2="0" y2="${h - padY}" hidden/>
-            <circle class="line-chart-hoverdot" cx="0" cy="0" r="4.5" fill="${color}" hidden/>
-            <rect class="line-chart-hit" x="${plotX0}" y="0" width="${w - plotX0}" height="${h}" fill="transparent"/>
+            <path class="line-chart-line" d="${linePath}" fill="none" vector-effect="non-scaling-stroke"/>
+            <line class="line-chart-crosshair" x1="0" y1="${padY}" x2="0" y2="${h - padY}" vector-effect="non-scaling-stroke" hidden/>
+            <rect class="line-chart-hit" x="0" y="0" width="${w}" height="${h}" fill="transparent"/>
           </svg>
+          <div class="line-chart-dot" hidden></div>
           <div class="line-chart-tooltip" hidden>
-            <div class="line-chart-tooltip-value"></div>
             <div class="line-chart-tooltip-label"></div>
+            <div class="line-chart-tooltip-value"></div>
           </div>
         </div>
       </div>
-      <div class="line-chart-footer">
-        <span class="text-dim">Inizio: ${fmtVal(firstVal)}</span>
-        <span class="line-chart-last" style="color:${color};">Ultimo: ${fmtVal(lastVal)}</span>
-      </div>
+      <div class="line-chart-xaxis">${xLabelsHtml}</div>
     </div>`;
 }
 
 /**
- * Wiring del cursore/tooltip per ogni grafico a linea renderizzato in root (chiamare
- * dopo aver inserito l'HTML nel DOM). Legge i dati dal registry popolato da
- * renderLineChart (punti in coordinate SVG, valori e etichette periodo) invece di
- * ricalcolarli o di serializzarli nell'HTML, più semplice ed evita problemi di escaping.
+ * Cursore/tooltip per ogni grafico a linee in root (da chiamare dopo aver messo l'HTML
+ * nel DOM). I dati arrivano dal registry di renderLineChart.
  */
 function wireLineCharts(root) {
   (root || appRoot).querySelectorAll('[data-chart-id]').forEach(wrap => {
@@ -2032,126 +1750,41 @@ function wireLineCharts(root) {
     const svg = wrap.querySelector('.line-chart-svg');
     const hit = wrap.querySelector('.line-chart-hit');
     const crosshair = wrap.querySelector('.line-chart-crosshair');
-    const hoverDot = wrap.querySelector('.line-chart-hoverdot');
+    const dot = wrap.querySelector('.line-chart-dot');
     const tooltip = wrap.querySelector('.line-chart-tooltip');
-    const tooltipValue = tooltip ? tooltip.querySelector('.line-chart-tooltip-value') : null;
-    const tooltipLabel = tooltip ? tooltip.querySelector('.line-chart-tooltip-label') : null;
-    if (!svg || !hit || !crosshair || !hoverDot || !tooltip) return;
-
-    const fmtVal = (v) => chart.money ? `€${round2(v)}` : String(v);
+    if (!svg || !hit || !crosshair || !dot || !tooltip) return;
+    const tipValue = tooltip.querySelector('.line-chart-tooltip-value');
+    const tipLabel = tooltip.querySelector('.line-chart-tooltip-label');
+    const fmtVal = (v) => chart.money ? fmtNumIt(v, true) : String(v);
 
     function showAt(index) {
       const p = chart.points[index];
       if (!p) return;
-      crosshair.setAttribute('x1', p[0]); crosshair.setAttribute('x2', p[0]);
-      crosshair.removeAttribute('hidden');
-      hoverDot.setAttribute('cx', p[0]); hoverDot.setAttribute('cy', p[1]);
-      hoverDot.removeAttribute('hidden');
-
-      if (tooltipValue) tooltipValue.textContent = fmtVal(chart.values[index]);
-      if (tooltipLabel) tooltipLabel.textContent = chart.labels[index] || '';
       const leftPct = (p[0] / chart.w) * 100;
       const topPct = (p[1] / chart.h) * 100;
+      crosshair.setAttribute('x1', p[0]); crosshair.setAttribute('x2', p[0]);
+      crosshair.removeAttribute('hidden');
+      dot.style.left = leftPct + '%'; dot.style.top = topPct + '%'; dot.hidden = false;
+      tipValue.textContent = (chart.name ? chart.name + ' ' : '') + fmtVal(chart.values[index]);
+      tipLabel.textContent = chart.labels[index] || '';
+      tooltip.style.left = leftPct + '%';
       tooltip.style.top = topPct + '%';
-      if (leftPct < 20) { tooltip.style.left = leftPct + '%'; tooltip.style.transform = 'translate(0, -100%)'; }
-      else if (leftPct > 80) { tooltip.style.left = leftPct + '%'; tooltip.style.transform = 'translate(-100%, -100%)'; }
-      else { tooltip.style.left = leftPct + '%'; tooltip.style.transform = 'translate(-50%, -100%)'; }
+      tooltip.style.transform = leftPct < 20 ? 'translate(0, calc(-100% - 12px))' : (leftPct > 80 ? 'translate(-100%, calc(-100% - 12px))' : 'translate(-50%, calc(-100% - 12px))');
       tooltip.hidden = false;
     }
-
-    function hide() {
-      crosshair.setAttribute('hidden', '');
-      hoverDot.setAttribute('hidden', '');
-      tooltip.hidden = true;
-    }
-
+    function hide() { crosshair.setAttribute('hidden', ''); dot.hidden = true; tooltip.hidden = true; }
     function handleMove(clientX) {
       const rect = svg.getBoundingClientRect();
       if (!rect.width) return;
-      const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-      const viewBoxParts = svg.getAttribute('viewBox').split(' ').map(Number);
-      const xUser = viewBoxParts[0] + ratio * viewBoxParts[2];
+      const xUser = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width)) * chart.w;
       let nearest = 0, best = Infinity;
       chart.points.forEach((p, i) => { const d = Math.abs(p[0] - xUser); if (d < best) { best = d; nearest = i; } });
       showAt(nearest);
     }
-
     hit.addEventListener('pointermove', (e) => handleMove(e.clientX));
     hit.addEventListener('pointerdown', (e) => handleMove(e.clientX));
     hit.addEventListener('pointerleave', hide);
-    hit.addEventListener('mouseleave', hide);
   });
-}
-
-/* ---------- Ritmo di chiusura (toggle 9) ---------- */
-function renderClosingPaceNote() {
-  const now = new Date();
-  const monthRange = currentPeriodRanges().month;
-  const daysSoFar = now.getDate();
-  const closedSoFar = db.appointments.filter(a => a.closed && inRange(a.scheduledAt, monthRange)).length;
-  const avgPerDay = daysSoFar > 0 ? closedSoFar / daysSoFar : 0;
-  const targetClosures = (db.goals.setter.month.chiusi || 0) + (db.goals.venditore.month.chiusi || 0);
-
-  if (targetClosures <= 0) return '';
-  if (closedSoFar >= targetClosures) return `<p class="pace-note pace-ok">Ritmo di chiusura: obiettivo mensile già raggiunto (${closedSoFar}/${targetClosures}).</p>`;
-  if (avgPerDay <= 0) return `<p class="pace-note pace-bad">Ritmo di chiusura: ancora nessuna chiusura questo mese, ritmo insufficiente per raggiungere ${targetClosures}.</p>`;
-
-  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
-  const daysLeft = lastDay - daysSoFar;
-  const remaining = targetClosures - closedSoFar;
-  const neededPerDay = daysLeft > 0 ? remaining / daysLeft : Infinity;
-
-  if (neededPerDay > avgPerDay) {
-    const deficit = round1(neededPerDay - avgPerDay);
-    return `<p class="pace-note pace-bad">Ritmo insufficiente: mancano circa ${deficit} chiusure/giorno in più rispetto al ritmo attuale (${round1(avgPerDay)}/giorno) per raggiungere l'obiettivo entro fine mese.</p>`;
-  }
-  const daysToTarget = Math.ceil(remaining / avgPerDay);
-  const eta = new Date(now); eta.setDate(eta.getDate() + daysToTarget);
-  return `<p class="pace-note pace-ok">Al ritmo attuale (${round1(avgPerDay)} chiusure/giorno), raggiungerai l'obiettivo mensile entro il ${fmtDate(eta)}.</p>`;
-}
-
-/* ---------- Personal best (toggle 10) ---------- */
-function renderPersonalBestBadge() {
-  const now = new Date();
-  const thisWeekRange = { start: startOfWeek(now), end: endOfWeek(now) };
-  const thisWeekEvents = commissionEventsInRange(db, thisWeekRange);
-  const thisWeekTotal = sumEvents(thisWeekEvents);
-  const thisWeekClosures = db.appointments.filter(a => a.closed && inRange(a.scheduledAt, thisWeekRange)).length;
-
-  // Confronta con tutte le settimane passate presenti nei dati (appuntamenti + eventi).
-  const allDates = db.appointments.map(a => new Date(a.scheduledAt)).filter(d => !isNaN(d));
-  if (!allDates.length) return '';
-  let bestPastTotal = 0, bestPastClosures = 0;
-  const seenWeeks = new Set();
-  allDates.forEach(d => {
-    const s = startOfWeek(d);
-    const key = s.toISOString();
-    if (seenWeeks.has(key)) return;
-    seenWeeks.add(key);
-    if (s.getTime() === startOfWeek(now).getTime()) return; // esclude la settimana corrente
-    const wRange = { start: s, end: endOfWeek(d) };
-    const wTotal = sumEvents(commissionEventsInRange(db, wRange));
-    const wClosures = db.appointments.filter(a => a.closed && inRange(a.scheduledAt, wRange)).length;
-    if (wTotal > bestPastTotal) bestPastTotal = wTotal;
-    if (wClosures > bestPastClosures) bestPastClosures = wClosures;
-  });
-
-  if (thisWeekTotal > bestPastTotal || thisWeekClosures > bestPastClosures) {
-    return `<div class="personalbest-badge">🏆 Nuovo record della settimana (${thisWeekClosures} chiusure, €${round2(thisWeekTotal)})</div>`;
-  }
-  return '';
-}
-
-/* ---------- Streak giornaliero (toggle 4) ---------- */
-function computeStreak() {
-  const daysWithAppt = new Set(db.appointments.filter(a => !a.rescheduledFromId).map(a => dateInputValue(a.createdAt)));
-  let streak = 0;
-  let cursor = new Date();
-  while (daysWithAppt.has(dateInputValue(cursor))) {
-    streak++;
-    cursor.setDate(cursor.getDate() - 1);
-  }
-  return streak;
 }
 
 /* ---------- Report Sessione (testo pronto da incollare, es. per il direttore commerciale) ---------- */
@@ -4671,18 +4304,15 @@ function renderInstallmentsModal(apt, role) {
   });
 }
 
-/* Statistiche Setter e Venditore: tolte il 16/10 (lettera D, Simone). I loro numeri sono in
- * Dashboard sotto le card Obiettivi (renderSetterRatesRow, renderVenditoreRatesRow). */
-
 /* ============================================================================
  * Commissioni — calendario mensile
  * ==========================================================================*/
 
 /**
- * Calendario Commissioni — SPOSTATO in fondo alla Dashboard su richiesta esplicita
- * dell'utente (prima era una pagina a sé, route 'commissioni'). Stessa identica logica
- * di prima (riepilogo mese + griglia calendario), solo restituita come HTML da inserire
- * in coda a renderDashboard invece di occupare da sola tutto appRoot.
+ * Calendario Commissioni, in fondo alla Dashboard. Funziona come prima (mese per mese,
+ * clic su un giorno = dettaglio), restyling 17/10 (step 9): card con titolo e frecce,
+ * giorni con commissioni colorati come la heatmap della guida (4 livelli della rampa
+ * accento rispetto al giorno migliore del mese), oggi con il bordo scuro.
  */
 function renderCommissioniCalendarSection() {
   const now = new Date();
@@ -4695,8 +4325,9 @@ function renderCommissioniCalendarSection() {
   const firstWeekday = (firstOfMonth.getDay() + 6) % 7; // 0=lunedì
   const daysInMonth = endOfMonth(viewDate).getDate();
   const todayKey = dateInputValue(now);
+  const maxDay = Math.max(0, ...Object.values(byDay).map(sumEvents));
 
-  const dowLabels = ['LUN', 'MAR', 'MER', 'GIO', 'VEN', 'SAB', 'DOM'];
+  const dowLabels = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
   let cells = '';
   for (let i = 0; i < firstWeekday; i++) cells += `<div class="cal-cell empty"></div>`;
   for (let day = 1; day <= daysInMonth; day++) {
@@ -4707,30 +4338,33 @@ function renderCommissioniCalendarSection() {
     const hasEvents = events.length > 0;
     const detail = summarizeDayEvents(events);
     const classes = ['cal-cell'];
-    if (hasEvents) classes.push('has-events');
+    if (hasEvents) classes.push('has-events', 'lvl-' + (maxDay > 0 ? Math.max(1, Math.ceil(dayTotal / maxDay * 4)) : 1));
     if (key === todayKey) classes.push('today');
     if (isCashDay(dayTotal)) classes.push('cash-day');
     cells += `
-      <div class="${classes.join(' ')}" ${hasEvents ? `data-cal-day="${key}"` : ''}>
+      <div class="${classes.join(' ')}" ${hasEvents ? `data-cal-day="${key}" title="${escapeHtml(detail)}"` : ''}>
         <div class="cal-daynum">${day}</div>
-        ${hasEvents ? `<div class="cal-day-total">€${round2(dayTotal)}</div><div class="cal-day-detail">${escapeHtml(detail)}</div>` : ''}
+        ${hasEvents ? `<div class="cal-day-total">${fmtNumIt(dayTotal, true)}</div><div class="cal-day-detail">${escapeHtml(detail)}</div>` : ''}
       </div>`;
   }
 
   return `
-    <div class="section-separator"><span class="eyebrow">Calendario Commissioni</span></div>
-    <!-- Riepilogo commissioni del mese tolto (Simone, 16/10, lettera C): ripeteva i numeri
-         di "Andamento generale". Il pace totale del mese è tolto per lo stesso motivo:
-         restano le due pace accanto ai titoli degli Obiettivi. -->
-    <section class="card">
-      <div class="cal-nav">
-        <button id="calPrev">← Mese prec.</button>
-        <div class="cal-month-label">${viewDate.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</div>
-        <button id="calNext">Mese succ. →</button>
+    <section class="card dash-section comm-cal">
+      <div class="dash-section-head">
+        <h3>Calendario commissioni</h3>
+        <div class="cal-nav">
+          <button class="btn-icon" id="calPrev" title="Mese prima" aria-label="Mese prima">‹</button>
+          <div class="cal-month-label">${viewDate.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' })}</div>
+          <button class="btn-icon" id="calNext" title="Mese dopo" aria-label="Mese dopo">›</button>
+        </div>
       </div>
       <div class="cal-grid">
         ${dowLabels.map(d => `<div class="cal-dow">${d}</div>`).join('')}
         ${cells}
+      </div>
+      <div class="cal-foot">
+        <span>Totale del mese <strong>${fmtNumIt(summary.total, true)}</strong></span>
+        <span class="cal-heat-legend" aria-hidden="true">meno <i class="lvl-1"></i><i class="lvl-2"></i><i class="lvl-3"></i><i class="lvl-4"></i> più</span>
       </div>
     </section>
   `;
@@ -6105,7 +5739,8 @@ function importData(file) {
 /* 🎨 semplice (Simone, 16/10, lettera I): chiaro/scuro, un colore, grandezza del testo,
  * 4 effetti. Il resto sta in "Personalizza a mano", chiuso. */
 const SIMPLE_ACCENTS = [['#d7a6e8', 'Lilla'], ['#4d7cf0', 'Blu'], ['#2fa36b', 'Verde'], ['#e08a2c', 'Arancio'], ['#e0605a', 'Rosso'], ['#1fa3b5', 'Azzurro']];
-const SIMPLE_TOGGLES = ['animatedNumbers', 'monthCountdown', 'dailyStreak', 'closingPace'];
+// countdown, streak e ritmo di chiusura erano sezioni della Dashboard: tolte (restyling step 9).
+const SIMPLE_TOGGLES = ['animatedNumbers'];
 const SIMPLE_BASE = {
   dark: { bg: '#1f1a22', bgElev: '#2a232e', text: '#eee8f0', venditoreColor: '#8ec5ff', success: '#9ed69a', danger: '#ff8a7a' },
   light: { bg: '#f3efe7', bgElev: '#fbf9f4', text: '#22211e', venditoreColor: '#1985ab', success: '#1f6b2e', danger: '#b3261e' }
