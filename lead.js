@@ -1,4 +1,4 @@
-/* lead.js — parte Venditore a LEAD (mini-CRM): schermata Oggi, lista Lead, scheda lead,
+/* lead.js — parte Venditore a LEAD (mini-CRM): righe Venditore delle Task in Dashboard, lista Lead, scheda lead,
  * "Com'è finita?" (esito dell'appuntamento), Fatto / Sposta delle azioni, numeri nuovi.
  *
  * Approvata da Simone come simulazione il 15/10/2026 ("tutto perfetto") e portata qui.
@@ -21,7 +21,7 @@
  *   non ha più i tasti Note e 📅 Follow-up. Le note che c'erano passano nello storico del
  *   lead, la data di follow-up diventa la prossima azione (vedi moveApptExtras).
  * - No show / annullato (Simone, 16/10): la prossima azione è SEMPRE il recupero, e il lead
- *   compare in un posto solo: in Oggi, come prossima azione. Non compare più anche nel
+ *   compare in un posto solo: nelle Task della Dashboard (prima: Oggi), come prossima azione. Non compare più anche nel
  *   Round Recupero (vedi handlesRecovery). Segnare "Fatto" sul recupero è una chiamata di
  *   recupero: conta nell'attività del giorno e, se non risponde, vale come un follow-up
  *   senza risposta (dopo 6 il lead diventa Freddo).
@@ -46,11 +46,12 @@ const LeadCRM = (function () {
     contratto: { i: '📄', l: 'Mandare contratto' }, contenuto: { i: '🎬', l: 'Mandare contenuto' }, appuntamento: { i: '📅', l: 'Fissare appuntamento' },
     recupero: { i: '🔁', l: 'Recupero no show' }
   };
+  // Icona outline delle righe nelle Task della Dashboard (app.js TASK_ICONS).
+  const AZIONI_ICO = { chiamata: 'phone', whatsapp: 'message', audio: 'mic', contratto: 'file', contenuto: 'play', appuntamento: 'calendar', recupero: 'refresh' };
   const ESITI = { presentato: 'Presentato', no_show: 'No show', annullato: 'Annullato', spostato: 'Spostato', non_in_target: 'Non in target' };
   const FREDDO_DOPO = 6;
   const GG = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
-  const MM = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
-
+  
   const ui = { leadFilter: 'aperti', search: '', leadTab: 'storico' };
 
   /* ===================== Date (sempre ora locale, vedi CLAUDE.md sezione 5) ===================== */
@@ -108,22 +109,6 @@ const LeadCRM = (function () {
   const lastClosedAppt = l => apptsOf(l).filter(isClosedAppt).pop() || null;
   function daEsitare() {
     return vndAppts().filter(a => a.leadId && leadById(a.leadId) && isDue(a)).sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)));
-  }
-  function itemsFor(dayFilter) {
-    const t = TODAY(), out = [];
-    leads().forEach(l => {
-      if (!isOpen(l)) return;
-      if (l.next && l.next.date && dayFilter(l.next.date, t)) out.push({ kind: 'next', l, date: l.next.date, time: l.next.time || '' });
-      (l.promises || []).forEach(p => { if (!p.done && p.when && dayFilter(p.when, t)) out.push({ kind: 'prom', l, p, date: p.when, time: '' }); });
-    });
-    return out.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
-  }
-  const lateItems = () => itemsFor((d, t) => d < t);
-  const todayItems = () => itemsFor((d, t) => d === t);
-  function todayAppts() {
-    const t = TODAY();
-    return vndAppts().filter(a => a.leadId && leadById(a.leadId) && String(a.scheduledAt).slice(0, 10) === t && a.dealStage !== 'spostato')
-      .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)));
   }
   function addHistory(l, entry) { l.history = l.history || []; l.history.push(Object.assign({ d: NOWV(), s: '' }, entry)); }
 
@@ -234,7 +219,7 @@ const LeadCRM = (function () {
       const a = db.appointments.find(x => x.id === r.sourceAppointmentId); return a && a.leadId === l.id;
     })()) || null;
   }
-  /** true = questa voce del round la gestisce il lead (prossima azione in Oggi), quindi il
+  /** true = questa voce del round la gestisce il lead (prossima azione nelle Task della Dashboard), quindi il
    * Round Recupero non la mostra: un no show si vede in un posto solo. */
   function handlesRecovery(entry) {
     if (!isOn() || !entry || entry.sourceRole !== 'venditore') return false;
@@ -309,13 +294,6 @@ const LeadCRM = (function () {
   const leadName = l => esc(l.name || '(senza nome)');
   const centroTxt = l => [l.centro, l.city].filter(Boolean).map(esc).join(' · ');
 
-  function userFirstName() {
-    const e = (CloudSync.session && CloudSync.session.user && CloudSync.session.user.email || '').toLowerCase();
-    if (e.indexOf('simone') === 0) return 'Simone';
-    if (e.indexOf('hamza') === 0) return 'Hamza';
-    return '';
-  }
-
   /** Apre un modal del tool e, se serve, ne prepara gli eventi. */
   function modal(html, onMount) {
     openModal(`<div class="lead-modal">${html}</div>`);
@@ -325,89 +303,55 @@ const LeadCRM = (function () {
   }
   function rerender() { closeModal(); renderRoute(); }
 
-  /* ===================== OGGI ===================== */
-  function renderOggi() {
+  /* ===================== Task della Dashboard (riga 2c) =====================
+   * Restyling (17/10/2026, Simone): la pagina Oggi non esiste più. Quello che mostrava
+   * (da esitare, lead senza prossima azione, azioni in ritardo e di oggi) vive nelle
+   * "Task da fare" della Dashboard, con gli stessi tasti. Qui ci sono solo i dati di
+   * ogni riga; la lista (ordine, stile, "Mostra tutte") la disegna app.js
+   * (renderDashboardTasks). Le cose promesse non compaiono più: i dati promises[]
+   * restano salvati. Gli appuntamenti di oggi non ancora svolti non sono task: quando
+   * passano l'ora diventano "da esitare". */
+  function dashboardTaskItems() {
+    if (!isOn()) return [];
     if (ensureLeads()) persist();
-    const late = lateItems(), todo = todayItems(), esit = daEsitare(), apps = todayAppts();
-    const miss = leads().filter(missingNext);
-    const d = new Date(); const h = d.getHours();
-    const saluto = h < 13 ? 'Buongiorno' : h < 18 ? 'Buon pomeriggio' : 'Buonasera';
-    const nome = userFirstName();
-    const kpi = (cls, n, l, target) => `<button class="oggi-kpi ${cls} ${n ? '' : 'zero'}" data-scroll="${target}"><b>${n}</b><span>${l}</span></button>`;
-    appRoot.innerHTML = `
-      <section class="card oggi-head">
-        <div class="page-head"><h1>${saluto}${nome ? ' ' + nome : ''}</h1><span class="d">${GG[d.getDay()]} ${d.getDate()} ${MM[d.getMonth()]}</span></div>
-        <div class="oggi-kpis">
-          ${kpi('k-late', late.length + miss.length, 'in ritardo', 'g-late')}
-          ${kpi('k-esit', esit.length, 'da esitare', 'g-esit')}
-          ${kpi('k-todo', todo.length, 'da fare oggi', 'g-todo')}
-          ${kpi('k-app', apps.length, 'appuntamenti oggi', 'g-app')}
-        </div>
-      </section>
-      ${esit.length ? `<section class="card grp" id="g-esit">
-        <h3 class="grp-title"><i style="background:var(--accent)"></i>Da esitare <span class="n">${esit.length}</span></h3>
-        ${esit.map(a => { const l = leadById(a.leadId); const day = String(a.scheduledAt).slice(0, 10); return `
-          <div class="orow r-esit"><span class="ico">⏱</span>
-            <div><button class="who" data-lead="${l.id}">${leadName(l)}</button>${centroTxt(l) ? ` <span class="what">· ${centroTxt(l)}</span>` : ''}
-              <div class="what">${nOrd(apptNumber(a))} appuntamento · ${day === TODAY() ? 'oggi' : relDay(day)} alle ${String(a.scheduledAt).slice(11, 16)} · nessun esito</div></div>
-            <div class="row-btns"><button class="btn-primary" data-esita="${a.id}">Com'è finita?</button></div></div>`; }).join('')}
-      </section>` : ''}
-      <section class="card grp" id="g-late">
-        <h3 class="grp-title"><i style="background:var(--danger)"></i>In ritardo <span class="n">${late.length + miss.length}</span></h3>
-        ${miss.map(l => `
-          <div class="orow r-miss"><span class="ico">⚠️</span>
-            <div><button class="who" data-lead="${l.id}">${leadName(l)}</button>${centroTxt(l) ? ` <span class="what">· ${centroTxt(l)}</span>` : ''}
-              <div class="what"><span class="late-tag">Manca la prossima azione</span> · ${STATO_LABEL[l.stato]}</div></div>
-            <div class="row-btns"><button class="btn-primary" data-setnext="${l.id}">Imposta</button></div></div>`).join('')}
-        ${late.length || miss.length ? late.map(itemRow('r-late')).join('') : '<div class="grp-empty">Niente in ritardo. Bene così.</div>'}
-      </section>
-      <section class="card grp" id="g-todo">
-        <h3 class="grp-title"><i style="background:var(--warning)"></i>Da fare oggi <span class="n">${todo.length}</span></h3>
-        ${todo.length ? todo.map(itemRow('r-todo')).join('') : '<div class="grp-empty">Nessuna azione per oggi.</div>'}
-      </section>
-      <section class="card grp" id="g-app">
-        <h3 class="grp-title"><i style="background:var(--venditore-color)"></i>Appuntamenti di oggi <span class="n">${apps.length}</span></h3>
-        ${apps.length ? apps.map(a => { const l = leadById(a.leadId); const n = apptNumber(a); const st = setterOf(a); return `
-          <div class="orow r-app"><span class="when">${String(a.scheduledAt).slice(11, 16)}</span>
-            <div><button class="who" data-lead="${l.id}">${leadName(l)}</button>${centroTxt(l) ? ` <span class="what">· ${centroTxt(l)}</span>` : ''}
-              <div class="what">${n >= 2 ? `<b class="strong">${nOrd(n)} appuntamento</b>` : nOrd(n) + ' appuntamento'}${st ? ' · Setter ' + esc(st) : ''}</div></div>
-            <div class="row-btns">${apBadge(a)}${isDue(a) ? `<button class="btn-primary" data-esita="${a.id}">Com'è finita?</button>` : ''}</div></div>`; }).join('') : '<div class="grp-empty">Nessun appuntamento oggi.</div>'}
-      </section>`;
-    appRoot.querySelectorAll('[data-scroll]').forEach(b => b.addEventListener('click', () => {
-      const el = document.getElementById(b.dataset.scroll); if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const t = TODAY(), out = [];
+    const who = l => `<button class="who" data-lead="${l.id}">${leadName(l)}</button>${centroTxt(l) ? ` <span class="task-dim">· ${centroTxt(l)}</span>` : ''}`;
+    daEsitare().forEach(a => {
+      const l = leadById(a.leadId);
+      out.push({
+        id: 'esita-' + a.id, due: String(a.scheduledAt).slice(0, 16), hasTime: true, late: true, icon: 'clock',
+        titleHtml: who(l), subHtml: `${nOrd(apptNumber(a))} appuntamento · nessun esito`,
+        whenHtml: 'da esitare',
+        actionsHtml: `<button class="btn-ghost btn-sm" data-esita="${a.id}">Com'è finita?</button>`
+      });
+    });
+    leads().filter(missingNext).forEach(l => out.push({
+      id: 'miss-' + l.id, due: t + 'T00:00', hasTime: false, late: true, icon: 'alert',
+      titleHtml: who(l), subHtml: `Manca la prossima azione · ${STATO_LABEL[l.stato]}`, whenHtml: 'manca',
+      actionsHtml: `<button class="btn-ghost btn-sm" data-setnext="${l.id}">Imposta prossima azione</button>`
     }));
-    wireRowButtons(appRoot);
-  }
-
-  function itemRow(cls) {
-    return it => {
-      const l = it.l;
-      const head = `<div><button class="who" data-lead="${l.id}">${leadName(l)}</button>${centroTxt(l) ? ` <span class="what">· ${centroTxt(l)}</span>` : ''}`;
-      if (it.kind === 'prom') return `
-        <div class="orow ${cls}"><span class="ico">🤝</span>
-          ${head}<div class="what">Cosa promessa: <q>${esc(it.p.text)}</q>${cls === 'r-late' ? ` · <span class="late-tag">${relDay(it.date)}</span>` : ''}</div></div>
-          <div class="row-btns"><button class="btn-primary" data-promdone="${l.id}|${it.p.id}">Fatto</button></div></div>`;
+    leads().forEach(l => {
       const n = l.next;
-      return `
-        <div class="orow ${cls}"><span class="ico">${actDef(n).i}</span>
-          ${head}<div class="what">${actDef(n).l}${recoveryEntryFor(l) && l.fuNoAnswer ? ` · <b>${l.fuNoAnswer} di ${FREDDO_DOPO}</b> senza risposta` : ''}${n.type === 'appuntamento' && n.apptAt ? ' · per ' + fmtDT(n.apptAt) : ''}${n.time ? ' · ore ' + n.time : ''}${cls === 'r-late' ? ` · <span class="late-tag">${relDay(n.date)}</span>` : ''}${n.note ? ` · <q>${esc(n.note)}</q>` : ''}</div></div>
-          <div class="row-btns"><button class="btn-primary" data-done="${l.id}">Fatto</button><button class="btn-ghost" data-move="${l.id}">Sposta</button></div></div>`;
-    };
+      if (!isOpen(l) || !n || !n.date || n.date > t) return; // solo oggi e scadute
+      const extra = (recoveryEntryFor(l) && l.fuNoAnswer ? ` · <b>${l.fuNoAnswer} di ${FREDDO_DOPO}</b> senza risposta` : '')
+        + (n.type === 'appuntamento' && n.apptAt ? ' · per ' + fmtDT(n.apptAt) : '')
+        + (n.note ? ` · <q>${esc(n.note)}</q>` : '');
+      out.push({
+        id: 'next-' + l.id, due: n.date + 'T' + (n.time || '00:00'), hasTime: !!n.time, icon: AZIONI_ICO[n.type] || 'phone',
+        titleHtml: who(l), subHtml: esc(actDef(n).l) + extra,
+        actionsHtml: `<button class="btn-ghost btn-sm" data-done="${l.id}">Fatto</button><button class="btn-ghost btn-sm" data-move="${l.id}">Sposta</button>`
+      });
+    });
+    return out;
   }
 
-  /** Eventi comuni dei tasti nelle righe (Oggi, lista, scheda). */
+  /** Eventi comuni dei tasti nelle righe (Task della Dashboard, lista, scheda). */
   function wireRowButtons(root) {
     root.querySelectorAll('[data-lead]').forEach(b => b.addEventListener('click', () => { ui.leadTab = 'storico'; location.hash = '#/lead/' + b.dataset.lead; }));
     root.querySelectorAll('[data-esita]').forEach(b => b.addEventListener('click', () => openEsito(b.dataset.esita)));
     root.querySelectorAll('[data-done]').forEach(b => b.addEventListener('click', () => openFatto(b.dataset.done)));
     root.querySelectorAll('[data-move]').forEach(b => b.addEventListener('click', () => openSposta(b.dataset.move)));
     root.querySelectorAll('[data-setnext]').forEach(b => b.addEventListener('click', () => openSetNext(b.dataset.setnext)));
-    root.querySelectorAll('[data-promdone]').forEach(b => b.addEventListener('click', () => {
-      const [lid, pid] = b.dataset.promdone.split('|'); const l = leadById(lid); const p = l && (l.promises || []).find(x => x.id === pid);
-      if (!p) return;
-      markPromiseDone(l, p);
-      persist(); renderRoute(); showToast('Fatto: ' + p.text);
-    }));
   }
   function markPromiseDone(l, p) {
     p.done = true; const late = !!(p.when && p.when < TODAY());
@@ -437,7 +381,7 @@ const LeadCRM = (function () {
         <span class="mlabel">Cose promesse</span>
         <div class="prom-edit" id="${prefix}Prom"></div>
         <button type="button" class="linkish" id="${prefix}PromAdd">+ Aggiungi cosa promessa</button>
-        <div class="mhint">Es. "Link del webinar" → lunedì mattina. Compaiono in Oggi il giorno giusto.</div>
+        <div class="mhint">Es. "Link del webinar" → lunedì mattina. Restano nella scheda lead.</div>
       </div>`}`;
   }
   function wireNextBlock(box, prefix) {
@@ -522,7 +466,7 @@ const LeadCRM = (function () {
             <p class="mhint">Resta nello storico della scheda lead. Non conta nel numero dell'appuntamento.</p>`;
           saveBtn.disabled = false;
         } else if (st.esito === 'no_show' || st.esito === 'annullato') {
-          step2.innerHTML = `<p class="mhint">La prossima azione diventa <b>🔁 Recupero no show</b> per oggi: la trovi in Oggi. Se non risponde conta come un follow-up (dopo ${FREDDO_DOPO} diventa Freddo).</p>`; saveBtn.disabled = false;
+          step2.innerHTML = `<p class="mhint">La prossima azione diventa <b>🔁 Recupero no show</b> per oggi: la trovi nelle Task della Dashboard. Se non risponde conta come un follow-up (dopo ${FREDDO_DOPO} diventa Freddo).</p>`; saveBtn.disabled = false;
         } else if (st.esito === 'non_in_target') {
           step2.innerHTML = `<p class="mhint">Conta come presentato, fuori dal closing rate. Il lead diventa <b>Perso</b> (non in target).</p>`; saveBtn.disabled = false;
         } else { step2.innerHTML = ''; saveBtn.disabled = true; }
@@ -1025,7 +969,7 @@ const LeadCRM = (function () {
   /* ===================== 👤 Account: interruttore Parte Venditore ===================== */
   function accountToggleHtml() {
     const on = isOn();
-    return `<div class="setrow"><div><b>Parte Venditore</b><p>Schermata Oggi, tab Venditore, obiettivi del venditore in Dashboard.</p></div><button type="button" class="tog ${on ? '' : 'off'}" id="togVenditore" aria-pressed="${on}" aria-label="Parte Venditore"></button></div>
+    return `<div class="setrow"><div><b>Parte Venditore</b><p>Voce Venditore, azioni dei lead nelle Task della Dashboard.</p></div><button type="button" class="tog ${on ? '' : 'off'}" id="togVenditore" aria-pressed="${on}" aria-label="Parte Venditore"></button></div>
       <p class="mhint">Ogni utente ha il suo interruttore. Spegnere nasconde e basta: i dati restano.</p>`;
   }
   function wireAccountToggle() {
@@ -1043,7 +987,7 @@ const LeadCRM = (function () {
   }
 
   return {
-    isOn, applyNav, ensureLeads, renderOggi, renderLeadList, renderLead, renderNewStatsSection, newStatsValues,
+    isOn, applyNav, ensureLeads, dashboardTaskItems, renderLeadList, renderLead, renderNewStatsSection, newStatsValues,
     apptRowExtraHtml, wireRowButtons, onDealStageChanged, onApptNameChanged, accountToggleHtml, wireAccountToggle,
     parseApptName, handlesRecovery, onApptDeleted, reportInfo
   };

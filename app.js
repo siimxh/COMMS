@@ -366,8 +366,8 @@ function isCashDay(dayTotal) {
  *   Venditore = Lead · Statistiche
  * Route piatte con trattino. Le vecchie restano valide e vengono girate:
  *   #/oggi -> #/dashboard, #/venditore-appuntamenti -> #/venditore-lead.
- * La pagina Oggi (lead.js renderOggi) non si apre più (il suo contenuto andrà nelle
- * Task della Dashboard, step 5). La tabella Appuntamenti Venditore resta raggiungibile
+ * La pagina Oggi non esiste più: il suo contenuto sta nelle Task della Dashboard
+ * (renderDashboardTasks, righe Venditore da LeadCRM.dashboardTaskItems). La tabella Appuntamenti Venditore resta raggiungibile
  * SOLO da un link nella pagina Lead (#/venditore-tabella), finché la scheda lead non fa
  * tutto quello che si fa lì (nuovo appuntamento, rate, registrazioni): step 15. */
 const SETTING_SUBROUTES = { appuntamenti: 'setting-appuntamenti', sessioni: 'sessioni', statistiche: 'setting-statistiche' };
@@ -479,6 +479,9 @@ function renderPageBar(section, tab) {
   const titles = { dashboard: 'Dashboard', setting: 'Setting', venditore: 'Venditore', impostazioni: 'Aspetto' };
   const titleEl = document.getElementById('pageTitle');
   if (titleEl) titleEl.textContent = titles[section] || 'Dashboard';
+  // "+ Task": il pulsante nero della Dashboard (uno solo per vista).
+  const taskBtn = document.getElementById('btnNewTask');
+  if (taskBtn) taskBtn.hidden = section !== 'dashboard';
   const tabsEl = document.getElementById('pageTabs');
   if (!tabsEl) return;
   let defs = null;
@@ -576,7 +579,8 @@ function renderActiveSessionIndicator() {
 function updateNuovaSessioneButtonLabel() {
   const btn = document.getElementById('btnNuovaSessione');
   if (!btn) return;
-  btn.textContent = db.activeSession ? '↩ Torna alla sessione' : '+ Nuova sessione';
+  // Sul telefono la parola "Nuova"/"alla" sparisce (lascia spazio al titolo e a "+ Task").
+  btn.innerHTML = db.activeSession ? '↩ Torna <span class="hide-xs">alla </span>sessione' : '+ <span class="hide-xs">Nuova </span>sessione';
 }
 
 /* Sotto-tab dentro le pagine: dal restyling (step 2) le tab stanno nella barra in alto
@@ -695,6 +699,212 @@ function renderVenditoreStatistiche() {
 
 /* ---------- Dashboard ---------- */
 
+/* ---------- Dashboard: Task da fare (restyling 17/10/2026, step 5) ----------
+ * Una lista unica, ordinata prima per priorità e poi per scadenza (la più vicina in alto):
+ *   1  Conferme degli appuntamenti Setter (getPendingConfirmAppointments, da mezzanotte:
+ *      il banner delle 18 resta), una riga per appuntamento.
+ *   2  Da richiamare di oggi e scaduti non fatti · "N da recuperare" (Round Recupero,
+ *      una riga sola) · azioni dei lead Venditore (oggi + scadute, da esitare, lead senza
+ *      prossima azione: LeadCRM.dashboardTaskItems, solo con la parte Venditore accesa).
+ *      Le tre stanno nella stessa priorità e si ordinano per scadenza tra loro.
+ *   3  Task scritte a mano (db.tasks): restano finché non sono spuntate (doneAt), data
+ *      rossa se scadute. Spuntate non si cancellano.
+ * La pagina Oggi non esiste più: il suo contenuto sta qui. Più di 8 righe: prime 8 +
+ * "Mostra tutte (N)". Un solo pulsante nero nella vista: "+ Task" in alto a destra. */
+const DASH_TASKS_LIMIT = 8;
+const DAY_SHORT_IT = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
+
+/** "oggi", "ieri", "domani" o "gio 15/10" per una data YYYY-MM-DD. */
+function relDayLabel(key) {
+  const d = new Date(key + 'T12:00');
+  const today = new Date(); today.setHours(12, 0, 0, 0);
+  const diff = Math.round((d - today) / 86400000);
+  if (diff === 0) return 'oggi';
+  if (diff === -1) return 'ieri';
+  if (diff === 1) return 'domani';
+  return DAY_SHORT_IT[d.getDay()] + ' ' + String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0');
+}
+/* Icone outline (stesso tratto della barra laterale) per le righe delle Task. */
+const TASK_ICONS = {
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  phone: '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/>',
+  refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 3v6h-6"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  alert: '<path d="M12 3 2 20h20L12 3z"/><path d="M12 10v4"/><path d="M12 17h.01"/>',
+  message: '<path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/>',
+  file: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  play: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/>',
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>'
+};
+function taskIconSvg(name) {
+  return `<svg class="task-ico" viewBox="0 0 24 24" aria-hidden="true">${TASK_ICONS[name] || TASK_ICONS.check}</svg>`;
+}
+function dueLabel(due, hasTime) {
+  return relDayLabel(String(due).slice(0, 10)) + (hasTime ? ' · ' + String(due).slice(11, 16) : '');
+}
+
+function collectDashboardTasks() {
+  const items = [];
+  // 1 — Conferme. Il tasto apre il round partendo da questo appuntamento.
+  getPendingConfirmAppointments().forEach(a => items.push({
+    prio: 1, id: 'conf-' + a.id, role: 'setter', icon: 'check', noLate: true,
+    due: String(a.scheduledAt).slice(0, 16), hasTime: true,
+    titleHtml: escapeHtml(a.clientName || '(senza nome)'),
+    subHtml: 'Da confermare · appuntamento ' + escapeHtml(dueLabel(a.scheduledAt, true)),
+    whenHtml: 'conferma oggi',
+    actionsHtml: `<button class="btn-ghost btn-sm" data-task-confirm="${a.id}">Avvia <span class="hide-xs">Round Conferme</span><span class="show-xs">round</span></button>`
+  }));
+  // 2a — Da richiamare: oggi e scaduti non fatti.
+  const todayKey = dateInputValue(new Date());
+  (db.callbacks || []).filter(c => c.status === 'pending' && c.scheduledAt && String(c.scheduledAt).slice(0, 10) <= todayKey).forEach(c => items.push({
+    prio: 2, id: 'cb-' + c.id, role: 'setter', icon: 'phone',
+    due: String(c.scheduledAt).slice(0, 16), hasTime: true,
+    titleHtml: escapeHtml(c.leadName || '(senza nome)'),
+    subHtml: 'Da richiamare' + (c.sourcePipelineName ? ' · ' + escapeHtml(c.sourcePipelineName) : '') + ((c.notes || []).length ? ` · <q>${escapeHtml(c.notes[c.notes.length - 1].text || '')}</q>` : ''),
+    actionsHtml: `<button class="btn-ghost btn-sm" data-task-call="${c.id}">Chiama</button>`
+  }));
+  // 2b — Round Recupero: una riga sola, con i conteggi che il round mostra davvero.
+  const toRecover = visibleRecoveryEntries().length;
+  if (toRecover > 0) items.push({
+    prio: 2, id: 'recovery', role: 'setter', icon: 'refresh', noLate: true,
+    due: todayKey + 'T00:00', hasTime: false,
+    titleHtml: `${toRecover} da recuperare`,
+    subHtml: 'No show e annullati nel Round Recupero', whenHtml: 'da fare',
+    actionsHtml: '<button class="btn-ghost btn-sm" data-task-recovery="1">Entra nel round</button>'
+  });
+  // 2c — Lead Venditore (vuoto se la parte Venditore è spenta).
+  LeadCRM.dashboardTaskItems().forEach(it => items.push(Object.assign({ prio: 2, role: 'venditore' }, it)));
+  // 3 — Task scritte a mano.
+  (db.tasks || []).filter(t => !t.doneAt).forEach(t => items.push({
+    prio: 3, id: 'task-' + t.id, role: t.role === 'venditore' ? 'venditore' : 'setter', taskId: t.id,
+    due: (t.dueDate || todayKey) + 'T' + (t.dueTime || '00:00'), hasTime: !!t.dueTime,
+    titleHtml: escapeHtml(t.text || ''), subHtml: '', actionsHtml: ''
+  }));
+
+  const nowV = localDateTimeValue(new Date());
+  items.forEach(it => {
+    if (it.late === undefined) it.late = !it.noLate && (it.hasTime ? it.due < nowV : it.due.slice(0, 10) < todayKey);
+    if (it.whenHtml === undefined) it.whenHtml = escapeHtml(dueLabel(it.due, it.hasTime));
+  });
+  items.sort((a, b) => a.prio - b.prio || a.due.localeCompare(b.due) || a.id.localeCompare(b.id));
+  return items;
+}
+
+function renderDashboardTaskRow(it) {
+  const lead = it.taskId
+    ? `<button class="task-check" data-task-done="${it.taskId}" title="Segna come fatta" aria-label="Segna come fatta"></button>`
+    : taskIconSvg(it.icon);
+  return `
+    <div class="task-row ${it.late ? 'is-late' : ''}">
+      <div class="task-lead">${lead}</div>
+      <div class="task-main">
+        <div class="task-title">${it.titleHtml}</div>
+        ${it.subHtml ? `<div class="task-sub">${it.subHtml}</div>` : ''}
+      </div>
+      <div class="task-meta">
+        <span class="task-when ${it.late ? 'late' : ''}">${it.whenHtml}</span>
+        <span class="role-pill ${it.role}">${it.role === 'venditore' ? 'Venditore' : 'Setter'}</span>
+      </div>
+      <div class="task-actions">${it.actionsHtml || ''}</div>
+    </div>`;
+}
+
+function renderDashboardTasks() {
+  const items = collectDashboardTasks();
+  const showAll = !!uiState.dashTasksAll;
+  const visible = showAll ? items : items.slice(0, DASH_TASKS_LIMIT);
+  return `
+    <section class="card dash-list-card" id="dashTasks">
+      <div class="dash-list-head">
+        <h2>Task da fare</h2>
+        ${items.length ? `<span class="count-pill">${items.length}</span>` : ''}
+      </div>
+      ${items.length ? `<div class="task-list">${visible.map(renderDashboardTaskRow).join('')}</div>` : '<p class="dash-list-empty">Niente da fare adesso.</p>'}
+      ${items.length > DASH_TASKS_LIMIT ? `<button class="linkish dash-list-more" id="btnTasksMore">${showAll ? 'Mostra meno' : `Mostra tutte (${items.length})`}</button>` : ''}
+    </section>`;
+}
+
+function wireDashboardTasks() {
+  const root = document.getElementById('dashTasks');
+  if (!root) return;
+  const more = document.getElementById('btnTasksMore');
+  if (more) more.addEventListener('click', () => { uiState.dashTasksAll = !uiState.dashTasksAll; renderDashboard(); });
+  root.querySelectorAll('[data-task-done]').forEach(b => b.addEventListener('click', () => {
+    const t = (db.tasks || []).find(x => x.id === b.dataset.taskDone);
+    if (!t) return;
+    t.doneAt = new Date().toISOString(); // non si cancella: resta nei dati come fatta
+    persist();
+    renderDashboard();
+    showToast('Fatto: ' + t.text);
+  }));
+  root.querySelectorAll('[data-task-confirm]').forEach(b => b.addEventListener('click', () => {
+    db.confirmRoundActive = true;
+    db.confirmRoundCurrentApptId = b.dataset.taskConfirm;
+    db.confirmRoundReturnMode = 'standalone';
+    db.confirmRoundPendingPipelineId = null;
+    persist();
+    renderRoute();
+  }));
+  root.querySelectorAll('[data-task-call]').forEach(b => b.addEventListener('click', () => startCallbackCall(b.dataset.taskCall)));
+  root.querySelectorAll('[data-task-recovery]').forEach(b => b.addEventListener('click', () => {
+    db.recoveryRoundActive = true;
+    db.recoveryRoundCurrentLeadId = null;
+    persist();
+    renderRoute();
+  }));
+  // Righe Venditore: scheda lead, Com'è finita?, Fatto, Sposta, Imposta prossima azione (lead.js).
+  LeadCRM.wireRowButtons(root);
+}
+
+/** "+ Task": cosa devo fare (obbligatorio), ruolo, giorno (obbligatorio) e ora (facoltativa). */
+function openNewTaskModal() {
+  let role = 'setter';
+  openModal(`
+    <div class="lead-modal">
+      <h3>Nuova task</h3>
+      <label class="field">Cosa devo fare<input type="text" id="taskText" maxlength="200" placeholder="Es. mandare il listino a Centro Prova"></label>
+      <span class="mlabel">Ruolo</span>
+      <div class="choice" id="taskRole">
+        <button type="button" data-v="setter" class="sel">Setter</button>
+        <button type="button" data-v="venditore">Venditore</button>
+      </div>
+      <div class="mrow">
+        <label class="field">Giorno<input type="date" id="taskDate" value="${dateInputValue(new Date())}"></label>
+        <label class="field">Ora (facoltativa)<input type="time" id="taskTime" value=""></label>
+      </div>
+      <div class="mwarn" id="taskWarn"></div>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="taskCancel">Annulla</button>
+        <button class="btn-primary" id="taskSave">Aggiungi</button>
+      </div>
+    </div>
+  `);
+  const text = document.getElementById('taskText');
+  text.focus();
+  document.querySelectorAll('#taskRole button').forEach(b => b.addEventListener('click', () => {
+    role = b.dataset.v;
+    document.querySelectorAll('#taskRole button').forEach(x => x.classList.toggle('sel', x === b));
+  }));
+  document.getElementById('taskCancel').addEventListener('click', closeModal);
+  const save = () => {
+    const warn = document.getElementById('taskWarn');
+    const t = text.value.trim();
+    const d = document.getElementById('taskDate').value;
+    if (!t) { warn.textContent = 'Scrivi cosa devi fare.'; text.focus(); return; }
+    if (!d) { warn.textContent = 'Scegli il giorno.'; return; }
+    db.tasks = Array.isArray(db.tasks) ? db.tasks : [];
+    db.tasks.push({ id: uid('task'), text: t, role, dueDate: d, dueTime: document.getElementById('taskTime').value || '', createdAt: new Date().toISOString(), doneAt: null });
+    persist();
+    closeModal();
+    renderRoute();
+    showToast('Task aggiunta.');
+  };
+  document.getElementById('taskSave').addEventListener('click', save);
+  text.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+}
+
+
 /**
  * Dashboard — SOLO: Obiettivi Setter, Obiettivi Venditore, Andamento generale (KPI
  * commissioni + grafici a linea Commissioni/Totale Venduto), calendario Commissioni in
@@ -703,14 +913,17 @@ function renderVenditoreStatistiche() {
  * dell'utente — vedi renderCallActivitySection.
  */
 function renderDashboard() {
+  const tasksHtml = renderDashboardTasks();
   const topSectionsHtml = renderDashboardTopSections();
   const commissioniCalHtml = renderCommissioniCalendarSection();
 
   appRoot.innerHTML = `
+    ${tasksHtml}
     ${topSectionsHtml}
     ${commissioniCalHtml}
   `;
 
+  wireDashboardTasks();
   wireDashboardTopSectionEvents();
   wireCommissioniCalendarSection();
   animateKpiValues(appRoot);
@@ -2092,8 +2305,8 @@ function deactivateRecoveryEntryForAppointment(apt) {
 }
 
 /** Voci del round da mostrare qui. I no show Venditore con un lead aperto NON ci sono:
- * stanno in Oggi come prossima azione del lead (Simone, 16/10: "un posto solo"). Restano
- * attive nei dati, così "Fatto" in Oggi le aggiorna (LeadCRM.handlesRecovery). */
+ * stanno nelle Task della Dashboard come prossima azione del lead (Simone, 16/10: "un posto
+ * solo"; prima in Oggi). Restano attive nei dati, così "Fatto" lì le aggiorna (LeadCRM.handlesRecovery). */
 function visibleRecoveryEntries() {
   return (db.recoveryRound || []).filter(l => l.status === 'active' && !LeadCRM.handlesRecovery(l));
 }
@@ -2119,7 +2332,7 @@ function renderRecoveryRoundEntryCard() {
     <section class="card recov-entry-card">
       <div class="recov-entry-info">
         <h3>🔁 Round Recupero Appuntamenti</h3>
-        <p class="text-dim" style="font-size:0.84rem;">Richiama i lead che hanno fatto no-show o hanno annullato, un lead a caso alla volta, finché tutti non sono stati sentiti almeno una volta.${LeadCRM.isOn() ? ' I no show del Venditore li trovi in Oggi, come prossima azione del lead.' : ''}</p>
+        <p class="text-dim" style="font-size:0.84rem;">Richiama i lead che hanno fatto no-show o hanno annullato, un lead a caso alla volta, finché tutti non sono stati sentiti almeno una volta.${LeadCRM.isOn() ? ' I no show del Venditore li trovi nelle Task della Dashboard, come prossima azione del lead.' : ''}</p>
       </div>
       <div class="recov-entry-action">
         <div class="recov-entry-count">${waiting}</div>
@@ -5661,6 +5874,7 @@ document.getElementById('btnNuovaSessione').addEventListener('click', () => {
   openNewSessionModal();
 });
 document.getElementById('btnAccount').addEventListener('click', () => { closeMobileSidebar(); openAccountModal(); });
+document.getElementById('btnNewTask').addEventListener('click', openNewTaskModal);
 
 document.getElementById('loginForm').addEventListener('submit', loginSubmitAction);
 
