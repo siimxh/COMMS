@@ -5585,7 +5585,12 @@ document.getElementById('btnAccount').addEventListener('click', openAccountModal
 
 document.getElementById('loginForm').addEventListener('submit', loginSubmitAction);
 
-CloudSync.getData = () => db;
+// CORREZIONE (17/10): finché i dati dell'utente non sono caricati, "db" è vuoto.
+// Se in quel momento partiva un salvataggio (scheda in background, rete che torna),
+// il tool mandava online i dati vuoti e cancellava tutto. Ora non salva niente
+// finché openUserData non ha messo in "db" i dati veri.
+let dbLoaded = false;
+CloudSync.getData = () => dbLoaded ? db : null;
 CloudSync.onStatus = setSyncStatus;
 // Uscendo dalla pagina (o passando a un'altra app sul telefono) prova a inviare subito.
 document.addEventListener('visibilitychange', () => {
@@ -5698,6 +5703,7 @@ async function openUserData() {
 
   if (local && CloudSync.synced && CloudSync.hasPending(local)) {
     db = local;
+    dbLoaded = true;
     const ok = await CloudSync.flush();
     if (!ok) return 'offline';
   }
@@ -5706,12 +5712,13 @@ async function openUserData() {
   try {
     remote = await CloudSync.pull();
   } catch (err) {
-    if (err.offline && local) { db = local; setSyncStatus('pending'); return 'offline'; }
+    if (err.offline && local) { db = local; dbLoaded = true; setSyncStatus('pending'); return 'offline'; }
     throw err;
   }
 
   if (remote) {
     db = mergeWithDefaults(remote);
+    dbLoaded = true;
     Storage.save(db);
     CloudSync.markSynced(db);
     setSyncStatus('saved');
@@ -5733,6 +5740,7 @@ async function openUserData() {
       db = defaultData();
     }
   }
+  dbLoaded = true;
   Storage.save(db);
   CloudSync.synced = null;
   await CloudSync.flush();

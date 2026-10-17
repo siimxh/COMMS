@@ -456,7 +456,8 @@ const CloudSync = {
     /** Invia subito le righe cambiate. Restituisce true se online è tutto allineato. */
     async flush() {
       clearTimeout(this._timer);
-      if (!this.session || !this.getData) return false;
+      // getData() è null finché i dati dell'utente non sono caricati: niente da inviare.
+      if (!this.session || !this.getData || !this.getData()) return false;
       if (this._flushing) { this._again = true; return this._flushing; }
       this._flushing = (async () => {
         try {
