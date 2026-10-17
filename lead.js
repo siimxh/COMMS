@@ -444,7 +444,13 @@ const LeadCRM = (function () {
           step2.querySelectorAll('#eChiuso button').forEach(b => b.addEventListener('click', () => { st.chiuso = b.dataset.v; drawStep2(); }));
           const s3 = step2.querySelector('#eStep3');
           if (st.chiuso === 'chiuso' || st.chiuso === 'contratto_firmato') {
-            s3.innerHTML = `<p class="mhint">Il lead diventa <b>Cliente</b>${st.chiuso === 'contratto_firmato' ? ' (contratto firmato, pagamento ancora da incassare)' : ''}. Incassato e rate li segni dopo, nella scheda <b>Pagamenti</b>.</p>`;
+            // Restyling step 6: alla chiusura si chiede il nome del centro (per i Prossimi
+            // pagamenti in Dashboard), precompilato con il centro del lead.
+            if (st.centro === undefined) st.centro = a.centerName || l.centro || '';
+            const centroVal = st.centro;
+            s3.innerHTML = `<label class="mblock" style="display:block"><span class="mlabel">Nome del centro</span><input type="text" class="ld-input" id="eCentro" maxlength="120" value="${esc(centroVal)}" placeholder="Es. Centro Prova 1"></label>
+              <p class="mhint">Il lead diventa <b>Cliente</b>${st.chiuso === 'contratto_firmato' ? ' (contratto firmato, pagamento ancora da incassare)' : ''}. Incassato e rate li segni dopo, nella scheda <b>Pagamenti</b>.</p>`;
+            s3.querySelector('#eCentro').addEventListener('input', e => { st.centro = e.target.value; });
             saveBtn.disabled = false;
           } else if (st.chiuso === 'no') {
             s3.innerHTML = `
@@ -477,6 +483,10 @@ const LeadCRM = (function () {
       }));
       saveBtn.addEventListener('click', () => {
         if (st.esito === 'presentato' && (st.chiuso === 'chiuso' || st.chiuso === 'contratto_firmato')) {
+          const centroIn = box.querySelector('#eCentro');
+          const centro = centroIn ? centroIn.value.trim() : '';
+          a.centerName = centro;
+          if (centro && !l.centro) l.centro = centro;
           applyDealStage(a, st.chiuso);
           if (l.stato !== 'Cliente') addHistory(l, { k: 'stato', t: 'Stato: Cliente', s: l.wasFollowUp ? 'Chiuso in follow-up' : '' });
           l.stato = 'Cliente'; l.next = null; closeRecovery(l);
@@ -866,6 +876,7 @@ const LeadCRM = (function () {
     return `
       <div class="pay-sum"><div class="ok"><b>${euro(c.incassato)}</b><span>Incassato</span></div><div><b>${euro(c.daIncassare)}</b><span>Da incassare</span></div><div><b>${euro(c.comm)}</b><span>Commissione 10%</span></div></div>
       <div class="pay-form">
+        <label class="pay-centro">Nome del centro<input type="text" class="ld-input" id="payCentro" maxlength="120" value="${esc(a.centerName || '')}" placeholder="${esc(l.centro || 'Nome del centro')}"></label>
         <label>Totale venduto<input type="number" min="0" step="50" class="ld-input" id="payTotal" value="${Number(a.totalSold) || 0}"></label>
         <label>Cash collected<input type="number" min="0" step="50" class="ld-input" id="payCash" value="${Number(a.cashCollected) || 0}"></label>
         <label>Incassato il<span class="ld-static">${fmtShort(String(appointmentCashDate(a)).slice(0, 10))} (giorno della call)</span></label>
@@ -882,6 +893,12 @@ const LeadCRM = (function () {
     const num = v => Math.max(0, Number(v) || 0);
     const before = () => sumEvents(commissionEventsForAppointment(a));
     const ticker = prev => { const now = before(); if (db.settings.toggles && db.settings.toggles.liveTicker && now > prev) showCommissionTicker(now - prev); };
+    // Nome del centro dell'appuntamento chiuso (Prossimi pagamenti in Dashboard).
+    document.getElementById('payCentro').addEventListener('change', e => {
+      a.centerName = e.target.value.trim();
+      if (a.centerName && !l.centro) l.centro = a.centerName;
+      persist(); renderLead(id);
+    });
     document.getElementById('payTotal').addEventListener('change', e => { a.totalSold = num(e.target.value); persist(); renderLead(id); });
     document.getElementById('payCash').addEventListener('change', e => {
       const v = num(e.target.value); const prev = before();

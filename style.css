@@ -2430,3 +2430,7 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
 }
 @media (max-width: 480px) { .hide-xs { display: none; } }
 @media (min-width: 481px) { .show-xs { display: none; } }
+
+/* Dati della chiusura (step 6): centro e venditore. */
+.pay-form .pay-centro { grid-column: 1 / -1; }
+.money-text-input { width: 180px; }

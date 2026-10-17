@@ -3618,6 +3618,8 @@ function renderApptRow(a) {
           <label class="money-field"><span>Chiuso</span>${closedChips}</label>
           <label class="money-field"><span>Cash collected</span><input type="number" min="0" step="1" class="assigned-edit-input" data-cash-input="${a.id}" value="${a.cashCollected || 0}" style="width:110px;"></label>
           <label class="money-field"><span>Totale venduto</span><button class="crm-amount-link" data-open-installments="${a.id}">€${round2(totalSold)}</button></label>
+          ${a.closed ? `<label class="money-field"><span>Centro</span><input type="text" class="assigned-edit-input money-text-input" data-center-input="${a.id}" value="${escapeHtml(a.centerName || '')}" placeholder="Nome del centro"></label>
+          <label class="money-field"><span>Venditore</span><input type="text" class="assigned-edit-input money-text-input" data-vend-name-input="${a.id}" list="vendNames-${a.id}" value="${escapeHtml(a.venditoreName || '')}" placeholder="Nome del venditore">${venditoreDatalistHtml('vendNames-' + a.id)}</label>` : ''}
         </div>
       </td>
     </tr>` : ''}`;
@@ -3710,8 +3712,32 @@ function wireAppuntamentiEvents() {
     btn.addEventListener('click', () => {
       const apt = db.appointments.find(x => x.id === btn.dataset.setClosed);
       if (!apt) return;
-      setAppointmentClosed(apt, btn.dataset.val === '1');
+      const value = btn.dataset.val === '1';
+      // Chiusura nuova: prima centro e venditore (step 6), poi chiuso.
+      if (value && !apt.closed) {
+        openClosingDataModal(apt, { onSave: () => { setAppointmentClosed(apt, true); renderAppuntamenti(); } });
+        return;
+      }
+      setAppointmentClosed(apt, value);
       renderAppuntamenti();
+    });
+  });
+
+  // Centro e venditore, modificabili dopo la chiusura (pannello €).
+  appRoot.querySelectorAll('[data-center-input]').forEach(input => {
+    input.addEventListener('change', () => {
+      const apt = db.appointments.find(x => x.id === input.dataset.centerInput);
+      if (!apt) return;
+      apt.centerName = input.value.trim();
+      persist();
+    });
+  });
+  appRoot.querySelectorAll('[data-vend-name-input]').forEach(input => {
+    input.addEventListener('change', () => {
+      const apt = db.appointments.find(x => x.id === input.dataset.vendNameInput);
+      if (!apt) return;
+      apt.venditoreName = input.value.trim();
+      persist();
     });
   });
 
@@ -3764,6 +3790,53 @@ function addBlankAppointmentRow(role) {
   if (role === 'venditore') renderVenditoreAppuntamenti(); else renderAppuntamenti();
   const nameInput = appRoot.querySelector(`[data-name-input="${apt.id}"]`);
   if (nameInput) nameInput.focus();
+}
+
+/* ---------- Dati richiesti alla chiusura (restyling 17/10/2026, step 6) ----------
+ * Chiudendo un appuntamento il tool chiede il nome del CENTRO (serve a "Prossimi
+ * pagamenti" in Dashboard: lì compare il centro, mai la persona) e, solo per il
+ * Setter, il nome del VENDITORE a cui è passato (suggerimenti dai nomi già usati).
+ * I campi si possono lasciare vuoti ("centro mancante") e cambiare dopo: Setter nel
+ * pannello € della riga, Venditore nella scheda lead → Pagamenti. */
+function usedVenditoreNames() {
+  const set = new Set();
+  db.appointments.forEach(a => { const n = String(a.venditoreName || '').trim(); if (n) set.add(n); });
+  return [...set].sort((a, b) => a.localeCompare(b, 'it'));
+}
+function venditoreDatalistHtml(id) {
+  return `<datalist id="${id}">${usedVenditoreNames().map(n => `<option value="${escapeHtml(n)}"></option>`).join('')}</datalist>`;
+}
+
+/** Modale "Chiuso": centro (+ venditore per il Setter). onSave(centro, venditore) fa la
+ * chiusura vera; Annulla non cambia niente. */
+function openClosingDataModal(apt, opts) {
+  opts = opts || {};
+  const isSetter = apt.role === 'setter';
+  const centro = apt.centerName || opts.defaultCentro || '';
+  openModal(`
+    <h3>Chiuso · ${escapeHtml(apt.clientName || '(senza nome)')}</h3>
+    <p class="text-dim" style="font-size:0.85rem;">${isSetter ? 'Nome del centro e del venditore' : 'Nome del centro'}: servono ai Prossimi pagamenti in Dashboard. Puoi cambiarli dopo.</p>
+    <label class="field">Nome del centro<input type="text" id="closeCentro" maxlength="120" value="${escapeHtml(centro)}" placeholder="Es. Centro Prova 1"></label>
+    ${isSetter ? `<label class="field">Nome del venditore<input type="text" id="closeVenditore" maxlength="80" list="closeVenditoreList" value="${escapeHtml(apt.venditoreName || '')}" placeholder="A chi è passato l'appuntamento">${venditoreDatalistHtml('closeVenditoreList')}</label>` : ''}
+    <div class="modal-actions">
+      <button class="btn-ghost" id="closeDataCancel">Annulla</button>
+      <button class="btn-primary" id="closeDataSave">Segna chiuso</button>
+    </div>
+  `);
+  const c = document.getElementById('closeCentro');
+  c.focus();
+  document.getElementById('closeDataCancel').addEventListener('click', () => { closeModal(); if (opts.onCancel) opts.onCancel(); });
+  const save = () => {
+    const v = document.getElementById('closeVenditore');
+    const centroVal = c.value.trim();
+    const vendVal = v ? v.value.trim() : '';
+    apt.centerName = centroVal;
+    if (isSetter) apt.venditoreName = vendVal;
+    closeModal();
+    opts.onSave(centroVal, vendVal);
+  };
+  document.getElementById('closeDataSave').addEventListener('click', save);
+  modalRoot.querySelectorAll('input[type="text"]').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') save(); }));
 }
 
 /**
@@ -3975,6 +4048,23 @@ function wireVenditoreAppuntamentiEvents() {
         if (apt.dealStage === 'spostato') return;
         openRescheduleModal(apt.id, renderVenditoreAppuntamenti);
         renderVenditoreAppuntamenti(); // rimette la tendina allo stato attuale finché non si salva
+        return;
+      }
+      const def = dealStageDef(sel.value);
+      if (def && def.isClosed && !apt.closed) {
+        // Chiusura nuova: prima il nome del centro (step 6), precompilato con quello del lead.
+        if (LeadCRM.ensureLeads()) persist();
+        const lead = apt.leadId && (db.leads || []).find(l => l.id === apt.leadId);
+        openClosingDataModal(apt, {
+          defaultCentro: lead ? lead.centro : '',
+          onCancel: renderVenditoreAppuntamenti,
+          onSave: centro => {
+            if (lead && centro && !lead.centro) lead.centro = centro;
+            applyDealStage(apt, sel.value);
+            LeadCRM.onDealStageChanged(apt);
+            renderVenditoreAppuntamenti();
+          }
+        });
         return;
       }
       applyDealStage(apt, sel.value || null);
