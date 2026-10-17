@@ -357,7 +357,16 @@ function renderRoute() {
   else if (section === 'venditore') renderVenditorePage();
   else if (route === 'impostazioni') renderBuilderPage();
   else renderDashboard();
+
+  // Pagina NUOVA (route diversa dall'ultima disegnata): si riparte dall'alto. Senza, chi
+  // passa dal fondo della Dashboard a Venditore → Lead si ritrovava a metà pagina. Lo
+  // stesso disegno ripetuto sulla stessa route (dopo un salvataggio) non sposta niente.
+  const routeKey = parts.join('/');
+  if (lastRenderedRouteKey !== null && routeKey !== lastRenderedRouteKey) window.scrollTo(0, 0);
+  lastRenderedRouteKey = routeKey;
 }
+/** Ultima route disegnata da renderRoute (per riportare in cima la pagina quando cambia). */
+let lastRenderedRouteKey = null;
 
 /** Voce attiva della barra laterale. */
 function updateSidebarActive(section) {
