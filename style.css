@@ -2556,3 +2556,67 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
 .acal-dayrow { display: flex; align-items: center; gap: 10px; }
 .acal-dayrow .acal-ev { flex: 1; font-size: 0.9rem; padding: 8px 10px; }
 .acal-dayrow-label { font-size: 0.8125rem; color: var(--neutral-600); white-space: nowrap; }
+
+/* ============================================================================
+ * Checklist in chiamata (restyling step 12): pannello destro di sessione, richiamata e
+ * Round Recupero (renderLiveChecklistPanel). Sotto gli 860 px va sotto gli esiti.
+ * ==========================================================================*/
+.live-checklist {
+  flex-shrink: 0;
+  width: 300px;
+  position: sticky;
+  top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: var(--neutral-0);
+  border: var(--border-line);
+  border-radius: var(--radius-card);
+  padding: 16px 18px;
+}
+.live-checklist-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; color: var(--neutral-900); font-size: 0.95rem; }
+.live-checklist-count { font-size: 0.8125rem; font-weight: 600; color: var(--neutral-600); font-variant-numeric: tabular-nums; }
+.live-checklist-items { display: flex; flex-direction: column; }
+.live-check-item {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 6px;
+  border-top: var(--border-line);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  color: var(--neutral-900);
+  border-radius: 8px;
+}
+.live-check-item:first-child { border-top: none; }
+.live-check-item:hover { background: var(--neutral-50); }
+.live-check-item input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
+.live-check-box {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+  border-radius: 6px;
+  border: 1.5px solid var(--neutral-400);
+  background: var(--neutral-0);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.live-check-item.on .live-check-box { background: var(--accent-500); border-color: var(--accent-500); }
+.live-check-item.on .live-check-box::after {
+  content: '';
+  width: 5px;
+  height: 10px;
+  border: solid var(--on-accent);
+  border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+.live-check-item input:focus-visible + .live-check-box { outline: 2px solid var(--neutral-900); outline-offset: 2px; }
+.live-checklist-hint { margin: 0; font-size: 0.8rem; color: var(--neutral-600); }
+@media (max-width: 860px) {
+  .live-checklist { width: 100%; position: static; order: 2; }
+  .session-callback-sidebar { order: 3; }
+}

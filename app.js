@@ -2405,6 +2405,8 @@ function renderRecoveryRoundScreen() {
         <div class="session-pipeline-name">🔁 Round Recupero Appuntamenti</div>
         <div></div>
       </div>
+      <div class="session-body">
+        <div class="session-main-col">
 
       <div class="card recov-hero">
         <span class="role-badge ${lead.sourceRole}">${roleLabel}</span>
@@ -2433,8 +2435,12 @@ function renderRecoveryRoundScreen() {
         <button class="outcome-btn" data-recov-outcome="posticipato">Posticipato<span class="outcome-btn-sub">resta nel round, richiamato dopo</span></button>
         <button class="outcome-btn outcome-btn-danger" data-recov-outcome="rimosso">Rimuovi dal round</button>
       </div>
+        </div>
+        ${renderLiveChecklistPanel(lead.inCallChecklist)}
+      </div>
     </div>
   `;
+  wireLiveChecklist(appRoot, () => lead.inCallChecklist, items => { lead.inCallChecklist = items; });
 
   document.getElementById('btnExitRecoveryRound').addEventListener('click', exitRecoveryRound);
 
@@ -2604,6 +2610,8 @@ function applyRecoveryOutcome(leadId, outcome) {
   const lead = (db.recoveryRound || []).find(l => l.id === leadId);
   if (!lead) return;
   const now = new Date().toISOString();
+  // Checklist (5.4.3): nessun appuntamento → si azzera per la prossima chiamata.
+  lead.inCallChecklist = null;
   if (outcome === 'non_risposto' || outcome === 'non_interessato' || outcome === 'da_richiamare') {
     logRecoveryCall(lead, outcome);
     lead.callCount = (lead.callCount || 0) + 1;
@@ -2664,6 +2672,10 @@ function openRecoveryAppointmentModal(leadId) {
     apt.scheduledAt = when;
     apt.recoveredFromNoShow = true;
     apt.recoveredFromRole = lead.sourceRole;
+    // Checklist del lead in chiamata (5.4.3): salvata sul fissato, poi si azzera.
+    apt.checklist = checklistSnapshot(lead.inCallChecklist);
+    apt.checklistPct = checklistPctOf(apt.checklist);
+    lead.inCallChecklist = null;
     db.appointments.unshift(apt);
 
     lead.status = 'resolved';
@@ -3703,6 +3715,64 @@ function checklistBarHtml(pct) {
       <div class="checklist-bar-track"><div class="checklist-bar-fill" style="width:${p}%"></div></div>
       <span class="checklist-bar-pct">${fmtPctIt(p)}</span>
     </div>`;
+}
+
+/* ---------- Checklist in chiamata (restyling 5.4.3, step 12) ----------
+ * Pannello a destra della schermata sessione, della richiamata e del Round Recupero.
+ * Si compila per il lead in chiamata. Lo stato in corso sta sui dati (così sopravvive a
+ * un ricaricamento): sessione → db.activeSession.checklist, richiamata →
+ * cb.inCallChecklist, Round Recupero → voce del round .inCallChecklist. Forma: { id: true }.
+ * Si salva sull'appuntamento SOLO quando nasce un appuntamento fissato (modale
+ * salvata): apt.checklist { <id>: true/false } con tutte le 8 voci + apt.checklistPct.
+ * Con qualsiasi altro esito, o "Skip", si azzera per il lead dopo. */
+function checklistSnapshot(items) {
+  const out = {};
+  CHECKLIST_ITEMS.forEach(it => { out[it.id] = !!(items && items[it.id] === true); });
+  return out;
+}
+
+function renderLiveChecklistPanel(items) {
+  items = items || {};
+  const pct = checklistPctOf(checklistSnapshot(items));
+  const rows = CHECKLIST_ITEMS.map(it => {
+    const on = items[it.id] === true;
+    return `<label class="live-check-item${on ? ' on' : ''}">
+        <input type="checkbox" data-live-check="${it.id}"${on ? ' checked' : ''}>
+        <span class="live-check-box" aria-hidden="true"></span>
+        <span class="live-check-label">${escapeHtml(it.label)}</span>
+      </label>`;
+  }).join('');
+  return `
+    <aside class="live-checklist" aria-label="Checklist del lead in chiamata">
+      <div class="live-checklist-head">
+        <strong>Checklist</strong>
+        <span class="live-checklist-count" data-live-check-count>${CHECKLIST_ITEMS.filter(it => items[it.id] === true).length}/${CHECKLIST_ITEMS.length}</span>
+      </div>
+      <div data-live-check-bar>${checklistBarHtml(pct)}</div>
+      <div class="live-checklist-items">${rows}</div>
+      <p class="live-checklist-hint">Si salva solo se fissi l'appuntamento.</p>
+    </aside>`;
+}
+
+/** Spunte del pannello: aggiorna i dati e la barra senza ridisegnare la schermata
+ * (il timer e quello che stai scrivendo restano). getItems/setItems leggono e scrivono
+ * l'oggetto { id: true } del contesto (sessione, richiamata, recupero). */
+function wireLiveChecklist(root, getItems, setItems) {
+  root.querySelectorAll('[data-live-check]').forEach(input => {
+    input.addEventListener('change', () => {
+      const items = Object.assign({}, getItems() || {});
+      if (input.checked) items[input.dataset.liveCheck] = true;
+      else delete items[input.dataset.liveCheck];
+      setItems(items);
+      persist();
+      const n = CHECKLIST_ITEMS.filter(it => items[it.id] === true).length;
+      input.closest('.live-check-item').classList.toggle('on', input.checked);
+      const bar = root.querySelector('[data-live-check-bar]');
+      if (bar) bar.innerHTML = checklistBarHtml(checklistPctOf(checklistSnapshot(items)));
+      const cnt = root.querySelector('[data-live-check-count]');
+      if (cnt) cnt.textContent = `${n}/${CHECKLIST_ITEMS.length}`;
+    });
+  });
 }
 
 function openApptChecklistModal(apptId, onDone) {
@@ -5006,9 +5076,11 @@ function renderSessioneAttiva() {
 
           ${renderSessionApptList(s)}
         </div>
+        ${renderLiveChecklistPanel(s.checklist)}
       </div>
     </div>
   `;
+  wireLiveChecklist(appRoot, () => db.activeSession && db.activeSession.checklist, items => { if (db.activeSession) db.activeSession.checklist = items; });
 
   appRoot.querySelectorAll('[data-outcome-id]').forEach(btn => {
     btn.addEventListener('click', () => { if (!db.activeSession.pausedAt) logCallAction(btn.dataset.outcomeId); });
@@ -5149,7 +5221,9 @@ function logCallAction(outcomeId) {
   const undoState = {
     retryCallsPending: s.retryCallsPending,
     callAttemptsOnLead: s.callAttemptsOnLead,
-    currentLeadGroupId: s.currentLeadGroupId
+    currentLeadGroupId: s.currentLeadGroupId,
+    // Spunte della checklist prima di questo esito: "Annulla ultimo esito" le rimette.
+    checklist: Object.assign({}, s.checklist || {})
   };
 
   // groupId: identifica univocamente "questo lead" a prescindere dalla posizione nell'array
@@ -5183,15 +5257,25 @@ function logCallAction(outcomeId) {
   s.retryCallsPending = canRetry;
   if (!canRetry) s.callAttemptsOnLead = 0;
 
+  // Checklist (5.4.3): con "Appuntamento Fissato" resta finché la modale non viene
+  // salvata (se la annulli resta com'era); con qualsiasi altro esito si azzera per il
+  // lead dopo — anche "Da richiamare" e i tentativi senza risposta.
+  const isApptSet = outcome.label === APPOINTMENT_SET_OUTCOME_LABEL;
+  const checklistNow = Object.assign({}, s.checklist || {});
+  if (!isApptSet) s.checklist = {};
+
   // La chiamata è già registrata a prescindere da quel che succede dopo (persist() qui sotto):
   // i popup "Appuntamento Fissato"/"Da richiamare" (se scattano) sono un'aggiunta al CRM/ai
   // richiami, non devono mai poter bloccare o alterare il conteggio normale della sessione.
   persist();
   renderSessioneAttiva();
 
-  if (outcome.label === APPOINTMENT_SET_OUTCOME_LABEL) {
+  if (isApptSet) {
     uiState.pendingApptCallId = callRecord.id;
-    openAppointmentSetModal();
+    openAppointmentSetModal({
+      checklist: checklistNow,
+      onSaved: () => { if (db.activeSession) db.activeSession.checklist = {}; }
+    });
   } else if (outcome.label === CALLBACK_OUTCOME_LABEL) {
     openCallbackModal({
       mode: 'create',
@@ -5214,7 +5298,8 @@ function logCallAction(outcomeId) {
  * Appuntamento" (vedi openNewSetterApptModal/newAppointment), con role:'setter' fisso
  * (il flusso da sessione è sempre lato Setter) e i campi forniti già impostati.
  */
-function openAppointmentSetModal() {
+function openAppointmentSetModal(opts) {
+  opts = opts || {};
   const nowLocal = localDateTimeValue(new Date());
   openModal(`
     <h3>Appuntamento fissato</h3>
@@ -5255,7 +5340,13 @@ function openAppointmentSetModal() {
     apt.sourceSessionId = db.activeSession ? db.activeSession.id : null;
     apt.sourceCallId = uiState.pendingApptCallId || null;
     uiState.pendingApptCallId = null;
+    // Checklist del lead in chiamata (5.4.3): si salva solo qui, sul fissato.
+    if (opts.checklist) {
+      apt.checklist = checklistSnapshot(opts.checklist);
+      apt.checklistPct = checklistPctOf(apt.checklist);
+    }
     db.appointments.unshift(apt);
+    if (opts.onSaved) opts.onSaved(apt);
     persist();
     closeModal();
     showToast('Appuntamento aggiunto al CRM.');
@@ -5270,6 +5361,7 @@ function skipLeadAction() {
   s.retryCallsPending = false;
   s.callAttemptsOnLead = 0;
   s.skips = (s.skips || 0) + 1;
+  s.checklist = {}; // lead saltato: la checklist riparte vuota per il prossimo
   persist();
   renderSessioneAttiva();
 }
@@ -5284,6 +5376,7 @@ function endSessionAction() {
       s.pausedAt = null;
     }
     s.endedAt = new Date().toISOString();
+    delete s.checklist; // stato in corso: non serve nella sessione chiusa
     db.sessions.push(s);
     db.activeSession = null;
     uiState.sessionMinimized = false;
@@ -5366,6 +5459,7 @@ function startCallbackCall(callbackId) {
   cb.inCallGroupId = (cb.createdDateKey === todayKey && cb.leadGroupId) ? cb.leadGroupId : uid('lead');
   cb.inCallAttempts = 0;
   cb.inCallRetryPending = false;
+  cb.inCallChecklist = {}; // checklist della richiamata: parte vuota (5.4.3)
   db.callbackCallActiveId = cb.id;
   persist();
   renderRoute();
@@ -5407,6 +5501,8 @@ function renderCallbackCallScreen() {
         <div class="session-pipeline-name">📞 Richiamo${pipeline ? ' — ' + escapeHtml(pipeline.name) : ''}</div>
         <div></div>
       </div>
+      <div class="session-body">
+        <div class="session-main-col">
 
       <div class="card recov-hero">
         <div class="recov-hero-name">${escapeHtml(cb.leadName || '(senza nome)')}</div>
@@ -5422,8 +5518,12 @@ function renderCallbackCallScreen() {
       ${retryBannerHtml}
 
       <div class="outcome-grid">${buttonsHtml}</div>
+        </div>
+        ${renderLiveChecklistPanel(cb.inCallChecklist)}
+      </div>
     </div>
   `;
+  wireLiveChecklist(appRoot, () => cb.inCallChecklist, items => { cb.inCallChecklist = items; });
 
   document.getElementById('btnExitCallbackCall').addEventListener('click', () => {
     cb.inCallAttempts = 0;
@@ -5467,6 +5567,10 @@ function logCallbackCall(outcomeId) {
   if (!outcome) return;
 
   const isRetryAttempt = !!cb.inCallRetryPending;
+  // Checklist (5.4.3): passa alla modale solo se nasce un appuntamento; con ogni altro
+  // esito si azzera.
+  const checklistNow = Object.assign({}, cb.inCallChecklist || {});
+  if (outcome.label !== APPOINTMENT_SET_OUTCOME_LABEL) cb.inCallChecklist = null;
 
   const callRecord = {
     id: uid('call'),
@@ -5518,7 +5622,7 @@ function logCallbackCall(outcomeId) {
   renderRoute();
 
   if (outcome.label === APPOINTMENT_SET_OUTCOME_LABEL) {
-    openAppointmentSetModal();
+    openAppointmentSetModal({ checklist: checklistNow, onSaved: () => { cb.inCallChecklist = null; } });
   }
 }
 
@@ -5726,6 +5830,7 @@ function undoLastCallAction() {
     s.retryCallsPending = call.undoState.retryCallsPending;
     s.callAttemptsOnLead = call.undoState.callAttemptsOnLead;
     s.currentLeadGroupId = call.undoState.currentLeadGroupId;
+    if (call.undoState.checklist) s.checklist = Object.assign({}, call.undoState.checklist);
     if (linkedCbs.length) db.callbacks = db.callbacks.filter(c => c.sourceCallId !== call.id);
     if (linkedApts.length) db.appointments = db.appointments.filter(a => a.sourceCallId !== call.id);
     persist();
@@ -6009,7 +6114,8 @@ function createPipelineSession(pipelineId) {
     callAttemptsOnLead: 0,
     pausedAt: null,
     pausedTotalMs: 0,
-    currentLeadGroupId: null // id del lead attualmente in corso (vedi logCallAction/computeStats)
+    currentLeadGroupId: null, // id del lead attualmente in corso (vedi logCallAction/computeStats)
+    checklist: {}             // checklist del lead in chiamata { id: true } (5.4.3, renderLiveChecklistPanel)
   };
   return true;
 }
