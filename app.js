@@ -128,18 +128,8 @@ const THEME_PRESETS = {
   }
 };
 
-const RADIUS_STYLES = ['none', 'sharp', 'soft', 'round', 'pill', 'cut', 'bracket', 'mixed'];
-const FONT_STYLES = [
-  { id: 'lexend', label: 'Lexend (leggibile)', cls: '' },   // predefinito — vedi sezione LEGGIBILITÀ in style.css
-  { id: 'archivo', label: 'Archivo', cls: 'font-archivo' },
-  { id: 'mono', label: 'JetBrains Mono', cls: 'font-mono' },
-  { id: 'bebas', label: 'Bebas Neue', cls: 'font-bebas' },
-  { id: 'playfair', label: 'Playfair Display', cls: 'font-playfair' },
-  { id: 'spacemono', label: 'Space Mono', cls: 'font-spacemono' },
-  { id: 'orbitron', label: 'Orbitron', cls: 'font-orbitron' },
-  { id: 'vt323', label: 'VT323', cls: 'font-vt323' },
-  { id: 'unbounded', label: 'Unbounded', cls: 'font-unbounded' }
-];
+/* Angoli, font e glow del builder vecchio: tolti col restyling (17/10). Il font è Inter
+ * per tutti (style.css, --font-sans). */
 
 /** Schiarisce/scurisce un colore hex di una percentuale (positiva = verso il bianco). Usata per derivare --bg-elev2/--border/--accent-hover dai colori custom. */
 function shadeHex(hex, pct) {
@@ -165,94 +155,42 @@ function hexToRgba(hex, alpha) {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
+/* Variabili che la versione prima del restyling scriveva direttamente sulla pagina
+ * (style="--bg:..."): se restano, vincono sui token di style.css. Le togliamo. */
+const OLD_INLINE_THEME_VARS = ['--bg', '--bg-elev', '--bg-elev2', '--border', '--accent', '--accent-hover', '--accent-dim',
+  '--text', '--text-dim', '--warning', '--on-accent', '--setter-color', '--venditore-color', '--success', '--danger',
+  '--tag-x2-bg', '--tag-x2-text', '--tag-conv-bg', '--tag-conv-text', '--accent-filter'];
+
+/** Chiaro o scuro, dalla scelta salvata in 🎨 (sfondo scuro = tema scuro). */
+function themeModeFromSettings(settings) {
+  const bg = (settings.colors || {}).bg;
+  return bg && /^#[0-9a-fA-F]{3,6}$/.test(bg) && isDarkColor(bg) ? 'dark' : 'light';
+}
+
 /**
- * Applica data.settings al DOM: custom properties colore, classi body per
- * radius/font/glow, filtro saturazione/contrasto, tema auto giorno/notte,
- * modalità Grind e Boss Mode. Chiamata all'avvio e ad ogni renderRoute()/modifica
- * impostazioni, così resta sempre sincronizzata.
+ * Applica data.settings al DOM. Restyling 17/10 (step 1): i colori vengono SOLO dai
+ * token di style.css (guida colori). Qui si sceglie solo chiaro/scuro (data-theme),
+ * la grandezza del testo e le classi degli effetti (Grind, Boss Mode).
+ * I vecchi preset, angoli, font e glow del builder non cambiano più l'aspetto:
+ * il builder nuovo (accento a rampa) arriva allo step 16.
  */
 function applyTheme(settings) {
   if (!settings) return;
   const root = document.documentElement;
-  const c = settings.colors || {};
-
-  if (c.bg) root.style.setProperty('--bg', c.bg);
-  if (c.bgElev) {
-    root.style.setProperty('--bg-elev', c.bgElev);
-    root.style.setProperty('--bg-elev2', shadeHex(c.bgElev, c.bg && isDarkColor(c.bg) ? 0.06 : -0.04));
-    root.style.setProperty('--border', shadeHex(c.bgElev, c.bg && isDarkColor(c.bg) ? 0.14 : -0.14));
-  }
-  if (c.accent) {
-    root.style.setProperty('--accent', c.accent);
-    root.style.setProperty('--accent-hover', shadeHex(c.accent, -0.15));
-    root.style.setProperty('--accent-dim', hexToRgba(c.accent, 0.16));
-  }
-  if (c.text) root.style.setProperty('--text', c.text);
-
-  // Testo secondario, avvisi e testo sopra l'accento derivati dal tema scelto (non dalla
-  // palette chiara/scura del sistema): così un tema chiaro su un PC in modalità scura
-  // non si ritrova testo grigio chiaro illeggibile, e viceversa.
-  if (c.text && c.bg) root.style.setProperty('--text-dim', mixHex(c.text, c.bg, 0.38));
-  if (c.bg) root.style.setProperty('--warning', isDarkColor(c.bg) ? '#f0b429' : '#8a5a00');
-  if (c.accent) root.style.setProperty('--on-accent', isDarkColor(c.accent) ? '#ffffff' : '#141414');
-  root.removeAttribute('data-skin'); // vecchia skin "Carta", ora base di tutto il tool
-  // Colori degli stati (No Show, Spostato, ...) chiari o scuri in base allo SFONDO del
-  // tema scelto, non alla modalità chiara/scura del sistema (vedi fondo di style.css).
-  if (c.bg) root.setAttribute('data-tone', isDarkColor(c.bg) ? 'dark' : 'light');
+  OLD_INLINE_THEME_VARS.forEach(v => root.style.removeProperty(v));
+  root.removeAttribute('data-skin');
+  root.removeAttribute('data-tone');
   // Grandezza del testo (🎨 semplice, 16/10): "Grande" ingrandisce tutto il tool.
-  root.style.fontSize = settings.textSize === 'large' ? '134%' : '';
-  if (c.setterColor) root.style.setProperty('--setter-color', c.setterColor);
-  if (c.venditoreColor) root.style.setProperty('--venditore-color', c.venditoreColor);
-  if (c.success) root.style.setProperty('--success', c.success);
-  if (c.danger) {
-    root.style.setProperty('--danger', c.danger);
-    root.style.setProperty('--tag-x2-bg', hexToRgba(c.danger, 0.14));
-    root.style.setProperty('--tag-x2-text', c.danger);
-  }
-  if (c.success) {
-    root.style.setProperty('--tag-conv-bg', hexToRgba(c.success, 0.14));
-    root.style.setProperty('--tag-conv-text', c.success);
-  }
-
-  // Saturazione accento (slider 0-100): approssimata con un filtro CSS sull'elemento che
-  // consuma --accent-filter — applicato dove serve un effetto visibile senza un algoritmo
-  // sofisticato di conversione colore (richiesto esplicitamente "approssimato ma visibile").
-  const sat = settings.accentSaturation != null ? settings.accentSaturation : 86;
-  root.style.setProperty('--accent-filter', `saturate(${Math.round((sat / 86) * 100)}%)`);
-
-  // Contrasto card/sfondo (slider 0-100): più alto = bordo più marcato tra bg e bg-elev.
-  // Effetto approssimato (non serve un algoritmo sofisticato, va bene un risultato visibile):
-  // ricalcola --border come uno shade di bg-elev con un delta proporzionale al contrasto.
-  if (c.bgElev) {
-    const contrast = settings.cardContrast != null ? settings.cardContrast : 70;
-    const delta = 0.04 + (contrast / 100) * 0.28; // 0.04 (basso contrasto) .. 0.32 (alto contrasto)
-    const dark = isDarkColor(c.bg || c.bgElev);
-    root.style.setProperty('--border', shadeHex(c.bgElev, dark ? delta : -delta));
-  }
-
-  // radius
+  root.style.fontSize = settings.textSize === 'large' ? '121%' : '';
+  // Niente più classi di angoli/font/glow del builder vecchio.
   const body = document.body;
-  body.className = body.className.replace(/\bradius-\S+/g, '').trim();
-  const radiusClassMap = { sharp: '', none: '', soft: 'radius-soft', round: 'radius-round', pill: 'radius-pill', cut: 'radius-cut-corner', bracket: 'radius-bracket', mixed: 'radius-mixed' };
-  const rc = radiusClassMap[settings.radiusStyle];
-  if (rc) body.classList.add(rc);
-
-  // font
-  body.className = body.className.replace(/\bfont-\S+/g, '').trim();
-  const fontDef = FONT_STYLES.find(f => f.id === settings.fontStyle);
-  if (fontDef && fontDef.cls) body.classList.add(fontDef.cls);
-
-  // glow
-  body.classList.remove('glow-border', 'glow-full');
-  if (settings.glowLevel === 'border') body.classList.add('glow-border');
-  if (settings.glowLevel === 'full') body.classList.add('glow-full');
+  body.className = body.className.replace(/\b(radius|font|glow)-\S+/g, '').replace(/\s+/g, ' ').trim();
+  root.setAttribute('data-theme', themeModeFromSettings(settings));
 
   // Tema auto giorno/notte (toggle 6): 7-19 chiaro, resto scuro — sovrascrive la preferenza di sistema.
   if (settings.toggles && settings.toggles.autoTheme) {
     const h = new Date().getHours();
     root.setAttribute('data-theme', (h >= 7 && h < 19) ? 'light' : 'dark');
-  } else if (root.getAttribute('data-theme') && !window._userForcedTheme) {
-    root.removeAttribute('data-theme');
   }
 
   // Modalità Grind (toggle 1): confronta chiusure mese corrente coi due target mensili "chiusi".
@@ -5327,41 +5265,7 @@ const TOGGLE_DEFS = [
 function renderBuilderPage() {
   const s = db.settings;
 
-  const presetsHtml = Object.entries(THEME_PRESETS).map(([key, p]) => `
-    <div class="preset-swatch ${s.preset === key ? 'active' : ''}" data-preset="${key}">
-      <div class="preset-dots">
-        <span class="preset-dot" style="background:${p.colors.bg}"></span>
-        <span class="preset-dot" style="background:${p.colors.accent}"></span>
-        <span class="preset-dot" style="background:${p.colors.bgElev}"></span>
-      </div>
-      <div class="preset-name">${p.label}</div>
-    </div>`).join('');
-
-  const colorFieldDefs = [
-    ['bg', 'Sfondo'], ['bgElev', 'Superficie card'], ['accent', 'Accento'], ['text', 'Testo'],
-    ['setterColor', 'Colore Setter'], ['venditoreColor', 'Colore Venditore'], ['success', 'Successo'], ['danger', 'Errore']
-  ];
-  const colorsHtml = colorFieldDefs.map(([key, label]) => `
-    <div class="color-field">
-      <input type="color" id="color_${key}" value="${s.colors[key]}">
-      <label>${label}</label>
-      <input type="text" id="colortext_${key}" value="${s.colors[key]}">
-    </div>`).join('');
-
-  const radiusLabels = { none: 'Nessuno', sharp: 'Squadrato', soft: 'Morbido', round: 'Arrotondato', pill: 'Pillola', cut: 'Lametta', bracket: 'Bracket', mixed: 'Misto' };
-  const radiusHtml = RADIUS_STYLES.map(r => `<button class="chip-select ${s.radiusStyle === r ? 'active' : ''}" data-radius="${r}">${radiusLabels[r]}</button>`).join('');
-
-  const fontsHtml = FONT_STYLES.map(f => `<button class="chip-select font-preview-${f.id} ${s.fontStyle === f.id ? 'active' : ''}" data-font="${f.id}">${f.label}</button>`).join('');
-
-  const glowLabels = { none: 'Nessuno', border: 'Bordo', full: 'Completo' };
-  const glowHtml = Object.keys(glowLabels).map(g => `<button class="chip-select ${s.glowLevel === g ? 'active' : ''}" data-glow="${g}">${glowLabels[g]}</button>`).join('');
-
-
-
   const dark = isDarkColor(s.colors.bg || '#000000');
-  const accentNow = (s.colors.accent || '').toLowerCase();
-  const swatchesHtml = SIMPLE_ACCENTS.map(([hex, name]) =>
-    `<button class="simple-sw ${accentNow === hex ? 'active' : ''}" style="background:${hex}" data-simple-accent="${hex}" aria-label="${name}" aria-pressed="${accentNow === hex}"></button>`).join('');
   const simpleTogglesHtml = SIMPLE_TOGGLES.map(k => {
     const t = TOGGLE_DEFS.find(x => x.key === k);
     return `
@@ -5391,12 +5295,7 @@ function renderBuilderPage() {
     </section>
 
     <section class="card builder-section">
-      <h3>2 · Colore</h3>
-      <div class="simple-sw-row">${swatchesHtml}</div>
-    </section>
-
-    <section class="card builder-section">
-      <h3>3 · Grandezza del testo</h3>
+      <h3>2 · Grandezza del testo</h3>
       <div class="chip-select-row">
         <button class="chip-select big ${s.textSize !== 'large' ? 'active' : ''}" data-text-size="normal">Normale</button>
         <button class="chip-select big ${s.textSize === 'large' ? 'active' : ''}" data-text-size="large">Grande</button>
@@ -5408,52 +5307,7 @@ function renderBuilderPage() {
       <div class="toggle-list">${simpleTogglesHtml}</div>
     </section>
 
-    <details class="card builder-section builder-manual">
-      <summary><h3>Personalizza a mano</h3></summary>
-
-    <section class="builder-section">
-      <h3>Preset rapidi</h3>
-      <div class="preset-row">${presetsHtml}</div>
-    </section>
-
-    <section class="builder-section">
-      <h3>Colori custom</h3>
-      <div class="color-grid">${colorsHtml}</div>
-    </section>
-
-    <section class="builder-section">
-      <h3>Stile angoli</h3>
-      <div class="chip-select-row">${radiusHtml}</div>
-    </section>
-
-    <section class="builder-section">
-      <h3>Font</h3>
-      <div class="chip-select-row">${fontsHtml}</div>
-    </section>
-
-    <section class="builder-section">
-      <h3>Saturazione &amp; contrasto</h3>
-      <div class="slider-row">
-        <label><span>Saturazione accento</span><span>${s.accentSaturation}</span></label>
-        <input type="range" min="0" max="100" id="sliderSaturation" value="${s.accentSaturation}">
-      </div>
-      <div class="slider-row">
-        <label><span>Contrasto card/sfondo</span><span>${s.cardContrast}</span></label>
-        <input type="range" min="0" max="100" id="sliderContrast" value="${s.cardContrast}">
-      </div>
-    </section>
-
-    <section class="builder-section">
-      <h3>Livello glow</h3>
-      <div class="chip-select-row">${glowHtml}</div>
-    </section>
-
-    <div class="builder-actions">
-      <button class="btn-ghost" id="btnResetBuilder">Ripristina default</button>
-    </div>
-    </details>
   `;
-  if (uiState.builderManualOpen) appRoot.querySelector('.builder-manual').open = true;
 
   wireBuilderEvents();
 }
@@ -5492,6 +5346,7 @@ function wireBuilderEvents() {
   colorFieldDefs.forEach(key => {
     const colorInput = document.getElementById('color_' + key);
     const textInput = document.getElementById('colortext_' + key);
+    if (!colorInput || !textInput) return; // sezione tolta col restyling (torna allo step 16)
     const commit = (val) => {
       if (!/^#[0-9a-fA-F]{6}$/.test(val)) return;
       db.settings.colors[key] = val;
@@ -5528,12 +5383,14 @@ function wireBuilderEvents() {
     });
   });
 
-  document.getElementById('sliderSaturation').addEventListener('input', (e) => {
+  const sliderSat = document.getElementById('sliderSaturation');
+  if (sliderSat) sliderSat.addEventListener('input', (e) => {
     db.settings.accentSaturation = parseInt(e.target.value, 10);
     persist();
     applyTheme(db.settings);
   });
-  document.getElementById('sliderContrast').addEventListener('input', (e) => {
+  const sliderCon = document.getElementById('sliderContrast');
+  if (sliderCon) sliderCon.addEventListener('input', (e) => {
     db.settings.cardContrast = parseInt(e.target.value, 10);
     persist();
     applyTheme(db.settings);
@@ -5555,7 +5412,8 @@ function wireBuilderEvents() {
     });
   });
 
-  document.getElementById('btnResetBuilder').addEventListener('click', () => {
+  const btnReset = document.getElementById('btnResetBuilder');
+  if (btnReset) btnReset.addEventListener('click', () => {
     showConfirm('Ripristinare aspetto e opzioni ai valori di default (Graphite Lime)?', () => {
       db.settings = defaultSettings();
       persist();

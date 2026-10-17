@@ -3,15 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
-<title>Chiamate Tracker</title>
+<title>Comms</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📞</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<!-- Tutti gli 8 font del builder (Impostazioni) caricati fin da subito, così lo
-     switch tra stili è istantaneo e non serve un fetch a runtime. -->
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=JetBrains+Mono:wght@500;600;700&family=Bebas+Neue&family=Playfair+Display:wght@600;700&family=Space+Mono:wght@400;700&family=Orbitron:wght@600;700&family=VT323&family=Unbounded:wght@600;700&display=swap">
-<!-- Lexend: font di base del tool (leggibilità). -->
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;500;700&display=swap">
+<!-- Font del tool: Inter (guida colori, restyling 17/10). Se Google Fonts non
+     risponde, style.css ripiega sul font di sistema (--font-sans). -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -36,7 +34,7 @@
 
   <div id="loginScreen" class="login-screen" hidden>
     <form id="loginForm" class="login-card">
-      <div class="login-title">📞 Chiamate Tracker</div>
+      <div class="login-title">Comms</div>
       <label class="field">
         Email
         <input type="email" id="loginEmail" autocomplete="username" required>
