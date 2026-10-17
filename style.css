@@ -2490,3 +2490,69 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
 .modal-actions-split { align-items: center; }
 .modal-actions-gap { flex: 1; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ============================================================================
+ * Calendario appuntamenti (restyling step 11): renderApptCalendar(role)
+ * Colori per esito: rampa accento per gli esiti buoni, neutri per gli altri.
+ * ==========================================================================*/
+.acal-head { gap: 10px 14px; }
+.acal-nav { gap: 8px; }
+.acal-nav .btn-icon { width: 36px; height: 36px; padding: 0; font-size: 1.15rem; line-height: 1; }
+.acal-nav .btn-sm[disabled] { opacity: 0.45; cursor: default; }
+.acal-month { min-width: 150px; font-size: 1rem; font-weight: 600; text-transform: capitalize; letter-spacing: 0; color: var(--neutral-900); text-align: center; }
+.acal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 1px; background: var(--neutral-200); border: var(--border-line); border-radius: var(--radius-card); overflow: hidden; }
+.acal-dow { background: var(--neutral-50); color: var(--neutral-600); font-size: 0.85rem; font-weight: 600; padding: 8px 10px; }
+.acal-cell { background: var(--neutral-0); min-height: 132px; padding: 6px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.acal-cell.weekend { background: var(--neutral-50); }
+.acal-cell.empty { background: var(--neutral-50); }
+.acal-cell.today { box-shadow: inset 0 0 0 2px var(--accent-500); }
+.acal-daynum { font-size: 0.85rem; font-weight: 600; color: var(--neutral-600); padding: 2px 4px; display: flex; align-items: center; gap: 6px; }
+.acal-cell.today .acal-daynum { color: var(--neutral-900); }
+.acal-today-tag { font-size: 0.75rem; font-weight: 700; color: var(--accent-ink); text-transform: lowercase; }
+.acal-ev { display: block; width: 100%; min-width: 0; padding: 4px 7px; border-radius: 8px; border: 1px solid transparent; font: inherit; font-size: 0.8125rem; line-height: 1.3; text-align: left; cursor: pointer; }
+.acal-ev:hover { box-shadow: 0 0 0 2px var(--neutral-900); }
+.acal-ev:focus-visible { outline: 2px solid var(--neutral-900); outline-offset: 1px; }
+.acal-time { font-weight: 700; font-variant-numeric: tabular-nums; margin-right: 5px; }
+.acal-name { overflow-wrap: anywhere; }
+.acal-grid .acal-ev { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.acal-centro { opacity: 0.8; }
+.acal-more { align-self: flex-start; background: none; border: none; padding: 2px 6px; font: inherit; font-size: 0.8125rem; font-weight: 600; color: var(--accent-ink); cursor: pointer; border-radius: 6px; }
+.acal-more:hover { background: var(--accent-100); }
+/* colori per esito (blocchi e legenda) */
+/* Setter: presentato 300, confermato 100 (l'accento pieno resta raro: guida 60/30/10).
+   Venditore: chiuso 500 (il dato che conta), trattativa 200, non in target 100. */
+.acal-presented { background: var(--accent-300); color: var(--neutral-900); }
+.acal-confirmed { background: var(--accent-100); color: var(--neutral-900); border-color: var(--accent-200) !important; }
+[data-acal="venditore"] .acal-presented { background: var(--accent-500); color: var(--on-accent); }
+[data-acal="venditore"] .acal-confirmed { background: var(--accent-200); border-color: transparent !important; }
+.acal-soft { background: var(--accent-100); color: var(--neutral-900); border-color: var(--accent-200) !important; }
+.acal-waiting { background: var(--neutral-0); color: var(--neutral-900); border-color: var(--neutral-200) !important; }
+.acal-noshow { background: var(--neutral-200); color: var(--neutral-900); }
+.acal-cancelled { background: var(--neutral-100); color: var(--neutral-600); }
+.acal-cancelled .acal-name { text-decoration: line-through; }
+.acal-moved { background: transparent; color: var(--neutral-400); border: 1px dashed var(--neutral-400) !important; }
+.acal-moved .acal-name { text-decoration: line-through; }
+.acal-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px 16px; flex-wrap: wrap; font-size: 0.85rem; color: var(--neutral-600); }
+.acal-total { font-weight: 600; color: var(--neutral-900); }
+.acal-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.acal-legend-item { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8125rem; color: var(--neutral-600); }
+.acal-legend-item i { width: 14px; height: 14px; border-radius: 4px; border: 1px solid transparent; }
+.acal-legend-item i.acal-moved { border-style: dashed; }
+/* Elenco per giorno (sotto i 900 px) */
+.acal-list { display: none; flex-direction: column; gap: 12px; }
+.acal-lday { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: var(--border-line); border-radius: var(--radius-card); }
+.acal-lday.today { border: 2px solid var(--accent-500); }
+.acal-lday-head { display: flex; align-items: center; gap: 8px; font-size: 0.95rem; font-weight: 600; color: var(--neutral-900); text-transform: capitalize; }
+.acal-lday-count { margin-left: auto; font-size: 0.8125rem; color: var(--neutral-600); font-weight: 600; }
+.acal-lday .acal-ev { font-size: 0.9rem; padding: 8px 10px; }
+.acal-list-empty { margin: 0; }
+@media (max-width: 899px) {
+  .acal-grid { display: none; }
+  .acal-list { display: flex; }
+  .acal-head h3 { width: 100%; }
+}
+/* Dettaglio del giorno */
+.acal-daylist { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.acal-dayrow { display: flex; align-items: center; gap: 10px; }
+.acal-dayrow .acal-ev { flex: 1; font-size: 0.9rem; padding: 8px 10px; }
+.acal-dayrow-label { font-size: 0.8125rem; color: var(--neutral-600); white-space: nowrap; }

@@ -3521,6 +3521,7 @@ function renderAppuntamenti() {
         </table>
       </div>` : `<p class="text-dim appt-list-empty">${emptyMsg}</p>`) : ''}
     </section>
+    ${renderApptCalendar('setter')}
   `;
 
   wireAppuntamentiEvents();
@@ -3815,6 +3816,7 @@ function wireAppuntamentiEvents() {
   document.getElementById('btnToggleApptList').addEventListener('click', () => { setApptListOpen(!isApptListOpen()); renderAppuntamenti(); });
   wireRecoveryRoundEntryCard();
   wireConfirmRoundEntryCard();
+  wireApptCalendar('setter');
 
   // Tre puntini ⋯: scheda checklist (+ telefono ed Elimina).
   appRoot.querySelectorAll('[data-appt-more]').forEach(btn => {
@@ -4661,6 +4663,221 @@ function wireAppointmentsCalendarModal() {
     wireAppointmentsCalendarModal();
   });
   modalRoot.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', closeModal));
+}
+
+/* ============================================================================
+ * Calendario appuntamenti — componente unico (restyling 17/10/2026, step 11, 5.2.1)
+ * renderApptCalendar(role) + wireApptCalendar(role). Setter: in fondo a Setting →
+ * Appuntamenti. Venditore: pronto per Venditore → Lead (step 15).
+ * Stessa struttura del calendario commissioni (mese lun-dom, ◀ ▶, "Oggi"), ma pensato
+ * per leggere: celle alte, testo da 13 px, un blocco per appuntamento con ora + nome
+ * (+ centro se c'è), colore per esito (rampa accento + neutri, legenda sotto), oggi con
+ * bordo accento. Più di 4 in un giorno: i primi 4 + "+N altri" (dettaglio del giorno).
+ * Clic su un appuntamento: Setter = riga nella lista (evidenziata), Venditore = scheda lead.
+ * Sotto i 900 px la griglia lascia il posto a un elenco per giorno (solo CSS).
+ * Il mese mostrato è ricordato in memoria (uiState.apptCalOffset), non nel browser.
+ * ==========================================================================*/
+const APPT_CAL_MAX_PER_DAY = 4;
+
+/** Categorie colore per ruolo, in ordine di legenda. */
+const APPT_CAL_CATS = {
+  setter: [
+    { key: 'presented', label: 'Presentato' },
+    { key: 'confirmed', label: 'Confermato 24h' },
+    { key: 'waiting', label: 'Da confermare' },
+    { key: 'noshow', label: 'No show' },
+    { key: 'cancelled', label: 'Annullato' },
+    { key: 'moved', label: 'Spostato' }
+  ],
+  venditore: [
+    { key: 'presented', label: 'Chiuso / contratto' },
+    { key: 'confirmed', label: 'Trattativa' },
+    { key: 'soft', label: 'Non in target' },
+    { key: 'waiting', label: 'Senza esito' },
+    { key: 'noshow', label: 'No show' },
+    { key: 'cancelled', label: 'Annullato / perso' },
+    { key: 'moved', label: 'Spostato' }
+  ]
+};
+
+function apptCalCategory(a, role) {
+  if (role === 'venditore') {
+    const st = a.dealStage || '';
+    if (a.closed || st === 'chiuso' || st === 'contratto_firmato') return 'presented';
+    if (st === 'trattativa') return 'confirmed';
+    if (st === 'non_in_target') return 'soft';
+    if (st === 'no_show') return 'noshow';
+    if (st === 'annullato' || st === 'perso') return 'cancelled';
+    if (st === 'spostato') return 'moved';
+    return 'waiting';
+  }
+  return ({ presented: 'presented', confirmed24h: 'confirmed', no_show: 'noshow', annullato: 'cancelled', spostato: 'moved' })[a.presentedStatus] || 'waiting';
+}
+
+function apptCalLabel(a, role) {
+  if (role === 'venditore') { const d = a.dealStage && dealStageDef(a.dealStage); return d ? d.label : 'Senza esito'; }
+  return SETTER_PRESENTED_LABEL[a.presentedStatus] || SETTER_PRESENTED_LABEL.no;
+}
+
+/** Centro da mostrare accanto al nome: quello dell'appuntamento, o del lead (Venditore). */
+function apptCalCentro(a) {
+  if (a.centerName) return a.centerName;
+  if (a.role === 'venditore' && a.leadId) {
+    const l = (db.leads || []).find(x => x.id === a.leadId);
+    if (l && l.centro) return l.centro;
+  }
+  return '';
+}
+
+function apptCalViewDate(role) {
+  uiState.apptCalOffset = uiState.apptCalOffset || {};
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth() + (uiState.apptCalOffset[role] || 0), 1);
+}
+
+/** Appuntamenti del ruolo nel mese, per giorno (YYYY-MM-DD), ordinati per ora. */
+function apptCalByDay(role, viewDate) {
+  const range = { start: startOfMonth(viewDate), end: endOfMonth(viewDate) };
+  const byDay = {};
+  db.appointments
+    .filter(a => a.role === role && a.scheduledAt && inRange(a.scheduledAt, range))
+    .sort((a, b) => new Date(a.scheduledAt) - new Date(b.scheduledAt))
+    .forEach(a => { const k = dateInputValue(a.scheduledAt); (byDay[k] = byDay[k] || []).push(a); });
+  return byDay;
+}
+
+function apptCalEventHtml(a, role) {
+  const cat = apptCalCategory(a, role);
+  const centro = apptCalCentro(a);
+  // Venditore: il nome del lead (senza la sigla " - MJ - N" dell'appuntamento).
+  const lead = role === 'venditore' && a.leadId ? (db.leads || []).find(l => l.id === a.leadId) : null;
+  const name = (lead && lead.name) || a.clientName || '(senza nome)';
+  const title = `${fmtTime(a.scheduledAt)} · ${name}${centro ? ' · ' + centro : ''} · ${apptCalLabel(a, role)}`;
+  return `<button type="button" class="acal-ev acal-${cat}" data-acal-appt="${a.id}" title="${escapeHtml(title)}">
+      <span class="acal-time">${fmtTime(a.scheduledAt)}</span>
+      <span class="acal-name">${escapeHtml(name)}${centro ? `<span class="acal-centro"> · ${escapeHtml(centro)}</span>` : ''}</span>
+    </button>`;
+}
+
+function renderApptCalendar(role) {
+  role = role === 'venditore' ? 'venditore' : 'setter';
+  const now = new Date();
+  const viewDate = apptCalViewDate(role);
+  const byDay = apptCalByDay(role, viewDate);
+  const firstWeekday = (viewDate.getDay() + 6) % 7; // 0 = lunedì
+  const daysInMonth = endOfMonth(viewDate).getDate();
+  const todayKey = dateInputValue(now);
+  const monthTotal = Object.values(byDay).reduce((s, l) => s + l.length, 0);
+  const dow = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom'];
+
+  let cells = '';
+  for (let i = 0; i < firstWeekday; i++) cells += `<div class="acal-cell empty" aria-hidden="true"></div>`;
+  let listDays = '';
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = new Date(viewDate.getFullYear(), viewDate.getMonth(), day);
+    const key = dateInputValue(d);
+    const list = byDay[key] || [];
+    const isToday = key === todayKey;
+    const wknd = d.getDay() === 0 || d.getDay() === 6;
+    const shown = list.slice(0, APPT_CAL_MAX_PER_DAY);
+    const more = list.length - shown.length;
+    cells += `
+      <div class="acal-cell ${isToday ? 'today' : ''} ${wknd ? 'weekend' : ''} ${list.length ? 'has-appts' : ''}">
+        <div class="acal-daynum">${day}${isToday ? '<span class="acal-today-tag">oggi</span>' : ''}</div>
+        ${shown.map(a => apptCalEventHtml(a, role)).join('')}
+        ${more > 0 ? `<button type="button" class="acal-more" data-acal-day="${key}">+${more} ${more === 1 ? 'altro' : 'altri'}</button>` : ''}
+      </div>`;
+    if (list.length) {
+      const dayLabel = d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+      listDays += `
+        <div class="acal-lday ${isToday ? 'today' : ''}">
+          <div class="acal-lday-head"><span>${escapeHtml(dayLabel)}</span>${isToday ? '<span class="acal-today-tag">oggi</span>' : ''}<span class="acal-lday-count">${list.length}</span></div>
+          ${list.map(a => apptCalEventHtml(a, role)).join('')}
+        </div>`;
+    }
+  }
+  const trailing = (7 - ((firstWeekday + daysInMonth) % 7)) % 7;
+  for (let i = 0; i < trailing; i++) cells += `<div class="acal-cell empty" aria-hidden="true"></div>`;
+
+  const monthLabel = viewDate.toLocaleDateString('it-IT', { month: 'long', year: 'numeric' });
+  const isCurrent = !(uiState.apptCalOffset && uiState.apptCalOffset[role]);
+  return `
+    <section class="card dash-section acal" data-acal="${role}">
+      <div class="dash-section-head acal-head">
+        <h3>Calendario appuntamenti${role === 'venditore' ? ' Venditore' : ''}</h3>
+        <div class="cal-nav acal-nav">
+          <button class="btn-ghost btn-sm" data-acal-nav="today" ${isCurrent ? 'disabled' : ''}>Oggi</button>
+          <button class="btn-icon" data-acal-nav="-1" title="Mese prima" aria-label="Mese prima">‹</button>
+          <div class="cal-month-label acal-month">${escapeHtml(monthLabel)}</div>
+          <button class="btn-icon" data-acal-nav="1" title="Mese dopo" aria-label="Mese dopo">›</button>
+        </div>
+      </div>
+      <div class="acal-grid" role="grid" aria-label="Appuntamenti di ${escapeHtml(monthLabel)}">
+        ${dow.map(x => `<div class="acal-dow">${x}</div>`).join('')}
+        ${cells}
+      </div>
+      <div class="acal-list">
+        ${listDays || '<p class="text-dim acal-list-empty">Nessun appuntamento in questo mese.</p>'}
+      </div>
+      <div class="acal-foot">
+        <span class="acal-total">${monthTotal} ${monthTotal === 1 ? 'appuntamento' : 'appuntamenti'} nel mese</span>
+        <div class="acal-legend">
+          ${APPT_CAL_CATS[role].map(c => `<span class="acal-legend-item"><i class="acal-${c.key}"></i>${escapeHtml(c.label)}</span>`).join('')}
+        </div>
+      </div>
+    </section>`;
+}
+
+function wireApptCalendar(role) {
+  role = role === 'venditore' ? 'venditore' : 'setter';
+  const root = appRoot.querySelector(`[data-acal="${role}"]`);
+  if (!root) return;
+  const rerender = () => {
+    const cur = appRoot.querySelector(`[data-acal="${role}"]`);
+    if (!cur) return;
+    cur.outerHTML = renderApptCalendar(role);
+    wireApptCalendar(role);
+  };
+  root.querySelectorAll('[data-acal-nav]').forEach(btn => btn.addEventListener('click', () => {
+    uiState.apptCalOffset = uiState.apptCalOffset || {};
+    const v = btn.dataset.acalNav;
+    uiState.apptCalOffset[role] = v === 'today' ? 0 : (uiState.apptCalOffset[role] || 0) + Number(v);
+    rerender();
+  }));
+  root.querySelectorAll('[data-acal-appt]').forEach(btn => btn.addEventListener('click', () => openApptFromCalendar(btn.dataset.acalAppt)));
+  root.querySelectorAll('[data-acal-day]').forEach(btn => btn.addEventListener('click', () => openApptCalendarDay(role, btn.dataset.acalDay)));
+}
+
+/** Clic su un appuntamento del calendario. */
+function openApptFromCalendar(id) {
+  const a = db.appointments.find(x => x.id === id);
+  if (!a) return;
+  if (a.role === 'venditore') {
+    const lead = a.leadId && (db.leads || []).find(l => l.id === a.leadId);
+    location.hash = lead ? '#/lead/' + lead.id : '#/' + VENDITORE_TABLE_ROUTE;
+    return;
+  }
+  if (!location.hash.startsWith('#/setting-appuntamenti')) {
+    location.hash = '#/setting-appuntamenti';
+    renderRoute();
+  }
+  highlightSetterApptRow(a.id);
+}
+
+/** Dettaglio del giorno ("+N altri"): tutti gli appuntamenti, cliccabili. */
+function openApptCalendarDay(role, key) {
+  const list = (apptCalByDay(role, new Date(key + 'T12:00'))[key]) || [];
+  const d = new Date(key + 'T12:00');
+  openModal(`
+    <h3>${escapeHtml(d.toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' }))}</h3>
+    <p class="text-dim" style="font-size:0.85rem;">${list.length} ${list.length === 1 ? 'appuntamento' : 'appuntamenti'}</p>
+    <div class="acal-daylist" data-acal="${role}">
+      ${list.map(a => `<div class="acal-dayrow">${apptCalEventHtml(a, role)}<span class="acal-dayrow-label">${escapeHtml(apptCalLabel(a, role))}</span></div>`).join('')}
+    </div>
+    <div class="modal-actions"><button class="btn-ghost" data-close-modal="1">Chiudi</button></div>
+  `);
+  modalRoot.querySelectorAll('[data-close-modal]').forEach(b => b.addEventListener('click', closeModal));
+  modalRoot.querySelectorAll('[data-acal-appt]').forEach(btn => btn.addEventListener('click', () => { closeModal(); openApptFromCalendar(btn.dataset.acalAppt); }));
 }
 
 const COMMISSION_SOURCE_LABELS = { showup: 'presentati', setting: 'chiusura setting', vendita: 'chiusura closer' };
