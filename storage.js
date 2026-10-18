@@ -324,15 +324,19 @@ const Storage = {
   // true quando il tool è aperto in un'altra scheda (app.js blockThisTab): questa scheda
   // non scrive più la copia locale, che ora è della scheda nuova.
   readOnly: false,
+  /** Copia locale dell'utente. CORREZIONE (18/10, bug 2): se c'è ma non si legge
+   * (rovinata) restituisce null, MAI dati vuoti: con dati vuoti il tool avrebbe
+   * mandato online le cancellazioni di tutto. Chi la chiama scarica i dati online. */
   load() {
     try {
       const raw = localStorage.getItem(this.key);
       if (!raw) return defaultData();
       const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('copia locale non valida');
       return mergeWithDefaults(parsed);
     } catch (e) {
-      console.error('Errore lettura dati locali', e);
-      return defaultData();
+      console.warn('Copia locale illeggibile: uso i dati online', e);
+      return null;
     }
   },
   save(data) {

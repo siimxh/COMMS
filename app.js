@@ -6758,7 +6758,14 @@ async function openUserData() {
   const user = CloudSync.session.user;
   Storage.key = STORAGE_KEY + '__' + user.id;
   CloudSync._loadSynced();
-  const local = localStorage.getItem(Storage.key) ? Storage.load() : null;
+  let rawLocal = null;
+  try { rawLocal = localStorage.getItem(Storage.key); } catch (e) { rawLocal = null; }
+  const local = rawLocal ? Storage.load() : null;
+  // CORREZIONE (18/10, bug 2): copia locale rovinata = non si manda niente online, si
+  // usano i dati online. La copia rovinata resta da parte (chiave "__illeggibile").
+  if (rawLocal && !local) {
+    try { localStorage.setItem(Storage.key + '__illeggibile', rawLocal); } catch (e) { /* spazio pieno: pazienza */ }
+  }
 
   // Modifiche fatte qui e non ancora inviate: partono, ma il salvataggio controlla
   // prima la versione online e, se un altro dispositivo ha salvato nel frattempo,
