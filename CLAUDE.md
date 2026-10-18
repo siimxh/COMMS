@@ -111,6 +111,8 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 
 **Base e routing**
 - `persist()` salva nella copia locale e accoda il salvataggio online (`CloudSync.schedule`). Chiamala dopo ogni modifica a `db`.
+- Finestre: sempre con `openModal(html)` / `closeModal()`: role="dialog" aria-modal, titolo = primo h3, fuoco dentro (Tab gira nella finestra), Esc chiude, alla chiusura il fuoco torna dov'era.
+- Una scheda sola: `announceThisTab` all'avvio, le altre schede vanno in `blockThisTab` (vedi sez. 5).
 - Avvio: `bootApp` → login (`loginSubmitAction`) → `startForUser` → `openUserData` (dati online, o import dei dati del browser al primo login). Account ed Esci: `openAccountModal`, `logoutAction` (Esci ricarica la pagina). Dentro 👤 ci sono Esporta, Importa, l'interruttore Parte Venditore e il permesso per le notifiche di sistema.
 - Layout: barra laterale `initSidebar`, `updateSidebarActive`, `openMobileSidebar`/`closeMobileSidebar` (compressa ricordata in localStorage `comms_barraCompatta`). Barra della pagina: `renderPageBar(section, tab)`; tab `SETTING_SUBROUTES`, `VENDITORE_SUBROUTES`. Un solo pulsante nero (`.btn-primary`) per vista.
 - Periodo **unico**: Dashboard, Sessioni e Stats usano la stessa barra (`renderPeriodBar`, `wirePeriodBar`) e lo stesso periodo (`getPeriod`, `setPeriod`, `getPeriodRange`; `getPeriodRangeOrNull`, null = "Tutto"). Il browser si ricorda la scelta (localStorage `chiamateTracker_periodo`).
@@ -143,6 +145,7 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 - A sinistra solo i Da richiamare di oggi (`todayPendingCallbacks`); a destra la checklist (`renderLiveChecklistPanel`, `wireLiveChecklist`): stato in corso su `db.activeSession.checklist`, `cb.inCallChecklist`, `entry.inCallChecklist` (richiamata e Round Recupero hanno la stessa checklist).
 - Appuntamento fissato in sessione: `openAppointmentSetModal({ checklist, onSaved })` salva `apt.checklist` + `apt.checklistPct`; lista sotto gli esiti `renderSessionApptList`.
 - Esito "conferma appuntamento" (l'altro `isConversion`) con almeno una voce spuntata: la sessione non sa il nome del lead, quindi `openConfirmChecklistPickModal` chiede "Quale appuntamento?" (Setter da oggi in poi, da confermare o confermati, ricerca per nome/telefono, "Salta" = niente). Salva in unione (`mergeChecklistIntoAppt`); lo stato di prima va in `undoState.apptChecklist` e "Annulla ultimo esito" lo rimette (`restoreApptChecklist`).
+- Sessione dimenticata aperta da un altro giorno: `staleActiveSession`, avviso `renderStaleSessionBanner` (all'apertura e ogni 20 s), `closeStaleSession` (chiude all'ora dell'ultima chiamata, o all'inizio; anche "Fine sessione" fa così). Finché resta aperta, le chiamate automatiche (richiami, conferme, recupero, follow-up) vanno nelle sessioni automatiche di oggi: `sessionForNewCalls`.
 - Elenco e dettaglio: `renderSessioniList` (un filtro pipeline, ultime 20 sessioni + "Mostra altre", attività `renderCallActivitySection`, ricerca per giorno `renderSessionDaySearch`/`parseDaySearch`, grafico checklist `renderChecklistChartSection`/`checklistChartData`), `renderSessioneDetail`.
 
 **Da richiamare (callback)**
