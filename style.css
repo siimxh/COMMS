@@ -2621,3 +2621,19 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
 .stale-session-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
 .stale-session-banner .btn-ghost { flex: none; }
 @media (max-width: 899px) { .stale-session-banner { padding: 10px 16px; } }
+
+/* Nomi lunghissimi senza spazi (bug 10, 18/10): vanno a capo invece di uscire dai riquadri. */
+body { overflow-wrap: break-word; }
+.task-main, .task-title, .task-sub, .ev .tx, .ev .tx .s, .who, .leads-tbl .sub,
+.recov-hero-name, .session-callback-item-name, .session-pipeline-name, .session-topbar > *,
+.modal-box h3, .lead-del-msg, .appt-name-text, .cb-notify-title,
+.recov-hero-phone, .confirm-hero-phone, .appt-sub {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.recov-hero { max-width: 100%; }
+.recov-hero-phone-row { max-width: 100%; flex-wrap: wrap; justify-content: center; }
+@media (max-width: 860px) { .session-main-col { width: 100%; } }
+.pipeline-filter { min-width: 0; max-width: 100%; }
+.pipeline-filter select, #sessioniPipelineFilter { min-width: 0; max-width: calc(100% - 14px); text-overflow: ellipsis; }
+@media (max-width: 760px) { .appt-table tr.appt-row { grid-template-columns: minmax(0, 1fr) auto auto; } }
