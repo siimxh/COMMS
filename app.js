@@ -4522,7 +4522,7 @@ function renderInstallmentsModal(apt, role) {
       <input type="number" min="0" data-inst-field="amount" value="${inst.amount || 0}" placeholder="Importo €">
       <input type="date" data-inst-field="dueDate" value="${inst.dueDate ? dateInputValue(inst.dueDate) : ''}">
       <label class="checkbox-inline"><input type="checkbox" data-inst-field="paid" ${inst.paid ? 'checked' : ''}> pagata</label>
-      <input type="date" data-inst-field="paidDate" value="${inst.paidDate ? dateInputValue(inst.paidDate) : ''}" ${inst.paid ? '' : 'disabled'}>
+      <input type="date" data-inst-field="paidDate" value="${inst.paidDate ? dateInputValue(inst.paidDate) : ''}" ${inst.paid ? 'required aria-required="true"' : 'disabled'} aria-label="Data di pagamento" title="Data di pagamento (obbligatoria per una rata pagata)">
       <button class="crm-row-del" data-del-inst="${inst.id}" title="Elimina rata">×</button>
     </div>`).join('');
 
@@ -4575,7 +4575,14 @@ function renderInstallmentsModal(apt, role) {
         else if (field === 'paid') {
           inst.paid = fieldEl.checked;
           if (inst.paid && !inst.paidDate) inst.paidDate = dateInputValue(new Date());
-        } else if (field === 'paidDate') inst.paidDate = fieldEl.value;
+        } else if (field === 'paidDate') {
+          // CORREZIONE (18/10, bug 8): una rata pagata ha sempre la data di pagamento
+          // (la commissione va a quel giorno). Campo svuotato → si rimette quella di prima, o oggi.
+          if (inst.paid && !fieldEl.value) {
+            inst.paidDate = inst.paidDate || dateInputValue(new Date());
+            showToast('La data di pagamento serve per una rata pagata: ho rimesso ' + fmtDate(inst.paidDate) + '.', true);
+          } else inst.paidDate = fieldEl.value;
+        }
 
         persist();
         renderInstallmentsModal(apt);
