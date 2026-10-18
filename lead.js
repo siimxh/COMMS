@@ -15,8 +15,11 @@
  * - Soldi: restano sull'APPUNTAMENTO chiuso (cashCollected, totalSold, installments), così
  *   commissioni e statistiche si calcolano come prima (utils.js). La scheda Pagamenti li
  *   legge e li scrive lì.
- * - "Fissare appuntamento" come prossima azione: ha data e ora; segnandola fatta si crea
- *   l'appuntamento Venditore del lead.
+ * - Niente più "Fissare appuntamento" come prossima azione (Simone, 18/10/2026: c'è già la
+ *   📞 Chiamata). Nel "Fatto" di un'azione, se ha risposto, il campo "Appuntamento fissato
+ *   per" crea l'appuntamento Venditore del lead (esito "Appuntamento fissato" della
+ *   chiamata). I lead con quella azione salvata passano a 📞 Chiamata, stessa data e ora
+ *   (migrateOldNextTypes, dentro ensureLeads).
  * - Interruttore "Parte Venditore" in 👤 Account (db.settings.venditoreOn, per utente).
  * - Note e follow-up stanno SOLO nella scheda lead (Simone, 16/10). Le note che c'erano
  *   sugli appuntamenti passano nello storico del lead, la data di follow-up diventa la
@@ -47,11 +50,11 @@ const LeadCRM = (function () {
   const APERTI = ['Nuovo', 'Trattativa', 'Follow-up'];
   const AZIONI = {
     chiamata: { i: '📞', l: 'Chiamata' }, whatsapp: { i: '💬', l: 'Messaggio WhatsApp' }, audio: { i: '🎧', l: 'Audio WhatsApp' },
-    contratto: { i: '📄', l: 'Mandare contratto' }, contenuto: { i: '🎬', l: 'Mandare contenuto' }, appuntamento: { i: '📅', l: 'Fissare appuntamento' },
+    contratto: { i: '📄', l: 'Mandare contratto' }, contenuto: { i: '🎬', l: 'Mandare contenuto' },
     recupero: { i: '🔁', l: 'Recupero no show' }
   };
   // Icona outline delle righe nelle Task della Dashboard (app.js TASK_ICONS).
-  const AZIONI_ICO = { chiamata: 'phone', whatsapp: 'message', audio: 'mic', contratto: 'file', contenuto: 'play', appuntamento: 'calendar', recupero: 'refresh' };
+  const AZIONI_ICO = { chiamata: 'phone', whatsapp: 'message', audio: 'mic', contratto: 'file', contenuto: 'play', recupero: 'refresh' };
   const ESITI = { presentato: 'Presentato', no_show: 'No show', annullato: 'Annullato', spostato: 'Spostato', non_in_target: 'Non in target' };
   const FREDDO_DOPO = 6;
   const GG = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
@@ -189,8 +192,20 @@ const LeadCRM = (function () {
       changed = true;
     });
     created.forEach(initialStateFromAppts);
+    if (migrateOldNextTypes()) changed = true;
     if (moveApptExtras()) changed = true;
     if (syncRecoveryNext()) changed = true;
+    return changed;
+  }
+
+  /** "📅 Fissare appuntamento" non c'è più (Simone, 18/10/2026): chi l'aveva salvata come
+   * prossima azione passa a "📞 Chiamata" con la stessa data e ora. apptAt resta: il
+   * "Fatto" lo propone già nel campo "Appuntamento fissato per". */
+  function migrateOldNextTypes() {
+    let changed = false;
+    leads().forEach(l => {
+      if (l.next && l.next.type === 'appuntamento') { l.next.type = 'chiamata'; changed = true; }
+    });
     return changed;
   }
 
@@ -338,7 +353,7 @@ const LeadCRM = (function () {
       const n = l.next;
       if (!isOpen(l) || !n || !n.date || n.date > t) return; // solo oggi e scadute
       const extra = (recoveryEntryFor(l) && l.fuNoAnswer ? ` · <b>${l.fuNoAnswer} di ${FREDDO_DOPO}</b> senza risposta` : '')
-        + (n.type === 'appuntamento' && n.apptAt ? ' · per ' + fmtDT(n.apptAt) : '')
+        + (n.apptAt ? ' · appuntamento per ' + fmtDT(n.apptAt) : '')
         + (n.note ? ` · <q>${esc(n.note)}</q>` : '');
       out.push({
         id: 'next-' + l.id, due: n.date + 'T' + (n.time || '00:00'), hasTime: !!n.time, icon: AZIONI_ICO[n.type] || 'phone',
@@ -374,16 +389,12 @@ const LeadCRM = (function () {
           <label><span class="mlabel">Giorno</span><input type="date" class="ld-input" id="${prefix}Date" value="${def.date || workDay(1)}"></label>
           <label><span class="mlabel">Ora (facoltativa)</span><input type="time" class="ld-input" id="${prefix}Time" value="${def.time || ''}"></label>
         </div>
-        <label class="mblock" id="${prefix}ApptWrap" ${t0 === 'appuntamento' ? '' : 'hidden'}><span class="mlabel">Data e ora dell'appuntamento</span><input type="datetime-local" class="ld-input" id="${prefix}ApptAt" value="${def.apptAt || ''}">
-          <span class="mhint">Quando segni l'azione come fatta, si crea l'appuntamento Venditore.</span></label>
         <label><span class="mlabel">Cosa fare (una riga)</span><input type="text" class="ld-input" id="${prefix}Note" value="${esc(def.note || '')}" placeholder="Es. chiedile se ne ha parlato col socio"></label>
       </div>`;
   }
   function wireNextBlock(box, prefix) {
-    const apptWrap = box.querySelector('#' + prefix + 'ApptWrap');
     box.querySelectorAll('#' + prefix + 'Type button').forEach(b => b.addEventListener('click', () => {
       box.querySelectorAll('#' + prefix + 'Type button').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
-      if (apptWrap) apptWrap.hidden = b.dataset.v !== 'appuntamento';
     }));
   }
   function readNextBlock(box, prefix) {
@@ -394,7 +405,6 @@ const LeadCRM = (function () {
       time: box.querySelector('#' + prefix + 'Time').value,
       note: box.querySelector('#' + prefix + 'Note').value.trim()
     };
-    if (next.type === 'appuntamento') next.apptAt = box.querySelector('#' + prefix + 'ApptAt').value || '';
     return { next };
   }
 
@@ -486,7 +496,6 @@ const LeadCRM = (function () {
           if (st.stato !== 'Perso') {
             r = readNextBlock(box, 'e');
             if (!r.next.date) { warn.textContent = 'Scegli il giorno della prossima azione.'; return; }
-            if (r.next.type === 'appuntamento' && !r.next.apptAt) { warn.textContent = 'Scegli data e ora dell\'appuntamento.'; return; }
           }
           const note = box.querySelector('#eCallNote').value.trim();
           applyDealStage(a, st.stato === 'Perso' ? 'perso' : 'trattativa');
@@ -518,7 +527,6 @@ const LeadCRM = (function () {
     const n = l.next;
     const rec = recoveryEntryFor(l); // no show da recuperare: questa è una chiamata di recupero
     const isFU = l.stato === 'Follow-up' || !!rec; // il recupero conta come un follow-up su 6
-    const isAppt = n.type === 'appuntamento';
     const st = { risposta: null, stato: l.stato === 'Nuovo' && !rec && n.type !== 'recupero' ? 'Trattativa' : l.stato };
     const late = n.date < TODAY();
     modal(`
@@ -527,12 +535,12 @@ const LeadCRM = (function () {
       <span class="mlabel">Ha risposto?</span>
       <div class="choice big" id="fRisp"><button type="button" class="yes" data-v="1">Sì</button><button type="button" class="no" data-v="0">No</button></div>
       ${isFU ? `<div class="counter-line" id="fCount"></div>` : ''}
-      ${isAppt ? `<label class="mblock" id="fApptWrap" style="display:block"><span class="mlabel">Appuntamento fissato per</span><input type="datetime-local" class="ld-input" id="fApptAt" value="${n.apptAt || ''}">
-        <span class="mhint">Si crea l'appuntamento Venditore di questo lead. Lascia vuoto se non l'hai fissato.</span></label>` : ''}
+      <label class="mblock" id="fApptWrap" style="display:block" hidden><span class="mlabel">Appuntamento fissato per (facoltativo)</span><input type="datetime-local" class="ld-input" id="fApptAt" value="${esc(n.apptAt || '')}">
+        <span class="mhint">Se avete fissato un appuntamento, si crea l'appuntamento Venditore del lead. Lascia vuoto se no.</span></label>
       <label class="mblock" style="display:block"><span class="mlabel">Nota (facoltativa)</span><input type="text" class="ld-input" id="fCallNote" placeholder="Es. ne parla col socio, la richiamo giovedì"></label>
       <span class="mlabel">Stato del lead</span>
       <div class="choice" id="fStato">${['Nuovo', 'Trattativa', 'Follow-up', 'Cliente', 'Perso', 'Freddo'].filter(s => s !== 'Nuovo' || l.stato === 'Nuovo').map(s => `<button type="button" data-v="${s}">${s === 'Cliente' ? 'Cliente (ha firmato)' : STATO_LABEL[s]}</button>`).join('')}</div>
-      <div id="fNext">${nextBlockHtml('f', { recupero: !!rec, def: { type: rec ? 'recupero' : (n.type === 'recupero' || isAppt ? 'chiamata' : n.type), date: rec ? workDay(1) : workDay(2), note: rec ? recoveryNext().note : '' } })}</div>
+      <div id="fNext">${nextBlockHtml('f', { recupero: !!rec, def: { type: rec ? 'recupero' : (n.type === 'recupero' ? 'chiamata' : n.type), date: rec ? workDay(1) : workDay(2), note: rec ? recoveryNext().note : '' } })}</div>
       <div class="mwarn" id="fWarn"></div>
       <div class="modal-actions"><button class="btn-ghost" id="fCancel">Annulla</button><button class="btn-primary" id="fSave">Salva</button></div>
     `, box => {
@@ -544,7 +552,8 @@ const LeadCRM = (function () {
         box.querySelectorAll('#fStato button').forEach(x => x.classList.toggle('sel', x.dataset.v === st.stato));
         // Con un appuntamento fissato il prossimo passo è l'appuntamento: niente azione obbligatoria.
         box.querySelector('#fNext').hidden = !APERTI.includes(st.stato) || willHaveAppt();
-        const wrap = box.querySelector('#fApptWrap'); if (wrap) wrap.hidden = st.risposta === false;
+        // "Appuntamento fissato per": solo se ha risposto (sostituisce il tipo "Fissare appuntamento").
+        const wrap = box.querySelector('#fApptWrap'); if (wrap) wrap.hidden = st.risposta !== true;
       };
       const drawCount = () => {
         if (!countEl) return;
@@ -566,7 +575,6 @@ const LeadCRM = (function () {
         if (APERTI.includes(st.stato) && !apptAt) {
           r = readNextBlock(box, 'f');
           if (!r.next.date) { warn.textContent = 'Scegli il giorno della prossima azione.'; return; }
-          if (r.next.type === 'appuntamento' && !r.next.apptAt) { warn.textContent = 'Scegli data e ora dell\'appuntamento.'; return; }
         }
         // #fCallNote: prima era #fNote come il "Cosa fare" della prossima azione (stesso id
         // del blocco 'f'), e la riga della prossima azione prendeva questa nota (bug 16/10).
@@ -607,7 +615,7 @@ const LeadCRM = (function () {
     });
   }
 
-  /** Nuovo appuntamento Venditore per un lead (da "Fissare appuntamento"). */
+  /** Nuovo appuntamento Venditore per un lead ("Appuntamento fissato per" nel Fatto, "+ Appuntamento"). */
   function createApptForLead(l, when) {
     const apt = newAppointment('venditore');
     apt.clientName = l.name + (l.setter ? ' - ' + l.setter : '');
@@ -655,7 +663,6 @@ const LeadCRM = (function () {
       box.querySelector('#nSave').addEventListener('click', () => {
         const r = readNextBlock(box, 'n');
         if (!r.next.date) { box.querySelector('#nWarn').textContent = 'Scegli il giorno.'; return; }
-        if (r.next.type === 'appuntamento' && !r.next.apptAt) { box.querySelector('#nWarn').textContent = 'Scegli data e ora dell\'appuntamento.'; return; }
         l.next = r.next;
         if (l.stato === 'Nuovo' && svoltiCount(l)) l.stato = 'Trattativa';
         persist(); rerender(); showToast('Prossima azione salvata.');
@@ -934,7 +941,7 @@ const LeadCRM = (function () {
       nextHtml = `<section class="card next-card ${late ? 'is-late' : ''}">
         <div class="card-label">Prossima azione ${late ? '<span class="late-tag">in ritardo</span>' : ''}</div>
         <div class="next-big">${actLabel(l.next)}</div>
-        <div class="next-meta">${relDay(l.next.date)} · ${fmtShort(l.next.date)}${l.next.time ? ' · ore ' + l.next.time : ''}${l.next.type === 'appuntamento' && l.next.apptAt ? ' · appuntamento per ' + fmtDT(l.next.apptAt) : ''}</div>
+        <div class="next-meta">${relDay(l.next.date)} · ${fmtShort(l.next.date)}${l.next.time ? ' · ore ' + l.next.time : ''}${l.next.apptAt ? ' · appuntamento per ' + fmtDT(l.next.apptAt) : ''}</div>
         ${l.next.note ? `<div>"${esc(l.next.note)}"</div>` : ''}
         ${l.stato === 'Follow-up' ? `<div class="counter-line">Follow-up senza risposta: <b>${l.fuNoAnswer || 0} di ${FREDDO_DOPO}</b><span class="dots6">${Array.from({ length: FREDDO_DOPO }, (_, i) => `<i class="${i < (l.fuNoAnswer || 0) ? 'on' : ''}"></i>`).join('')}</span></div>` : ''}
         <div class="row-btns"><button class="btn-primary" data-done="${l.id}">Fatto</button><button class="btn-ghost" data-move="${l.id}">Sposta</button><button class="btn-ghost" data-setnext="${l.id}">Cambia</button></div>
