@@ -3191,6 +3191,8 @@ function renderConfirmRoundScreen() {
         </div>
       </div>
 
+      <div class="session-body">
+        <div class="session-main-col">
       <div class="card recov-hero">
         <div class="recov-hero-name">${escapeHtml(apt.clientName || '(senza nome)')}</div>
         <div class="recov-hero-phone-row">
@@ -3202,14 +3204,18 @@ function renderConfirmRoundScreen() {
 
       ${retryBannerHtml}
 
-      <div class="outcome-grid">
+      <div class="outcome-grid outcome-grid-2">
         <button class="outcome-btn" data-confirm-outcome="confermato">Confermato 24h</button>
         <button class="outcome-btn" data-confirm-outcome="spostato">Appuntamento spostato<span class="outcome-btn-sub">cambia data/ora</span></button>
         <button class="outcome-btn outcome-btn-danger" data-confirm-outcome="annullato">Annullato</button>
         <button class="outcome-btn" data-confirm-outcome="non_risposto">Non risposto<span class="outcome-btn-sub">doppio squillo</span></button>
       </div>
+        </div>
+        ${renderLiveChecklistPanel(confirmChecklistItems(apt), { locked: checklistOnIds(apt.checklist), hint: 'Già spuntate quelle salvate. Le nuove si aggiungono quando confermi (se ne spunti almeno una).' })}
+      </div>
     </div>
   `;
+  wireLiveChecklist(appRoot, () => confirmChecklistItems(apt), items => { apt.inCallChecklist = items; });
 
   document.getElementById('btnExitConfirmRound').addEventListener('click', exitConfirmRound);
   document.getElementById('btnConfirmSkip').addEventListener('click', () => skipConfirmAppt(apt.id));
@@ -3235,6 +3241,12 @@ function renderConfirmRoundScreen() {
       applyConfirmOutcome(apt.id, outcome);
     });
   });
+}
+
+/** Spunte del Round Conferme: quelle già salvate sull'appuntamento (bloccate) + quelle
+ * in corso (apt.inCallChecklist, sopravvive a un ricaricamento). */
+function confirmChecklistItems(apt) {
+  return Object.assign({}, checklistOnIds(apt.checklist), apt.inCallChecklist || {});
 }
 
 function exitConfirmRound() {
@@ -3268,6 +3280,7 @@ function skipConfirmAppt(apptId) {
     apt.confirmLastInteractionAt = new Date().toISOString();
     apt.confirmCallAttempts = 0;
     apt.confirmRetryPending = false;
+    delete apt.inCallChecklist; // saltato: le spunte in corso non si salvano
   }
   db.confirmRoundCurrentApptId = null;
   persist();
@@ -3310,9 +3323,12 @@ function applyConfirmOutcome(apptId, outcome) {
     apt.confirmLastInteractionAt = now;
     apt.confirmCallAttempts = 0;
     apt.confirmRetryPending = false;
+    // Checklist: unione con quella salvata, solo se c'è almeno una voce spuntata.
+    const savedCk = mergeChecklistIntoAppt(apt, confirmChecklistItems(apt));
+    delete apt.inCallChecklist;
     db.confirmRoundCurrentApptId = null;
     persist();
-    showToast('Appuntamento confermato.');
+    showToast(savedCk ? `Appuntamento confermato. Checklist salvata (${CHECKLIST_ITEMS.filter(it => apt.checklist[it.id]).length}/${CHECKLIST_ITEMS.length}).` : 'Appuntamento confermato.');
     renderConfirmRoundScreen();
     return;
   }
@@ -3325,6 +3341,7 @@ function applyConfirmOutcome(apptId, outcome) {
     });
     apt.presentedStatus = 'annullato';
     addToRecoveryRound(apt, 'setter', 'annullato');
+    delete apt.inCallChecklist;
     apt.confirmLastInteractionAt = now;
     apt.confirmCallAttempts = 0;
     apt.confirmRetryPending = false;
@@ -3391,6 +3408,7 @@ function openConfirmMoveModal(apptId) {
     // Stessa regola della tabella Appuntamenti: il vecchio resta "Spostato", ne nasce uno
     // nuovo alla nuova data (con gruppo/tentativi/rotazione a zero — è un nuovo slot).
     apt.confirmRetryPending = false;
+    delete apt.inCallChecklist; // spostato: le spunte in corso non si salvano (solo "Confermato")
     rescheduleAppointment(apt, when);
 
     db.confirmRoundCurrentApptId = null;
@@ -3980,19 +3998,59 @@ function checklistBarHtml(pct) {
  * Si salva sull'appuntamento SOLO quando nasce un appuntamento fissato (modale
  * salvata): apt.checklist { <id>: true/false } con tutte le 8 voci + apt.checklistPct.
  * Con qualsiasi altro esito, o "Skip", si azzera per il lead dopo. */
+/* Checklist anche in conferma (Simone, 18/10/2026: "a volte recuperiamo info in conferma
+ * dopo averlo fissato giorni prima"). Con l'esito di conferma (Round Conferme
+ * "Confermato 24h", o in sessione l'altro esito isConversion "conferma appuntamento") le
+ * spunte si salvano sull'appuntamento Setter SOLO se almeno una voce è spuntata, in
+ * UNIONE con quelle già salvate: una voce già presa resta presa. checklistPct si
+ * ricalcola. Il grafico checklist in Sessioni resta per data di inserimento (createdAt):
+ * un appuntamento completato in conferma aggiorna la media del giorno in cui era stato
+ * fissato. */
+function checklistOnIds(items) {
+  const out = {};
+  CHECKLIST_ITEMS.forEach(it => { if (items && items[it.id] === true) out[it.id] = true; });
+  return out;
+}
+function checklistHasAny(items) { return Object.keys(checklistOnIds(items)).length > 0; }
+/** Unisce le spunte nuove a quelle dell'appuntamento. Ritorna lo stato di prima (per
+ * "Annulla ultimo esito") o null se non c'era niente da salvare. */
+function mergeChecklistIntoAppt(apt, items) {
+  if (!apt || !checklistHasAny(items)) return null;
+  const before = {
+    apptId: apt.id,
+    hadChecklist: Object.prototype.hasOwnProperty.call(apt, 'checklist'),
+    checklist: apt.checklist && typeof apt.checklist === 'object' ? Object.assign({}, apt.checklist) : (apt.checklist === undefined ? undefined : apt.checklist),
+    hadPct: Object.prototype.hasOwnProperty.call(apt, 'checklistPct'),
+    checklistPct: apt.checklistPct
+  };
+  apt.checklist = checklistSnapshot(Object.assign({}, checklistOnIds(apt.checklist), checklistOnIds(items)));
+  apt.checklistPct = checklistPctOf(apt.checklist);
+  return before;
+}
+function restoreApptChecklist(before) {
+  if (!before) return;
+  const apt = db.appointments.find(a => a.id === before.apptId);
+  if (!apt) return;
+  if (before.hadChecklist) apt.checklist = before.checklist; else delete apt.checklist;
+  if (before.hadPct) apt.checklistPct = before.checklistPct; else delete apt.checklistPct;
+}
+
 function checklistSnapshot(items) {
   const out = {};
   CHECKLIST_ITEMS.forEach(it => { out[it.id] = !!(items && items[it.id] === true); });
   return out;
 }
 
-function renderLiveChecklistPanel(items) {
+function renderLiveChecklistPanel(items, opts) {
   items = items || {};
+  opts = opts || {};
+  const locked = opts.locked || {};
   const pct = checklistPctOf(checklistSnapshot(items));
   const rows = CHECKLIST_ITEMS.map(it => {
     const on = items[it.id] === true;
-    return `<label class="live-check-item${on ? ' on' : ''}">
-        <input type="checkbox" data-live-check="${it.id}"${on ? ' checked' : ''}>
+    const lock = locked[it.id] === true;
+    return `<label class="live-check-item${on ? ' on' : ''}${lock ? ' locked' : ''}"${lock ? ' title="Già presa (salvata sull\'appuntamento)"' : ''}>
+        <input type="checkbox" data-live-check="${it.id}"${on ? ' checked' : ''}${lock ? ' disabled' : ''}>
         <span class="live-check-box" aria-hidden="true"></span>
         <span class="live-check-label">${escapeHtml(it.label)}</span>
       </label>`;
@@ -4005,7 +4063,7 @@ function renderLiveChecklistPanel(items) {
       </div>
       <div data-live-check-bar>${checklistBarHtml(pct)}</div>
       <div class="live-checklist-items">${rows}</div>
-      <p class="live-checklist-hint">Si salva solo se fissi l'appuntamento.</p>
+      <p class="live-checklist-hint">${escapeHtml(opts.hint || 'Si salva solo se fissi l\'appuntamento.')}</p>
     </aside>`;
 }
 
@@ -4956,7 +5014,7 @@ function renderSessioneAttiva() {
 
           ${renderSessionApptList(s)}
         </div>
-        ${renderLiveChecklistPanel(s.checklist)}
+        ${renderLiveChecklistPanel(s.checklist, { hint: 'Si salva se fissi l\'appuntamento, o se lo confermi (con almeno una voce spuntata).' })}
       </div>
     </div>
   `;
@@ -5140,7 +5198,11 @@ function logCallAction(outcomeId) {
   // Checklist (5.4.3): con "Appuntamento Fissato" resta finché la modale non viene
   // salvata (se la annulli resta com'era); con qualsiasi altro esito si azzera per il
   // lead dopo — anche "Da richiamare" e i tentativi senza risposta.
+  // Con l'altro esito isConversion ("conferma appuntamento", Simone 18/10) le spunte si
+  // salvano sull'appuntamento confermato, se ce n'è almeno una: la sessione non sa il
+  // nome del lead, quindi si chiede quale appuntamento (openConfirmChecklistPickModal).
   const isApptSet = outcome.label === APPOINTMENT_SET_OUTCOME_LABEL;
+  const isConfirmOutcome = !!outcome.isConversion && !isApptSet;
   const checklistNow = Object.assign({}, s.checklist || {});
   if (!isApptSet) s.checklist = {};
 
@@ -5156,6 +5218,8 @@ function logCallAction(outcomeId) {
       checklist: checklistNow,
       onSaved: () => { if (db.activeSession) db.activeSession.checklist = {}; }
     });
+  } else if (isConfirmOutcome && checklistHasAny(checklistNow)) {
+    openConfirmChecklistPickModal(callRecord.id, checklistNow);
   } else if (outcome.label === CALLBACK_OUTCOME_LABEL) {
     openCallbackModal({
       mode: 'create',
@@ -5167,6 +5231,62 @@ function logCallAction(outcomeId) {
       afterSave: renderSessioneAttiva
     });
   }
+}
+
+/**
+ * "Quale appuntamento?" (Simone, 18/10/2026): esito "conferma appuntamento" in sessione
+ * con almeno una voce della checklist spuntata. Elenco degli appuntamenti Setter di oggi
+ * e futuri ancora aperti (da confermare o confermati), con ricerca per nome o telefono.
+ * Clic = unione delle spunte sull'appuntamento (mergeChecklistIntoAppt); lo stato di prima
+ * va nell'undoState della chiamata, così "Annulla ultimo esito" lo rimette. "Salta" = non
+ * salva niente.
+ */
+function confirmChecklistCandidates() {
+  const start = startOfDay(new Date());
+  return db.appointments
+    .filter(a => a.role === 'setter' && a.scheduledAt && new Date(a.scheduledAt) >= start
+      && (a.presentedStatus === 'no' || a.presentedStatus === 'confirmed24h' || !a.presentedStatus))
+    .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)));
+}
+function openConfirmChecklistPickModal(callId, items) {
+  const n = Object.keys(checklistOnIds(items)).length;
+  const list = q => confirmChecklistCandidates().filter(a => matchesApptSearch(a, q || ''));
+  const rowsHtml = q => {
+    const l = list(q);
+    if (!l.length) return `<p class="text-dim cpick-empty">${confirmChecklistCandidates().length ? 'Nessun appuntamento con questo nome.' : 'Nessun appuntamento Setter da oggi in poi.'}</p>`;
+    return l.map(a => `
+      <button type="button" class="cpick-row" data-cpick="${a.id}">
+        <span class="cpick-name">${escapeHtml(a.clientName || '(senza nome)')}</span>
+        <span class="cpick-when">${escapeHtml(fmtApptWhen(a.scheduledAt))}${a.presentedStatus === 'confirmed24h' ? ' · confermato' : ''}</span>
+        <span class="cpick-ck">${a.checklist && typeof a.checklist === 'object' ? 'checklist ' + fmtPctIt(a.checklistPct != null ? a.checklistPct : checklistPctOf(a.checklist)) : 'senza checklist'}</span>
+      </button>`).join('');
+  };
+  openModal(`
+    <h3>Quale appuntamento?</h3>
+    <p class="text-dim cpick-sub">Hai spuntato ${n} ${n === 1 ? 'voce' : 'voci'} della checklist. Scegli l'appuntamento che hai confermato: le aggiungo a quelle già salvate.</p>
+    <input type="search" class="crm-search-input cpick-search" id="cpickSearch" placeholder="Cerca per nome o telefono..." aria-label="Cerca appuntamento">
+    <div class="cpick-list" id="cpickList">${rowsHtml('')}</div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="cpickSkip">Salta</button>
+    </div>
+  `);
+  const search = document.getElementById('cpickSearch');
+  const listEl = document.getElementById('cpickList');
+  const wireRows = () => listEl.querySelectorAll('[data-cpick]').forEach(b => b.addEventListener('click', () => {
+    const apt = db.appointments.find(a => a.id === b.dataset.cpick);
+    const before = mergeChecklistIntoAppt(apt, items);
+    const s = db.activeSession;
+    const call = s && s.calls.find(c => c.id === callId);
+    if (call && call.undoState && before) call.undoState.apptChecklist = before;
+    persist();
+    closeModal();
+    showToast(`Checklist salvata su ${apt.clientName || '(senza nome)'} (${CHECKLIST_ITEMS.filter(it => apt.checklist[it.id]).length}/${CHECKLIST_ITEMS.length}).`);
+    if (db.activeSession && location.hash.indexOf('sessione') !== -1) renderSessioneAttiva();
+  }));
+  wireRows();
+  search.addEventListener('input', () => { listEl.innerHTML = rowsHtml(search.value); wireRows(); });
+  search.focus();
+  document.getElementById('cpickSkip').addEventListener('click', () => { closeModal(); showToast('Checklist non salvata.'); });
 }
 
 /**
@@ -5851,6 +5971,8 @@ function undoLastCallAction() {
   const extra = [];
   if (linkedCbs.length) extra.push(`il "Da richiamare" di ${linkedCbs.map(c => c.leadName || '(senza nome)').join(', ')}`);
   if (linkedApts.length) extra.push(`l'appuntamento di ${linkedApts.map(a => a.clientName || '(senza nome)').join(', ')}`);
+  const ckApt = call.undoState.apptChecklist && db.appointments.find(a => a.id === call.undoState.apptChecklist.apptId);
+  if (ckApt) extra.push(`la checklist salvata su ${ckApt.clientName || '(senza nome)'}`);
   const msg = `Annullare l'ultimo esito "${call.outcomeLabel}"?` + (extra.length ? ` Verrà tolto anche ${extra.join(' e ')}.` : '');
   showConfirm(msg, () => {
     s.calls.pop();
@@ -5858,6 +5980,8 @@ function undoLastCallAction() {
     s.callAttemptsOnLead = call.undoState.callAttemptsOnLead;
     s.currentLeadGroupId = call.undoState.currentLeadGroupId;
     if (call.undoState.checklist) s.checklist = Object.assign({}, call.undoState.checklist);
+    // Checklist salvata con "conferma appuntamento": l'appuntamento torna com'era.
+    if (call.undoState.apptChecklist) restoreApptChecklist(call.undoState.apptChecklist);
     if (linkedCbs.length) db.callbacks = db.callbacks.filter(c => c.sourceCallId !== call.id);
     if (linkedApts.length) db.appointments = db.appointments.filter(a => a.sourceCallId !== call.id);
     persist();
