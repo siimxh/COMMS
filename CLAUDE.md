@@ -127,9 +127,10 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 
 **Dashboard** (`renderDashboard`, eventi `wireDashboardSections`), dall'alto:
 1. Task da fare: `collectDashboardTasks`, `renderDashboardTasks`, `wireDashboardTasks`, "+ Task" → `openNewTaskModal`. Priorità 1 conferme di domani (da mezzanotte), 2 Da richiamare di oggi e scaduti + una riga "N da recuperare" + righe Venditore (`LeadCRM.dashboardTaskItems`: da esitare, senza prossima azione, azioni di oggi e scadute), 3 `db.tasks`. Prime 8 + "Mostra tutte".
-2. Prossimi pagamenti: `collectUpcomingPayments`, `renderDashboardPayments`, `wireDashboardPayments` (spunta "Pagato" sulla rata vera). Nome del centro, mai la persona. Venditore: solo l'ultimo appuntamento chiuso del lead (`LeadCRM.paymentsApptOf`).
+2. Prossimi pagamenti: `collectUpcomingPayments`, `renderDashboardPayments`, `wireDashboardPayments` (spunta "Pagato" sulla rata vera). Nome del centro, mai la persona. Rate non pagate di TUTTI gli appuntamenti chiusi, Setter e Venditore (dal 18/10 anche gli appuntamenti Venditore chiusi prima dell'ultimo dello stesso lead).
+   - Centro mancante (18/10): `centerMissingTagHtml` (pallino che pulsa + "centro mancante"), "Aggiungi centro" → `openCenterNameModal` (scrive `apt.centerName` dove manca e `lead.centro` se vuoto), avviso "N clienti senza nome del centro" in cima (`clientsMissingCenter`: un cliente = un appuntamento Setter chiuso o un lead Venditore). Stessa etichetta sui Setter chiusi senza centro in Setting → Appuntamenti e sui lead Cliente senza centro (lista e scheda, `leadMissingCenter` in lead.js).
 3. Barra periodo `renderDashboardPeriodBar` (+ "Migliore di sempre", `renderBestPeriodCaption`).
-4. Quattro ciambelle `renderDashboardDonuts` (Setting a sinistra, Venditore a destra), componente unico `renderDonut(data, opts)` in SVG. Numeri da `computeSetterStats` (`fissatiPerEsito`), `computeVenditoreStats` (`assegnatiPerEsito`, `commAcconti`, `commRatePagate`, `commRateFuture`) e `computeFunnelValues`: uguali alle pagine Stats.
+4. Quattro ciambelle `renderDashboardDonuts` (Setting a sinistra, Venditore a destra), componente unico `renderDonut(data, opts)` in SVG. Numeri da `computeSetterStats` (`passatiPerEsito`), `computeVenditoreStats` (`assegnatiPerEsito`, `assegnatiPassati`, `commAcconti`, `commRatePagate`, `commRateFuture`) e `computeFunnelValues`: uguali alle pagine Stats. Le due "Appuntamenti per esito" contano per data dell'appuntamento e solo quelli già passati (vedi sez. 6).
 5. Pace mese `renderMonthPaceSection` (obiettivo del mese ✎: è l'unico posto dove si cambiano i `db.goals`), Commissioni totali `renderCommissionKpiSection`, grafici nel tempo `renderAndamentoCharts` (`buildAndamentoSeries`, `renderLineChart`), calendario commissioni `renderCommissioniCalendarSection`.
 - Funnel, obiettivi a barre e tassi in Dashboard sono stati tolti (decisione di Simone, 17/10): non rimetterli.
 - Report da copiare: `generateSessionReport`, `generateAppointmentsReport`, `generateVenditoreAppointmentsReport`.
@@ -142,6 +143,7 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 - Schermata sessione: `renderSessioneAttiva`, `logCallAction` (registra un esito), `skipLeadAction`, `endSessionAction`, `toggleSessionPause`, `undoLastCallAction` (tasto "Annulla ultimo esito"; rimette anche le spunte della checklist).
 - A sinistra solo i Da richiamare di oggi (`todayPendingCallbacks`); a destra la checklist (`renderLiveChecklistPanel`, `wireLiveChecklist`): stato in corso su `db.activeSession.checklist`, `cb.inCallChecklist`, `entry.inCallChecklist` (richiamata e Round Recupero hanno la stessa checklist).
 - Appuntamento fissato in sessione: `openAppointmentSetModal({ checklist, onSaved })` salva `apt.checklist` + `apt.checklistPct`; lista sotto gli esiti `renderSessionApptList`.
+- Esito "conferma appuntamento" (l'altro `isConversion`) con almeno una voce spuntata: la sessione non sa il nome del lead, quindi `openConfirmChecklistPickModal` chiede "Quale appuntamento?" (Setter da oggi in poi, da confermare o confermati, ricerca per nome/telefono, "Salta" = niente). Salva in unione (`mergeChecklistIntoAppt`); lo stato di prima va in `undoState.apptChecklist` e "Annulla ultimo esito" lo rimette (`restoreApptChecklist`).
 - Elenco e dettaglio: `renderSessioniList` (un filtro pipeline, ultime 20 sessioni + "Mostra altre", attività `renderCallActivitySection`, ricerca per giorno `renderSessionDaySearch`/`parseDaySearch`, grafico checklist `renderChecklistChartSection`/`checklistChartData`), `renderSessioneDetail`.
 
 **Da richiamare (callback)**
@@ -153,6 +155,7 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 **Round Conferme**
 - Richiama gli appuntamenti Setter del giorno lavorativo dopo (il venerdì quelli del lunedì): `getConfirmTargetDateKeys`, `getPendingConfirmAppointments`.
 - Schermata: `renderConfirmRoundScreen`, `applyConfirmOutcome`, `exitConfirmRound`. Banner dalle 18: `renderConfirmAlertBanner`.
+- Checklist (18/10): pannello a destra con le voci già salvate sull'appuntamento spuntate e bloccate (`confirmChecklistItems`), spunte in corso su `apt.inCallChecklist`. "Confermato 24h" le salva in unione (`mergeChecklistIntoAppt`) solo se c'è almeno una voce; Annullato, Spostato e Skip le buttano, Non risposto le tiene.
 - Le chiamate vanno nella sessione aperta se c'è (`appendConfirmCallToSession`), altrimenti nella sessione automatica del giorno "Conferme".
 - Messaggio WhatsApp: `CONFIRM_WHATSAPP_TEMPLATE`, `buildWhatsAppConfirmMessage`.
 
@@ -176,8 +179,9 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 **Parte Venditore a lead (lead.js, dal 16/10/2026)**
 - `LeadCRM.ensureLeads()` collega ogni appuntamento Venditore a un lead (`apt.leadId`): stesso nome (senza la sigla " - MJ - N") o stesso telefono = stesso lead.
 - Venditore → Lead (`renderLeadList`): 🎙️ Registrazioni, Report, "+ Nuovo lead" (`openNewLead`: lead + primo appuntamento; è l'unico modo di creare appuntamenti Venditore), filtri in una tendina (localStorage `comms_filtriLeadAperti`), lista con ⋯ (`openLeadMenu`), calendario Venditore.
-- Scheda (`renderLead`): appuntamenti con data e stato (`apptsCardHtml`/`wireApptsCard`, stesse regole della vecchia tabella), "+ Appuntamento" (`openAddAppt`), 🗑 elimina lead (`openDeleteLead`: lead + appuntamenti Venditore + rate, con il conto delle commissioni; gli appuntamenti Setter con lo stesso nome restano). "Cose promesse" non si mostrano più: i `promises[]` restano nei dati.
-- `openEsito` ("Com'è finita?"), `openFatto`, `openSposta`, `openSetNext`, `renderNewStatsSection`. Il lead segue i cambi di stato degli appuntamenti: `onDealStageChanged`. Appuntamento cancellato: se il lead resta senza appuntamenti sparisce anche lui (`onApptDeleted`).
+- Scheda (`renderLead`): appuntamenti con data e stato (`apptsCardHtml`/`wireApptsCard`, stesse regole della vecchia tabella), "+ Appuntamento" (`openAddAppt`; su un lead Perso o Freddo lo riporta In trattativa, `reopenLeadForAppt`), 🗑 elimina lead (`openDeleteLead`: lead + appuntamenti Venditore + rate, con il conto delle commissioni; gli appuntamenti Setter con lo stesso nome restano). "Cose promesse" non si mostrano più: i `promises[]` restano nei dati.
+- `openEsito` ("Com'è finita?"), `openFatto`, `openSposta`, `openSetNext`, `renderNewStatsSection`.
+- Tipi di prossima azione (`AZIONI`): Chiamata, WhatsApp, Audio, Contratto, Contenuto (+ Recupero no show). "📅 Fissare appuntamento" tolto il 18/10: `migrateOldNextTypes` (in `ensureLeads`) lo cambia in Chiamata con la stessa data e ora. Nel "Fatto", dopo "Sì", il campo "Appuntamento fissato per" crea l'appuntamento (`createApptForLead`); su una 📞 Chiamata la telefonata vale "Appuntamento fissato". Il lead segue i cambi di stato degli appuntamenti: `onDealStageChanged`. Appuntamento cancellato: se il lead resta senza appuntamenti sparisce anche lui (`onApptDeleted`).
 - Note: solo nello storico della scheda lead (`k: 'nota'`). Le vecchie note degli appuntamenti e la data di follow-up della tabella passano nel lead da sole (`moveApptExtras`, dentro `ensureLeads`).
 - Soldi: la scheda Pagamenti scrive sull'ultimo appuntamento chiuso del lead, o su quello scelto (tasto € o tendina se ce n'è più di uno). Stesse regole di commissione.
 - Interruttore `db.settings.venditoreOn` in 👤 Account: spento nasconde la voce Venditore, le righe Venditore delle Task e dei Prossimi pagamenti e le ciambelle Venditore.
@@ -206,7 +210,7 @@ Dove viene salvato (vedi `cloud-sync.js`):
   - Setter: `presentedStatus` ∈ `no`, `confirmed24h`, `presented`, `no_show`, `annullato`, `spostato`.
   - Venditore: `dealStage` (vedi `DEAL_STAGES`), `notes[]`, `nextFollowUpDate` (YYYY-MM-DD).
   - Soldi: `cashCollected`, `totalSold`, `installments[]` (`amount`, `paid`, `paidDate`, `dueDate`).
-  - Restyling (assenti nei dati vecchi = "appuntamento di prima"): `centerName` (chiesto alla chiusura), `venditoreName` (solo Setter), `checklist: { <id>: true/false }` + `checklistPct` (solo Setter fissati in chiamata). Voci in `CHECKLIST_ITEMS` (storage.js): l'`id` non si cambia mai.
+  - Restyling (assenti nei dati vecchi = "appuntamento di prima"): `centerName` (chiesto alla chiusura), `venditoreName` (solo Setter), `checklist: { <id>: true/false }` + `checklistPct` (solo Setter: fissati in chiamata o completati in conferma). Voci in `CHECKLIST_ITEMS` (storage.js): l'`id` non si cambia mai. `inCallChecklist` = spunte in corso del Round Conferme (sparisce all'esito).
 - `leads[]`: lead della parte Venditore `{ id, name, centro, city, phone, email, setter, stato, next, promises[], history[], fuNoAnswer, wasFollowUp, callGroupId?, callGroupDate? }` (`callGroup*` = lead delle chiamate di oggi). Stati: Nuovo, Trattativa, Follow-up, Cliente, Perso, Freddo.
   - **Nomi identici:** due persone diverse con lo stesso nome identico finiscono in un lead solo (stesso nome = stesso lead, `ensureLeads`). Succede di rado e non c'è un controllo automatico. Se lo noti (dati, mail, appuntamenti dettati da Simone, due telefoni diversi nello stesso lead), **dillo a Simone** prima di toccare qualcosa: decide lui se separarli.
 - `callbacks[]`: i "Da richiamare" (+ `notifiedAt`, `dismissedAt` per le notifiche).
@@ -265,11 +269,17 @@ Prima di cambiarne una, chiedi a Simone.
 - Follow-up = "no chiaro per adesso". Dopo 6 follow-up senza risposta il lead diventa Freddo.
 - Nessun lead aperto senza prossima azione (se manca compare in rosso nelle Task della Dashboard).
 - "Chiuso?": Sì, ha pagato (Chiuso) / Sì, contratto firmato / No.
+- Nuovo appuntamento ("+ Appuntamento", o "+ Nuovo lead" con il nome di un lead che c'è già) su un lead Perso o Freddo: torna In trattativa, con una riga nello storico, e i follow-up senza risposta ripartono da 0 (Simone, 18/10).
 
 **Restyling (Simone, 17/10/2026)**
 - Le chiamate di Round Conferme, Da richiamare, Round Recupero e follow-up dei lead Venditore contano tutte come chiamate di Setting (Stats ed esiti), con la regola "stesso lead stesso giorno = 1".
 - Ciambella commissioni Venditore: Acconti incassati + Rate pagate + Rate future (10% delle rate non pagate degli appuntamenti con commissioni nel periodo). Al centro il totale delle tre e "di cui X € incassati" = acconti + rate pagate = commissioni Venditore delle Stats. Le rate future non entrano mai nelle commissioni.
-- Checklist: % = voci spuntate / 8, salvata solo sui fissati. Grafico in Sessioni: una barra per giorno di inserimento = media delle % (solo appuntamenti con checklist, spostati esclusi); legenda = le 3 voci prese meno spesso.
+- Checklist: % = voci spuntate / 8, salvata sui fissati e (dal 18/10) anche con la conferma, ma solo se almeno una voce è spuntata: si unisce a quella già salvata (una voce presa resta presa). Grafico in Sessioni: una barra per giorno di inserimento (`createdAt`) = media delle % (solo appuntamenti con checklist, spostati esclusi); un appuntamento completato in conferma aggiorna la media del giorno in cui era stato fissato. Legenda = le 3 voci prese meno spesso.
+
+**Risposte di Simone (18/10/2026)**
+- Prossimi pagamenti: tutte le rate non pagate di tutti gli appuntamenti chiusi (anche più chiusure dello stesso lead Venditore).
+- Ciambelle Dashboard "Appuntamenti per esito": per **data dell'appuntamento** (`scheduledAt`) e solo appuntamenti **già passati** (ora ≤ adesso) nel periodo. Setting: Presentati, No show, Annullati, Spostati, Confermati 24h, Da esitare; Presentati e Presentati + No show + Annullati sono uguali a "Presentati" e "Già svolti" delle Stats. Venditore: il centro è "assegnati già passati", quindi può essere minore di "Assegnati" delle Stats se il periodo comprende giorni futuri. Fissati per `createdAt` e show rate non cambiano.
+- Gli appuntamenti futuri non sono mai "da esitare" (filtri, bollini, Task, ciambelle).
 
 **Obiettivi e pace**
 - Giorno = ore 9-19. Settimana e mese = solo giorni lun-ven.
