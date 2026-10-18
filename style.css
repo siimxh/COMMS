@@ -2610,3 +2610,10 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
 .tab-blocked-card { width: 100%; max-width: 460px; padding: 22px; background: var(--bg-elev); border: 1px solid var(--border); border-top: 2px solid var(--accent); border-radius: var(--radius-md); }
 .tab-blocked-card h3 { margin: 0 0 10px; }
 .tab-blocked-card p { margin: 0; line-height: 1.5; }
+
+/* Sessione dimenticata aperta da un altro giorno (bug 6, 18/10). Resta visibile anche nella schermata della sessione. */
+.stale-session-banner { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 28px; background: var(--danger-bg); border-bottom: 1px solid var(--danger); color: var(--neutral-900); }
+.stale-session-banner .blink-dot { flex: none; }
+.stale-session-text { display: flex; flex-direction: column; gap: 2px; flex: 1 1 260px; min-width: 0; overflow-wrap: anywhere; }
+.stale-session-banner .btn-ghost { flex: none; }
+@media (max-width: 899px) { .stale-session-banner { padding: 10px 16px; } }

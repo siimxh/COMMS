@@ -280,6 +280,7 @@ function renderRoute() {
   renderActiveSessionIndicator();
   updateNuovaSessioneButtonLabel();
   renderConfirmAlertBanner();
+  renderStaleSessionBanner();
   closeMobileSidebar();
   refreshCallbackNotifications();
 
@@ -2767,8 +2768,9 @@ function appendRecoveryCallToSession(callRecord) {
  * "Conferme" e "Richiami". I pipelineId automatici non esistono in db.pipelines.
  */
 function appendCallToAutoSession(pipelineId, pipelineName, callRecord) {
-  if (db.activeSession) {
-    db.activeSession.calls.push(callRecord);
+  const live = sessionForNewCalls();
+  if (live) {
+    live.calls.push(callRecord);
     return;
   }
   const todayKey = dateInputValue(new Date());
@@ -3038,8 +3040,9 @@ function appendConfirmCallToSession(callRecord) {
     createPipelineSession(db.confirmRoundPendingPipelineId);
     uiState.sessionMinimized = true;
   }
-  if (db.activeSession) {
-    db.activeSession.calls.push(callRecord);
+  const live = sessionForNewCalls();
+  if (live) {
+    live.calls.push(callRecord);
     return;
   }
   const todayKey = dateInputValue(new Date());
@@ -5369,6 +5372,85 @@ function skipLeadAction() {
   renderSessioneAttiva();
 }
 
+/* ---------- Sessione dimenticata aperta (CORREZIONE 18/10, bug 6) ----------
+ * Una sessione aperta un giorno e mai chiusa: all'apertura del tool (e quando cambia
+ * il giorno) compare l'avviso "Hai una sessione aperta da ieri: chiudila". Si chiude
+ * all'ora dell'ultima chiamata (o all'inizio se non ne ha), NON adesso, così il tempo
+ * di sessione non si gonfia. Finché resta aperta, le chiamate automatiche (richiami,
+ * conferme, recupero, follow-up Venditore) vanno nella sessione automatica di OGGI. */
+
+/** La sessione aperta, se è stata aperta in un giorno prima di oggi. */
+function staleActiveSession() {
+  const s = db.activeSession;
+  if (!s || !s.startedAt) return null;
+  const day = dateInputValue(new Date(s.startedAt));
+  return day && day < dateInputValue(new Date()) ? s : null;
+}
+
+/** Dove vanno le chiamate fatte fuori dalla schermata della sessione: la sessione aperta,
+ * ma non se è di un giorno prima (allora null = sessione automatica di oggi). */
+function sessionForNewCalls() {
+  return db.activeSession && !staleActiveSession() ? db.activeSession : null;
+}
+
+function staleSessionEndIso(s) {
+  let end = 0;
+  (s.calls || []).forEach(c => { const t = new Date(c.timestamp).getTime(); if (Number.isFinite(t) && t > end) end = t; });
+  if (!end) end = new Date(s.startedAt).getTime();
+  if (s.pausedAt) {
+    // Pausa iniziata prima dell'ultima chiamata: conta fino a lì; dopo, non conta.
+    const p = new Date(s.pausedAt).getTime();
+    if (Number.isFinite(p) && p < end) s.pausedTotalMs = (s.pausedTotalMs || 0) + (end - p);
+    s.pausedAt = null;
+  }
+  return new Date(end).toISOString();
+}
+
+function staleSessionDayLabel(s) {
+  const day = dateInputValue(new Date(s.startedAt));
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  return day === dateInputValue(y) ? 'da ieri' : 'dal ' + fmtDate(s.startedAt);
+}
+
+function closeStaleSession() {
+  const s = staleActiveSession();
+  if (!s) return;
+  s.endedAt = staleSessionEndIso(s);
+  delete s.checklist;
+  db.sessions.push(s);
+  db.activeSession = null;
+  uiState.sessionMinimized = false;
+  persist();
+  clearInterval(sessionTimerInterval);
+  document.body.classList.remove('in-session');
+  showToast('Sessione chiusa alle ' + fmtTime(s.endedAt) + ' del ' + fmtDate(s.endedAt) + '.');
+  renderRoute();
+}
+
+function renderStaleSessionBanner() {
+  const s = staleActiveSession();
+  let el = document.getElementById('staleSessionBanner');
+  if (!s) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'staleSessionBanner';
+    el.className = 'stale-session-banner';
+    el.setAttribute('role', 'alert');
+    document.getElementById('pageBar').insertAdjacentElement('afterend', el);
+  }
+  const n = (s.calls || []).length;
+  const html = `
+    <span class="blink-dot"></span>
+    <span class="stale-session-text"><strong>Hai una sessione aperta ${escapeHtml(staleSessionDayLabel(s))}: chiudila.</strong>
+      <span class="text-dim">${escapeHtml(s.pipelineName || 'Sessione')} · ${n} chiamat${n === 1 ? 'a' : 'e'}. Si chiude all'ora ${n ? "dell'ultima chiamata" : "d'inizio"}; le chiamate di oggi non ci finiscono dentro.</span></span>
+    <button class="btn-ghost" id="btnCloseStaleSession">Chiudi la sessione</button>`;
+  if (el.dataset.html !== html) {
+    el.dataset.html = html;
+    el.innerHTML = html;
+    document.getElementById('btnCloseStaleSession').addEventListener('click', closeStaleSession);
+  }
+}
+
 function endSessionAction() {
   showConfirm('Terminare la sessione? Potrai rivederla nella sezione Sessioni.', () => {
     const s = db.activeSession;
@@ -5378,7 +5460,8 @@ function endSessionAction() {
       s.pausedTotalMs = (s.pausedTotalMs || 0) + Math.max(0, Date.now() - new Date(s.pausedAt).getTime());
       s.pausedAt = null;
     }
-    s.endedAt = new Date().toISOString();
+    // Sessione dimenticata aperta da un altro giorno: si chiude all'ultima chiamata (bug 6).
+    s.endedAt = staleActiveSession() ? staleSessionEndIso(s) : new Date().toISOString();
     delete s.checklist; // stato in corso: non serve nella sessione chiusa
     db.sessions.push(s);
     db.activeSession = null;
@@ -5425,8 +5508,9 @@ const CALLBACK_MAX_CALL_ATTEMPTS = 2;
  *   era stato originariamente creato.
  */
 function appendCallbackCallToSession(callRecord) {
-  if (db.activeSession) {
-    db.activeSession.calls.push(callRecord);
+  const live = sessionForNewCalls();
+  if (live) {
+    live.calls.push(callRecord);
     return;
   }
   const todayKey = dateInputValue(new Date());
@@ -5960,7 +6044,8 @@ function onCallbackNotifyClick(e) {
 
 function startCallbackNotifications() {
   if (callbackNotifyTimer) return;
-  callbackNotifyTimer = setInterval(refreshCallbackNotifications, CALLBACK_NOTIFY_EVERY_MS);
+  // Lo stesso giro controlla anche se è cambiato il giorno con una sessione aperta (bug 6).
+  callbackNotifyTimer = setInterval(() => { refreshCallbackNotifications(); renderStaleSessionBanner(); }, CALLBACK_NOTIFY_EVERY_MS);
   const root = callbackNotifyRoot();
   root.addEventListener('keydown', e => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-cb-notify]')) { e.preventDefault(); openCallbackFromNotification(e.target.dataset.cbNotify); }
