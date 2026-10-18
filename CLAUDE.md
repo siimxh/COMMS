@@ -94,8 +94,7 @@ Ordine di caricamento in `index.html`: `storage.js` → `utils.js` → `supabase
 | `utils.js` | Date e periodi, statistiche (`computeStats`, `computeFunnelValues`, `computeSetterStats`, `computeVenditoreStats`, `computeCallTypeStats`), commissioni, pace |
 | `supabase-config.js` | URL e chiave pubblica (anon) di Supabase |
 | `cloud-sync.js` | Login e salvataggio sul database Supabase (senza librerie: fetch diretto alle API) |
-| `supabase/schema.sql` | Tabelle, regole RLS, foto notturna, storico modifiche. Si lancia dal SQL Editor di Supabase |
-| `supabase/lead.sql` | Solo la tabella `lead` (per un database che ha già lo schema) |
+| `supabase/schema.sql` | Tabelle (anche `lead`), regole RLS, foto notturna, storico modifiche. Si lancia dal SQL Editor di Supabase (si può rilanciare: crea solo quello che manca) |
 | `lead.js` | Parte Venditore a lead: righe Venditore delle Task in Dashboard, lista Lead, scheda lead, "Com'è finita?", Fatto/Sposta, numeri dei lead. Tutto dentro `LeadCRM` |
 | `app.js` | Tutta l'interfaccia: routing, render, eventi, modali (~6.800 righe) |
 | `style.css` | Stile. In testa i token della guida colori (`--accent-100..500`, `--neutral-0..900`, `--success`, `--danger`, raggi); i nomi vecchi (`--accent`, `--bg`...) puntano ai token. Niente colori scritti a mano nei componenti |
@@ -203,7 +202,7 @@ Dove viene salvato (vedi `cloud-sync.js`):
 - Due dispositivi: la riga `stato` ha dentro un numero di versione `_rev`. Prima di ogni invio il tool controlla la versione online (`_onlineRev`); se un altro dispositivo ha salvato, riscarica e unisce (`_reconcile`): liste per id (task, richiami, Round Recupero, pipeline...) con le cancellazioni dei due lati; appuntamenti, sessioni e lead: vince chi li ha cambiati, una riga cancellata altrove resta cancellata. La scrittura di `stato` è condizionata alla versione (PATCH con `data->>_rev`): non sovrascrive mai una versione che non ha letto. Anche all'apertura, una copia locale con modifiche non inviate passa da questa unione.
 - Limite rimasto: la STESSA voce (stesso appuntamento, task, impostazione...) cambiata su due dispositivi insieme: resta una sola versione (la più recente se la voce ha una data, se no quella del dispositivo che salva).
 - Copia locale illeggibile: `Storage.load` restituisce null, il tool usa i dati online e non invia niente (la copia rovinata resta in `...__illeggibile`).
-- Se la tabella `lead` non esiste, i lead restano dentro `stato`; al primo caricamento dopo averla creata (`supabase/lead.sql`) passano nella tabella da soli (`CloudSync.leadTable`).
+- Se la tabella `lead` non esiste, i lead restano dentro `stato`; al primo caricamento dopo averla creata (è dentro `supabase/schema.sql`) passano nella tabella da soli (`CloudSync.leadTable`).
 - Copia locale per utente: localStorage `chiamateTrackerData_v1__<id utente>`.
 - La chiave vecchia `chiamateTrackerData_v1` (versione senza login) non viene mai toccata: al primo login il tool la legge, scarica un backup e la carica online.
 - Date nel database: timestamptz. `scheduledAt`/`presentedAt` restano stringhe locali nel tool e sono convertite come ora italiana solo in `cloud-sync.js`.

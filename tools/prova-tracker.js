@@ -23,7 +23,7 @@
  * I dati entrano come "dati della versione senza login" e il tool li carica al
  * primo accesso, come farà con Hamza.
  * Con SENZA_TABELLA_LEAD=1 il database finto non ha la tabella "lead" (come
- * prima di lanciare supabase/lead.sql): i lead restano nella riga "stato".
+ * prima di creare la tabella con supabase/schema.sql): i lead restano nella riga "stato".
  *
  * Playwright: usa quello installato (require('playwright')); se non lo trova prova
  * il percorso globale dei container cloud. Chromium: PLAYWRIGHT_CHROMIUM o
