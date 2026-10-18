@@ -288,6 +288,15 @@ const LeadCRM = (function () {
   const setterOf = a => { const l = leadById(a.leadId); return (l && l.setter) || parseApptName(a.clientName).setter || ''; };
   const leadName = l => esc(l.name || '(senza nome)');
   const centroTxt = l => [l.centro, l.city].filter(Boolean).map(esc).join(' · ');
+  /** Cliente senza nome del centro (Simone, 18/10): etichetta "centro mancante" in lista e
+   * nella scheda. Manca se il lead non ha il centro e almeno un appuntamento chiuso non ce
+   * l'ha (o non ci sono appuntamenti chiusi). */
+  function leadMissingCenter(l) {
+    if (!l || l.stato !== 'Cliente' || String(l.centro || '').trim()) return false;
+    const closed = apptsOf(l).filter(a => a.closed);
+    return !closed.length || closed.some(a => !String(a.centerName || '').trim());
+  }
+  const centerTargetOf = l => ({ key: 'lead:' + l.id, role: 'venditore', name: l.name || '(senza nome)', apts: apptsOf(l).filter(a => a.closed), lead: l });
 
   /** Apre un modal del tool e, se serve, ne prepara gli eventi. */
   function modal(html, onMount) {
@@ -728,7 +737,7 @@ const LeadCRM = (function () {
           else if (l.next) { azione = actLabel(l.next); quando = `<span class="${l.next.date < TODAY() ? 'red' : ''}">${relDay(l.next.date)}${l.next.time ? ' ' + l.next.time : ''}</span>`; }
           else if (pend) { azione = '📅 ' + nOrd(apptNumber(pend)) + ' appuntamento'; quando = isDue(pend) ? '<span class="red">da esitare</span>' : relDay(String(pend.scheduledAt).slice(0, 10)) + ' ' + String(pend.scheduledAt).slice(11, 16); }
           return `<tr data-lead-row="${l.id}">
-            <td class="crm-cell-center"><button class="who" data-lead="${l.id}">${leadName(l)}</button>${centroTxt(l) ? `<div class="sub">${centroTxt(l)}</div>` : ''}</td>
+            <td class="crm-cell-center"><button class="who" data-lead="${l.id}">${leadName(l)}</button>${centroTxt(l) ? `<div class="sub">${centroTxt(l)}</div>` : ''}${leadMissingCenter(l) ? `<div><button type="button" class="cm-tag-btn" data-lead-center="${l.id}" title="Aggiungi il nome del centro">${centerMissingTagHtml()}</button></div>` : ''}</td>
             <td class="crm-cell-center">${stPill(l.stato)}</td>
             <td class="crm-cell-center"><span class="nchip">${sv} svolt${sv === 1 ? 'o' : 'i'}</span></td>
             <td class="crm-cell-center">${azione}</td>
@@ -751,6 +760,9 @@ const LeadCRM = (function () {
       const s2 = document.getElementById('leadSearch'); s2.focus(); s2.setSelectionRange(pos, pos);
     });
     appRoot.querySelectorAll('[data-lead-more]').forEach(b => b.addEventListener('click', () => openLeadMenu(b.dataset.leadMore)));
+    appRoot.querySelectorAll('[data-lead-center]').forEach(b => b.addEventListener('click', () => {
+      const l = leadById(b.dataset.leadCenter); if (l) openCenterNameModal([centerTargetOf(l)], renderLeadList);
+    }));
     const delOrph = document.getElementById('btnDelOrphans');
     if (delOrph) delOrph.addEventListener('click', () => showConfirm(`Eliminare ${orphans.length} appuntament${orphans.length === 1 ? 'o' : 'i'} Venditore senza nome?`, () => {
       const ids = new Set(orphans.map(a => a.id));
@@ -952,9 +964,9 @@ const LeadCRM = (function () {
         <div class="lead-col">
           <section class="card">
             <div class="ident"><div><input class="ld-title-input" id="leadName" value="${esc(l.name)}" aria-label="Nome del lead" placeholder="Nome e cognome">
-                <div class="ld-sub-inputs"><input class="ld-input ld-small" id="leadCentro" value="${esc(l.centro || '')}" placeholder="Centro"><input class="ld-input ld-small" id="leadCity" value="${esc(l.city || '')}" placeholder="Città"></div></div>
+                <div class="ld-sub-inputs"><input class="ld-input ld-small ${leadMissingCenter(l) ? 'cm-input' : ''}" id="leadCentro" value="${esc(l.centro || '')}" placeholder="Centro"><input class="ld-input ld-small" id="leadCity" value="${esc(l.city || '')}" placeholder="Città"></div></div>
               <select class="ld-input ld-auto" id="leadStato" aria-label="Stato del lead">${STATI.map(s => `<option value="${s}" ${s === l.stato ? 'selected' : ''}>${STATO_LABEL[s]}</option>`).join('')}</select></div>
-            <div class="ld-mt"><span class="nchip">${sv} appuntament${sv === 1 ? 'o svolto' : 'i svolti'}</span></div>
+            <div class="ld-mt"><span class="nchip">${sv} appuntament${sv === 1 ? 'o svolto' : 'i svolti'}</span>${leadMissingCenter(l) ? ` <button type="button" class="cm-tag-btn" id="leadCenterTag" title="Scrivi il nome del centro">${centerMissingTagHtml()}</button>` : ''}</div>
             <dl class="kv">
               <dt>Telefono</dt><dd><input class="ld-input ld-small" id="leadPhone" value="${esc(l.phone || '')}" placeholder="Telefono"> <button class="copy-mini" id="leadCopy">copia</button></dd>
               <dt>Mail</dt><dd><input class="ld-input ld-small" id="leadEmail" value="${esc(l.email || '')}" placeholder="Mail"></dd>
@@ -978,7 +990,15 @@ const LeadCRM = (function () {
     appRoot.querySelector('[data-back]').addEventListener('click', () => { location.hash = '#/venditore-lead'; });
     appRoot.querySelectorAll('[data-ltab]').forEach(b => b.addEventListener('click', () => { ui.leadTab = b.dataset.ltab; renderLead(id); }));
     const bindField = (elId, field) => document.getElementById(elId).addEventListener('change', e => { l[field] = e.target.value.trim(); persist(); });
-    bindField('leadName', 'name'); bindField('leadCentro', 'centro'); bindField('leadCity', 'city');
+    bindField('leadName', 'name'); bindField('leadCity', 'city');
+    // Centro: se manca su un Cliente c'è l'etichetta "centro mancante" (clic = scrivilo qui).
+    document.getElementById('leadCentro').addEventListener('change', e => {
+      const was = leadMissingCenter(l);
+      l.centro = e.target.value.trim(); persist();
+      if (was !== leadMissingCenter(l)) renderLead(id);
+    });
+    const cTag = document.getElementById('leadCenterTag');
+    if (cTag) cTag.addEventListener('click', () => document.getElementById('leadCentro').focus());
     bindField('leadPhone', 'phone'); bindField('leadEmail', 'email'); bindField('leadSetter', 'setter');
     document.getElementById('leadCopy').addEventListener('click', async () => {
       if (!l.phone) { showToast('Nessun numero da copiare.', true); return; }

@@ -804,8 +804,9 @@ function openNewTaskModal() {
  * non compare). Venditore: TUTTI gli appuntamenti chiusi del lead (Simone, 18/10: "voglio
  * vederle tutte"; prima solo l'ultimo chiuso, LeadCRM.paymentsApptOf). Ogni riga resta
  * legata alla sua rata vera. Righe Venditore nascoste se la parte Venditore è spenta.
- * Riga: nome del CENTRO (mai la persona: se manca, nome del lead in grigio + "centro
- * mancante"), scadenza (rossa se passata), importo, ruolo, venditore (solo Setter),
+ * Riga: nome del CENTRO (mai la persona: se manca, nome del lead in grigio + etichetta
+ * "centro mancante" che pulsa + "Aggiungi centro"; in cima l'avviso "N clienti senza nome
+ * del centro", vedi clientsMissingCenter), scadenza (rossa se passata), importo, ruolo, venditore (solo Setter),
  * spunta "Pagato": rata vera in apt.installments -> paid + paidDate di oggi. La
  * commissione la ricalcola commissionEventsForAppointment (giorno del pagamento). */
 const DASH_PAYMENTS_LIMIT = 10;
@@ -827,12 +828,106 @@ function collectUpcomingPayments() {
       const person = lead ? lead.name : (a.role === 'venditore' ? LeadCRM.parseApptName(a.clientName).name : a.clientName);
       const dueRaw = String(inst.dueDate || '');
       const due = /^\d{4}-\d{2}-\d{2}/.test(dueRaw) ? dueRaw.slice(0, 10) : (dueRaw ? dateInputValue(dueRaw) : '');
-      out.push({ apt: a, inst, role: a.role, centro, person: person || '(senza nome)', due });
+      out.push({ apt: a, inst, role: a.role, centro, person: person || '(senza nome)', due, missingKey: centerMissingKeyOf(a, lead) });
     });
   });
   // Per scadenza; quelle senza data in fondo.
   out.sort((x, y) => (x.due || '9999').localeCompare(y.due || '9999') || x.centro.localeCompare(y.centro));
   return out;
+}
+
+/* ---------- Centro mancante (Simone, 18/10/2026) ----------
+ * Senza il nome del centro Simone fatica a ritrovare le rate sul gruppo: deve saltare
+ * all'occhio. Etichetta unica centerMissingTagHtml (pallino che pulsa piano, accento;
+ * fermo con prefers-reduced-motion) su: righe di Prossimi pagamenti, appuntamenti Setter
+ * chiusi in Setting → Appuntamenti, lead Cliente in Venditore → Lead e nella scheda.
+ * "Aggiungi centro" apre openCenterNameModal: scrive apt.centerName (solo dove è vuoto)
+ * e, per il Venditore, lead.centro se è vuoto. Un cliente = un appuntamento Setter chiuso,
+ * oppure un lead Venditore (tutti i suoi appuntamenti chiusi insieme). */
+function centerMissingTagHtml() {
+  return '<span class="cm-tag"><i class="cm-dot" aria-hidden="true"></i>centro mancante</span>';
+}
+function aptCenterOf(a, lead) { return String((a && a.centerName) || (lead && lead.centro) || '').trim(); }
+
+/** Clienti chiusi senza nome del centro: [{ key, role, name, apts, lead }]. Venditore
+ * solo se la parte Venditore è accesa (come le righe di Prossimi pagamenti). */
+function clientsMissingCenter() {
+  const out = [];
+  const byKey = {};
+  const leadsById = {};
+  (db.leads || []).forEach(l => { leadsById[l.id] = l; });
+  db.appointments.forEach(a => {
+    if (!a.closed) return;
+    if (a.role === 'setter') {
+      if (!aptCenterOf(a, null)) out.push({ key: a.id, role: 'setter', name: a.clientName || '(senza nome)', apts: [a], lead: null });
+      return;
+    }
+    if (a.role !== 'venditore' || !LeadCRM.isOn()) return;
+    const lead = a.leadId ? leadsById[a.leadId] || null : null;
+    if (aptCenterOf(a, lead)) return;
+    const key = lead ? 'lead:' + lead.id : a.id;
+    if (byKey[key]) { byKey[key].apts.push(a); return; }
+    const it = { key, role: 'venditore', name: (lead ? lead.name : LeadCRM.parseApptName(a.clientName).name) || '(senza nome)', apts: [a], lead };
+    byKey[key] = it;
+    out.push(it);
+  });
+  return out;
+}
+function centerMissingKeyOf(a, lead) { return a.role === 'venditore' && lead ? 'lead:' + lead.id : a.id; }
+
+/** Scrive il centro sul cliente: appuntamenti chiusi senza centro + lead.centro se vuoto. */
+function saveClientCenter(t, value) {
+  t.apts.forEach(a => { if (!String(a.centerName || '').trim()) a.centerName = value; });
+  if (t.lead && !String(t.lead.centro || '').trim()) t.lead.centro = value;
+}
+
+/** Modale "Aggiungi centro": un campo per cliente (uno solo dal tasto di una riga, tutti
+ * dall'avviso in cima a Prossimi pagamenti). I campi lasciati vuoti non cambiano niente. */
+function openCenterNameModal(targets, onDone) {
+  targets = (targets || []).filter(Boolean);
+  if (!targets.length) return;
+  const single = targets.length === 1;
+  const roleTag = t => `<span class="role-pill ${t.role}">${t.role === 'venditore' ? 'Venditore' : 'Setter'}</span>`;
+  openModal(`
+    <h3>${single ? 'Nome del centro · ' + escapeHtml(targets[0].name) : 'Clienti senza nome del centro'}</h3>
+    <p class="text-dim cm-modal-sub">Serve a ritrovare le rate del cliente in Prossimi pagamenti.${single ? '' : ' Lascia vuoto chi non sai ancora.'}</p>
+    <div class="cm-list">
+      ${targets.map((t, i) => `<label class="field cm-field">${single ? 'Nome del centro' : `<span class="cm-field-name">${escapeHtml(t.name)} ${roleTag(t)}</span>`}<input type="text" data-cm-input="${i}" maxlength="120" placeholder="Es. Centro Prova 1"></label>`).join('')}
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="cmCancel">Annulla</button>
+      <button class="btn-primary" id="cmSave">Salva</button>
+    </div>
+  `);
+  const first = modalRoot.querySelector('[data-cm-input]');
+  if (first) first.focus();
+  document.getElementById('cmCancel').addEventListener('click', closeModal);
+  const save = () => {
+    let n = 0;
+    modalRoot.querySelectorAll('[data-cm-input]').forEach(inp => {
+      const v = inp.value.trim();
+      if (!v) return;
+      saveClientCenter(targets[Number(inp.dataset.cmInput)], v);
+      n++;
+    });
+    if (!n) { showToast('Scrivi il nome del centro.', true); if (first) first.focus(); return; }
+    persist();
+    closeModal();
+    showToast(n === 1 ? 'Centro salvato.' : `Centri salvati: ${n}.`);
+    if (onDone) onDone();
+  };
+  document.getElementById('cmSave').addEventListener('click', save);
+  modalRoot.querySelectorAll('[data-cm-input]').forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') save(); }));
+}
+
+/** Tasti "Aggiungi centro" ([data-add-center-key]) dentro root. */
+function wireAddCenterButtons(root, onDone) {
+  if (!root) return;
+  root.querySelectorAll('[data-add-center-key]').forEach(b => b.addEventListener('click', e => {
+    e.preventDefault();
+    const t = clientsMissingCenter().find(x => x.key === b.dataset.addCenterKey);
+    if (t) openCenterNameModal([t], onDone);
+  }));
 }
 
 function fmtEuroIt(n) { return '€' + round2(Number(n) || 0).toLocaleString('it-IT'); }
@@ -846,10 +941,10 @@ function renderDashboardPayments() {
     const late = !!p.due && p.due < todayKey;
     const title = p.centro
       ? `<span class="task-title">${escapeHtml(p.centro)}</span>`
-      : `<span class="task-title pay-noname">${escapeHtml(p.person)}</span> <span class="pay-missing">centro mancante</span>`;
+      : `<span class="task-title pay-noname">${escapeHtml(p.person)}</span> ${centerMissingTagHtml()} <button type="button" class="linkish cm-add" data-add-center-key="${escapeHtml(p.missingKey)}">Aggiungi centro</button>`;
     const sub = [escapeHtml(p.inst.label || 'Rata'), p.role === 'setter' && p.apt.venditoreName ? 'Venditore: ' + escapeHtml(p.apt.venditoreName) : ''].filter(Boolean).join(' · ');
     return `
-      <div class="task-row pay-row ${late ? 'is-late' : ''}">
+      <div class="task-row pay-row ${late ? 'is-late' : ''} ${p.centro ? '' : 'no-center'}">
         <div class="task-lead">${taskIconSvg('calendar')}</div>
         <div class="task-main"><div>${title}</div><div class="task-sub">${sub}</div></div>
         <div class="task-meta">
@@ -862,12 +957,20 @@ function renderDashboardPayments() {
         </div>
       </div>`;
   };
+  const missing = clientsMissingCenter();
+  const warn = missing.length ? `
+      <div class="cm-warn" role="status">
+        <i class="cm-dot" aria-hidden="true"></i>
+        <span><b>${missing.length} client${missing.length === 1 ? 'e' : 'i'}</b> senza nome del centro</span>
+        <button type="button" class="btn-ghost btn-sm" id="btnAddCenters">Aggiungi</button>
+      </div>` : '';
   return `
     <section class="card dash-list-card" id="dashPayments">
       <div class="dash-list-head">
         <h2>Prossimi pagamenti</h2>
         ${items.length ? `<span class="count-pill">${items.length}</span>` : ''}
       </div>
+      ${warn}
       ${items.length ? `<div class="task-list">${visible.map(row).join('')}</div>` : '<p class="dash-list-empty">Nessuna rata da incassare.</p>'}
       ${items.length > DASH_PAYMENTS_LIMIT ? `<button class="linkish dash-list-more" id="btnPaymentsMore">${showAll ? 'Mostra meno' : `Mostra tutti (${items.length})`}</button>` : ''}
     </section>`;
@@ -878,6 +981,9 @@ function wireDashboardPayments() {
   if (!root) return;
   const more = document.getElementById('btnPaymentsMore');
   if (more) more.addEventListener('click', () => { uiState.dashPaymentsAll = !uiState.dashPaymentsAll; renderDashboard(); });
+  const addAll = document.getElementById('btnAddCenters');
+  if (addAll) addAll.addEventListener('click', () => openCenterNameModal(clientsMissingCenter(), renderDashboard));
+  wireAddCenterButtons(root, renderDashboard);
   root.querySelectorAll('[data-pay-inst]').forEach(cb => cb.addEventListener('change', () => {
     const apt = db.appointments.find(a => a.id === cb.dataset.payApt);
     // La rata VERA (non la copia di getEffectiveInstallments): è quella che vedono la
@@ -3814,7 +3920,10 @@ function renderApptRow(a) {
   const recoveredBadge = a.recoveredFromNoShow
     ? `<span class="badge recov-badge" title="Nato dal Round Recupero Appuntamenti (appuntamento originale da ${a.recoveredFromRole === 'venditore' ? 'Venditore' : 'Setting'})">↻ Recuperato</span>`
     : '';
-  const badges = `${recoveredBadge}${rescheduleBadgesHtml(a)}${linkNote}`;
+  // Chiuso senza nome del centro (Simone, 18/10): deve saltare all'occhio.
+  const centerTag = a.closed && !String(a.centerName || '').trim()
+    ? `<button type="button" class="cm-tag-btn" data-add-center-key="${a.id}" title="Aggiungi il nome del centro">${centerMissingTagHtml()}</button>` : '';
+  const badges = `${centerTag}${recoveredBadge}${rescheduleBadgesHtml(a)}${linkNote}`;
 
   const moneyOpen = !!(uiState.setterMoneyOpen && uiState.setterMoneyOpen[a.id]);
   const hasMoney = a.closed || (a.cashCollected || 0) > 0 || totalSold > 0;
@@ -4028,6 +4137,7 @@ function wireAppuntamentiEvents() {
   wireRecoveryRoundEntryCard();
   wireConfirmRoundEntryCard();
   wireApptCalendar('setter');
+  wireAddCenterButtons(appRoot, renderAppuntamenti);
 
   // Tre puntini ⋯: scheda checklist (+ telefono ed Elimina).
   appRoot.querySelectorAll('[data-appt-more]').forEach(btn => {
@@ -4116,8 +4226,10 @@ function wireAppuntamentiEvents() {
     input.addEventListener('change', () => {
       const apt = db.appointments.find(x => x.id === input.dataset.centerInput);
       if (!apt) return;
+      const had = !!String(apt.centerName || '').trim();
       apt.centerName = input.value.trim();
       persist();
+      if (had !== !!apt.centerName) renderAppuntamenti(); // etichetta "centro mancante"
     });
   });
   appRoot.querySelectorAll('[data-vend-name-input]').forEach(input => {
