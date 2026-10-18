@@ -1358,16 +1358,6 @@ body { line-height: 1.45; }
 .st-Perso { color: var(--st-perso); background: color-mix(in srgb, var(--st-perso) 12%, transparent); }
 .st-Freddo { color: var(--st-freddo); background: color-mix(in srgb, var(--st-freddo) 12%, transparent); }
 .nchip { display: inline-block; padding: 1px 8px; border-radius: 999px; background: var(--bg-elev); border: 1px solid var(--border); font-size: 0.76rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-.apstate { font-size: 0.78rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
-.ap-presentato { color: var(--success); background: var(--tag-conv-bg); }
-.ap-chiuso { color: var(--on-accent); background: var(--success); }
-.ap-no_show { color: var(--stage-no_show); background: var(--stage-no_show-bg); }
-.ap-perso { color: var(--danger); background: var(--tag-x2-bg); }
-.ap-annullato { color: var(--text-dim); background: var(--bg-elev); }
-.ap-spostato { color: var(--stage-spostato); background: var(--stage-spostato-bg); }
-.ap-non_in_target { color: var(--stage-non_in_target); background: var(--stage-non_in_target-bg); }
-.ap-attesa { color: var(--text-dim); border: 1px dashed var(--border); }
-.ap-esitare { color: var(--accent); border: 1px solid var(--accent); }
 
 /* scheda lead */
 .lead-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; }
@@ -1653,7 +1643,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color: var(--accent-500); }
 
 /* ---------- Badge ---------- */
-.badge, .tag, .role-badge, .stpill, .apstate, .nchip, .moved-badge, .recov-badge{
+.badge, .tag, .role-badge, .stpill, .nchip, .moved-badge, .recov-badge{
   font-family: var(--font-sans);
   border-radius: var(--radius-pill);
   font-weight: 600;
@@ -1671,11 +1661,6 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .st-Cliente { color: var(--on-accent); background: var(--accent-500); }
 .st-Perso { color: var(--neutral-600); background: var(--neutral-100); }
 .st-Freddo { color: var(--neutral-400); background: var(--neutral-50); border-color: var(--neutral-200); }
-.ap-presentato { color: var(--accent-ink); background: var(--accent-100); }
-.ap-chiuso { color: var(--on-accent); background: var(--accent-500); }
-.ap-perso { color: var(--neutral-600); background: var(--neutral-100); }
-.ap-annullato { color: var(--neutral-600); background: var(--neutral-50); }
-.ap-esitare { color: var(--accent-ink); border-color: var(--accent-300); }
 .crm-chip { font-family: var(--font-sans); border-radius: var(--radius-pill); font-weight: 600; font-size: 0.72rem; padding: 4px 10px; background: var(--neutral-0); }
 .deal-stage-select, .setter-status-select { font-family: var(--font-sans); border-radius: var(--radius-control); font-weight: 600; }
 .deal-stage-select[data-stage="chiuso"], .deal-stage-select[data-stage="contratto_firmato"] { border-color: var(--accent-300); }

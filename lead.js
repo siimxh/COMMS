@@ -287,19 +287,6 @@ const LeadCRM = (function () {
 
   /* ===================== Pezzi di interfaccia ===================== */
   function stPill(s) { return `<span class="stpill st-${s}">${STATO_LABEL[s] || esc(s)}</span>`; }
-  // apBadge oggi non è chiamata (la scheda mostra la tendina dello stato): tenuta finché
-  // Simone non decide se rimettere il bollino "Presentato · Perso" (bug check 18/10).
-  function apBadge(a) {
-    if (isPending(a)) return isDue(a) ? '<span class="apstate ap-esitare">Da esitare</span>' : '<span class="apstate ap-attesa">In arrivo</span>';
-    if (isClosedAppt(a)) return `<span class="apstate ap-chiuso">${a.dealStage === 'contratto_firmato' ? 'Contratto firmato' : 'Chiuso'}</span>`;
-    // Bug 10 (Simone, 16/10): presentato ma lead perso = "Presentato · Perso", così non
-    // sembra un appuntamento andato bene.
-    const lp = leadById(a.leadId);
-    if (a.dealStage === 'perso' || ((a.dealStage === 'trattativa' || a.dealStage === 'non_in_target') && lp && lp.stato === 'Perso')) return '<span class="apstate ap-perso">Presentato · Perso</span>';
-    const key = a.dealStage === 'trattativa' || a.dealStage === 'perso' ? 'presentato' : a.dealStage;
-    const d = stageDef(a);
-    return `<span class="apstate ap-${key}">${a.dealStage === 'trattativa' || a.dealStage === 'perso' ? 'Presentato' : esc(d ? d.label : a.dealStage)}</span>`;
-  }
   const nOrd = n => n + '°';
   const actDef = n => AZIONI[n && n.type] || AZIONI.chiamata;
   const actLabel = n => actDef(n).i + ' ' + actDef(n).l;

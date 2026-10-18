@@ -271,7 +271,6 @@ Prima di cambiarne una, chiedi a Simone.
 **Lead (parte Venditore)**
 - No show / annullato: la prossima azione diventa sempre "🔁 Recupero no show". Un tentativo senza risposta conta come un follow-up senza risposta (6 → Freddo).
 - Numero dell'appuntamento (1°, 2°…): solo appuntamenti svolti (presentati, anche non in target). Spostati senza numero.
-- Appuntamento presentato ma lead perso: bollino "Presentato · Perso" (`apBadge` in lead.js).
 - Follow-up = "no chiaro per adesso". Dopo 6 follow-up senza risposta il lead diventa Freddo.
 - Nessun lead aperto senza prossima azione (se manca compare in rosso nelle Task della Dashboard).
 - "Chiuso?": Sì, ha pagato (Chiuso) / Sì, contratto firmato / No.
