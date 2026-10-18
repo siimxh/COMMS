@@ -286,6 +286,8 @@ const LeadCRM = (function () {
 
   /* ===================== Pezzi di interfaccia ===================== */
   function stPill(s) { return `<span class="stpill st-${s}">${STATO_LABEL[s] || esc(s)}</span>`; }
+  // apBadge oggi non è chiamata (la scheda mostra la tendina dello stato): tenuta finché
+  // Simone non decide se rimettere il bollino "Presentato · Perso" (bug check 18/10).
   function apBadge(a) {
     if (isPending(a)) return isDue(a) ? '<span class="apstate ap-esitare">Da esitare</span>' : '<span class="apstate ap-attesa">In arrivo</span>';
     if (isClosedAppt(a)) return `<span class="apstate ap-chiuso">${a.dealStage === 'contratto_firmato' ? 'Contratto firmato' : 'Chiuso'}</span>`;
@@ -323,9 +325,8 @@ const LeadCRM = (function () {
   function rerender() { closeModal(); renderRoute(); }
 
   /* ===================== Task della Dashboard (riga 2c) =====================
-   * Restyling (17/10/2026, Simone): la pagina Oggi non esiste più. Quello che mostrava
-   * (da esitare, lead senza prossima azione, azioni in ritardo e di oggi) vive nelle
-   * "Task da fare" della Dashboard, con gli stessi tasti. Qui ci sono solo i dati di
+   * Da esitare, lead senza prossima azione, azioni in ritardo e di oggi: righe delle
+   * "Task da fare" della Dashboard. Qui ci sono solo i dati di
    * ogni riga; la lista (ordine, stile, "Mostra tutte") la disegna app.js
    * (renderDashboardTasks). Le cose promesse non compaiono più: i dati promises[]
    * restano salvati. Gli appuntamenti di oggi non ancora svolti non sono task: quando
@@ -1260,8 +1261,6 @@ const LeadCRM = (function () {
   }
 
   /* ===================== Prossimi pagamenti (Dashboard, restyling step 7) ===================== */
-  /** Appuntamento su cui stanno i soldi del lead (lo stesso della scheda Pagamenti). */
-  function paymentsApptOf(leadId) { const l = leadById(leadId); return l ? lastClosedAppt(l) : null; }
   /** Rata spuntata "Pagato" fuori dalla scheda (Dashboard): stessa riga di storico della scheda. */
   function onInstallmentPaid(a, r) {
     const l = a && a.leadId && leadById(a.leadId); if (!l || !r) return;
@@ -1293,14 +1292,14 @@ const LeadCRM = (function () {
       showToast(isOn() ? 'Parte Venditore accesa.' : 'Parte Venditore spenta.');
     });
   }
-  /** Nasconde o mostra le voci Oggi e Venditore in alto. */
+  /** Nasconde o mostra la voce Venditore nella barra laterale. */
   function applyNav() {
     document.querySelectorAll('[data-venditore-only]').forEach(el => { el.hidden = !isOn(); });
   }
 
   return {
     isOn, applyNav, ensureLeads, dashboardTaskItems, renderLeadList, renderLead, renderNewStatsSection, newStatsValues,
-    wireRowButtons, onDealStageChanged, accountToggleHtml, wireAccountToggle,
-    parseApptName, handlesRecovery, onApptDeleted, reportInfo, paymentsApptOf, onInstallmentPaid
+    wireRowButtons, accountToggleHtml, wireAccountToggle,
+    parseApptName, handlesRecovery, reportInfo, onInstallmentPaid
   };
 })();

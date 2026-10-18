@@ -347,14 +347,6 @@ function escapeHtml(str) {
  * Mini-CRM appuntamenti (Setter/Venditore) — funnel, goals, commissioni
  * ==========================================================================*/
 
-/** Giorno dell'anno (1-366), usato per far ruotare deterministicamente la frase del giorno. */
-function dayOfYear(d) {
-  const date = new Date(d);
-  const start = new Date(date.getFullYear(), 0, 0);
-  const diff = date - start;
-  return Math.floor(diff / 86400000);
-}
-
 /** Lunedì 00:00:00 della settimana che contiene d (settimana ISO, inizia di lunedì). */
 function startOfWeek(d) {
   const x = startOfDay(d);

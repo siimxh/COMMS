@@ -3,7 +3,6 @@
 let db = defaultData();
 let uiState = {
   pipelineFilter: 'all',
-  sessioniPipelineFilter: 'all',
   crmSetterFilter: 'prossimi', // vedi SETTER_APPT_FILTERS — lista Appuntamenti Setter
   crmSetterSearch: '',         // testo ricerca per nome/telefono — tabella Appuntamenti Setter
   calMonthOffset: 0,           // scostamento in mesi dal mese corrente, per la navigazione del calendario
@@ -260,11 +259,7 @@ function animateKpiValues(root) {
  *   Venditore = Lead · Statistiche
  * Route piatte con trattino. Le vecchie restano valide e vengono girate:
  *   #/oggi -> #/dashboard, #/venditore-appuntamenti -> #/venditore-lead.
- * La pagina Oggi non esiste più: il suo contenuto sta nelle Task della Dashboard
- * (renderDashboardTasks, righe Venditore da LeadCRM.dashboardTaskItems).
- * La tabella Appuntamenti Venditore non esiste più (step 15): tutto si fa da Venditore →
- * Lead e dalla scheda lead. I suoi vecchi link (#/venditore-appuntamenti,
- * #/venditore-tabella) portano alla lista Lead. */
+ * Anche #/venditore-tabella porta alla lista Lead. */
 const SETTING_SUBROUTES = { appuntamenti: 'setting-appuntamenti', sessioni: 'sessioni', statistiche: 'setting-statistiche' };
 const VENDITORE_SUBROUTES = { lead: 'venditore-lead', statistiche: 'venditore-statistiche' };
 const ROUTE_REDIRECTS = { oggi: 'dashboard', 'venditore-appuntamenti': 'venditore-lead', 'venditore-tabella': 'venditore-lead' };
@@ -473,11 +468,11 @@ function renderActiveSessionIndicator() {
   el.innerHTML = `<span class="blink-dot"></span>In sessione — torna`;
 }
 
-/** Il tasto "+ Nuova sessione" in topbar non va mai cliccato per AVVIARE una seconda
+/** Il tasto "+ Nuova sessione" nella barra della pagina non va mai cliccato per AVVIARE una seconda
  * sessione sopra quella già in corso (sovrascriverebbe db.activeSession perdendo i dati
  * della prima) — mentre una sessione è attiva, diventa invece un modo rapido per
  * rientrarci (utile soprattutto quando è minimizzata, come scorciatoia in più oltre
- * all'indicatore lampeggiante). Il topbar è markup statico fuori da #app, quindi questa
+ * all'indicatore lampeggiante). La barra è markup statico fuori da #app, quindi questa
  * etichetta va aggiornata esplicitamente ad ogni renderRoute(), non si rigenera da sola. */
 function updateNuovaSessioneButtonLabel() {
   const btn = document.getElementById('btnNuovaSessione');
@@ -485,12 +480,6 @@ function updateNuovaSessioneButtonLabel() {
   // Sul telefono la parola "Nuova"/"alla" sparisce (lascia spazio al titolo e a "+ Task").
   btn.innerHTML = db.activeSession ? '↩ Torna <span class="hide-xs">alla </span>sessione' : '+ <span class="hide-xs">Nuova </span>sessione';
 }
-
-/* Sotto-tab dentro le pagine: dal restyling (step 2) le tab stanno nella barra in alto
- * (renderPageBar). Queste due funzioni restano perché le pagine le chiamano ancora:
- * non disegnano più niente. */
-function renderSubTabsBar() { return ''; }
-function wireSubTabsBar() { /* le tab in alto sono collegate una volta sola in initSidebar */ }
 
 /** Setting: Appuntamenti · Sessioni · Stats (tab in alto). */
 function renderSettingPage() {
@@ -602,7 +591,7 @@ function renderVenditoreStatistiche() {
  *      Le tre stanno nella stessa priorità e si ordinano per scadenza tra loro.
  *   3  Task scritte a mano (db.tasks): restano finché non sono spuntate (doneAt), data
  *      rossa se scadute. Spuntate non si cancellano.
- * La pagina Oggi non esiste più: il suo contenuto sta qui. Più di 8 righe: prime 8 +
+ * Più di 8 righe: prime 8 +
  * "Mostra tutte (N)". Un solo pulsante nero nella vista: "+ Task" in alto a destra. */
 const DASH_TASKS_LIMIT = 8;
 const DAY_SHORT_IT = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
@@ -802,7 +791,7 @@ function openNewTaskModal() {
  * Tutte le rate NON pagate degli appuntamenti chiusi, Setter e Venditore insieme, per
  * scadenza. Fonte: getEffectiveInstallments (l'acconto sintetico è sempre già pagato e
  * non compare). Venditore: TUTTI gli appuntamenti chiusi del lead (Simone, 18/10: "voglio
- * vederle tutte"; prima solo l'ultimo chiuso, LeadCRM.paymentsApptOf). Ogni riga resta
+ * vederle tutte"). Ogni riga resta
  * legata alla sua rata vera. Righe Venditore nascoste se la parte Venditore è spenta.
  * Riga: nome del CENTRO (mai la persona: se manca, nome del lead in grigio + etichetta
  * "centro mancante" che pulsa + "Aggiungi centro"; in cima l'avviso "N clienti senza nome
@@ -1604,9 +1593,8 @@ function renderAndamentoCharts() {
 
 /**
  * Serie storica per i grafici a linea "Andamento generale" — divide il range scelto in
- * bucket temporali (stesso principio di computeFunnelSparkline, ma con più punti quando il
- * range è ampio, per dare un vero andamento "a linea che sale" invece di pochi punti) e
- * somma commissioni o totale venduto in ciascun bucket.
+ * bucket temporali (più punti quando il range è ampio, per dare un vero andamento "a
+ * linea che sale" invece di pochi punti) e somma commissioni o totale venduto in ciascun bucket.
  * - metric 'commissioni': somma commissionEventsInRange (opzionalmente filtrata per ruolo).
  * - metric 'venduto': somma apptTotalSold() degli appuntamenti CHIUSI con scheduledAt nel
  *   bucket (coerente con come viene calcolato "Totale Venduto" altrove — vedi
@@ -2046,7 +2034,6 @@ function renderSessioniList() {
   const activityHtml = renderCallActivitySection();
 
   appRoot.innerHTML = `
-    ${renderSubTabsBar('setting', 'sessioni')}
     ${activityHtml}
     <div class="section-separator"><span class="eyebrow">Elenco sessioni${filterId !== 'all' ? ' · ' + escapeHtml((db.pipelines.find(p => p.id === filterId) || {}).name || '') : ''}</span></div>
     <section class="session-list">${rows}</section>
@@ -2055,7 +2042,6 @@ function renderSessioniList() {
     ${renderChecklistChartSection()}
   `;
 
-  wireSubTabsBar('setting');
   wireCallActivitySection();
   wireSessionDaySearch();
   wireChecklistChart();
@@ -3446,7 +3432,7 @@ function buildWhatsAppConfirmMessage(apt) {
 /**
  * Banner fisso lampeggiante ("ci sono ancora conferme da fare"), mostrato dalle 18:00
  * (CONFIRM_ALERT_HOUR) in poi se restano appuntamenti di domani non confermati — vive
- * fuori da #app, subito sotto il topbar, così è visibile su qualunque schermata (tranne
+ * fuori da #app, subito sotto la barra della pagina, così è visibile su qualunque schermata (tranne
  * durante una sessione/round a schermo intero, dove si nasconde via CSS .in-session).
  * Espandibile: elenco con nome/telefono/orario e un tasto per copiare un messaggio
  * WhatsApp precompilato pronto da incollare (vedi buildWhatsAppConfirmMessage).
@@ -3466,7 +3452,7 @@ function renderConfirmAlertBanner() {
     el = document.createElement('div');
     el.id = 'confirmAlertBanner';
     el.className = 'confirm-alert-banner';
-    // Sotto la barra della pagina (restyling, step 2: la topbar non c'è più).
+    // Sotto la barra della pagina.
     const pageBar = document.getElementById('pageBar');
     pageBar.insertAdjacentElement('afterend', el);
   }
@@ -3508,7 +3494,7 @@ function renderConfirmAlertBanner() {
 
 /* ============================================================================
  * Appuntamenti (mini-CRM) — sistema parallelo alle sessioni/pipeline di chiamata
- * outbound qui sopra. Non condivide dati con esse: solo la stessa app/topbar.
+ * outbound qui sopra. Non condivide dati con esse.
  * ==========================================================================*/
 
 /**
@@ -3560,26 +3546,26 @@ function newAppointment(role) {
 
 /**
  * Stati trattativa del Venditore (sostituiscono Presentato/Chiuso per questo ruolo).
- * Scelti dall'utente con schema colori esplicito. "chiusiSet" marca gli stati che
+ * Scelti dall'utente. "isClosed" marca gli stati che
  * contano come chiusura ai fini di commissioni/funnel "Chiusi" (Contratto Firmato e
- * Chiuso — entrambi implicano soldi incassati/da incassare); "presentedSet" marca gli
+ * Chiuso — entrambi implicano soldi incassati/da incassare); "isPresented" marca gli
  * stati che implicano che il lead si sia presentato (tutti tranne No Show, che per
  * definizione è l'assenza del lead — vedi computeFunnelValues per come viene usato).
  */
 const DEAL_STAGES = [
-  { key: 'no_show',           label: 'No Show',           color: 'mustard',  isClosed: false, isPresented: false },
+  { key: 'no_show',           label: 'No Show',           isClosed: false, isPresented: false },
   // Annullato: né presentato né no-show — fuori da show rate e closing rate (come Spostato).
-  { key: 'annullato',         label: 'Annullato',         color: 'slate',    isClosed: false, isPresented: false },
-  { key: 'trattativa',        label: 'Trattativa',        color: 'sky',      isClosed: false, isPresented: true },
-  { key: 'contratto_firmato', label: 'Contratto Firmato', color: 'mint',     isClosed: true,  isPresented: true },
-  { key: 'chiuso',            label: 'Chiuso',            color: 'forest',   isClosed: true,  isPresented: true },
-  { key: 'perso',             label: 'Perso',             color: 'crimson',  isClosed: false, isPresented: true },
+  { key: 'annullato',         label: 'Annullato',         isClosed: false, isPresented: false },
+  { key: 'trattativa',        label: 'Trattativa',        isClosed: false, isPresented: true },
+  { key: 'contratto_firmato', label: 'Contratto Firmato', isClosed: true,  isPresented: true },
+  { key: 'chiuso',            label: 'Chiuso',            isClosed: true,  isPresented: true },
+  { key: 'perso',             label: 'Perso',             isClosed: false, isPresented: true },
   // "Non in target": il lead si è presentato (conta come show) ma non era in target —
   // escluso dal closing/conversion rate (vedi utils.js computeVenditoreStats).
-  { key: 'non_in_target',     label: 'Non in target',     color: 'brown',    isClosed: false, isPresented: true, excludeFromClosing: true },
+  { key: 'non_in_target',     label: 'Non in target',     isClosed: false, isPresented: true, excludeFromClosing: true },
   // "Spostato": l'appuntamento non si è svolto in questa data ma è stato riprogrammato —
   // né presentato né no-show. Selezionarlo apre openRescheduleModal (nuova data).
-  { key: 'spostato',          label: 'Spostato',          color: 'violet',   isClosed: false, isPresented: false }
+  { key: 'spostato',          label: 'Spostato',          isClosed: false, isPresented: false }
 ];
 function dealStageDef(key) { return DEAL_STAGES.find(s => s.key === key) || null; }
 
@@ -4181,7 +4167,6 @@ function highlightSetterApptRow(id) {
 }
 
 function wireAppuntamentiEvents() {
-  wireSubTabsBar('setting');
   appRoot.querySelectorAll('[data-crm-setter-filter]').forEach(btn => {
     btn.addEventListener('click', () => { uiState.crmSetterFilter = btn.dataset.crmSetterFilter; renderAppuntamenti(); });
   });

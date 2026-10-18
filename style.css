@@ -69,11 +69,8 @@
   --radius-sm: var(--radius-control);
   --radius-md: var(--radius-card);
   --radius-style-amt: var(--radius-control);
-  --bg-image: none;
-  --shadow-accent: none;
   --mono: var(--font-sans);
   --heading-font: var(--font-sans);
-  --accent-filter: none;
 }
 
 /* Tema scuro: stessi ruoli, neutri invertiti. 500/400 invariati; le tinte tenui
@@ -151,9 +148,6 @@ p { margin: 0 0 8px; }
   color: var(--accent);
 }
 
-/* La vecchia topbar con le schede (Oggi / Dashboard / Setting / Venditore) è stata
-   sostituita dalla barra laterale: vedi "Barra laterale" in fondo al file. */
-
 .btn-primary, .btn-ghost, .btn-danger-ghost {
   border: 1px solid var(--border);
   background: var(--bg-elev2);
@@ -177,7 +171,7 @@ p { margin: 0 0 8px; }
 /* Barra del periodo unica: la riga "Periodo: ..." staccata dai tasti. */
 .period-bar > p { margin-top: 10px !important; }
 
-/* 👤 Account: aspetto, esporta e importa (prima erano in topbar). */
+/* 👤 Account: esporta e importa. */
 .account-tools { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 4px; }
 .account-tools label.btn-ghost { display: inline-flex; align-items: center; cursor: pointer; }
 
@@ -672,33 +666,6 @@ body.in-session .sidebar, body.in-session .page-bar, body.in-session .sb-backdro
   .active-session-indicator { top: auto; bottom: 16px; right: 16px; }
 }
 
-/* Elenco "Da richiamare" (modale globale, vedi openCallbacksListModal in app.js). */
-.callbacks-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 55vh;
-  overflow-y: auto;
-  margin: 14px 0;
-}
-.callback-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 10px 12px;
-}
-.callback-row-main { flex: 1; min-width: 0; }
-.callback-row-name { font-weight: 700; font-size: 0.9rem; }
-.callback-row-sub { font-family: var(--mono); font-size: 0.7rem; color: var(--text-dim); margin-top: 2px; }
-.callback-row-when { font-family: var(--mono); font-size: 0.74rem; color: var(--text-dim); white-space: nowrap; }
-.callback-row-when.overdue { color: var(--danger); font-weight: 700; }
-@media (max-width: 560px) {
-  .callback-row { flex-wrap: wrap; }
-  .callback-row-when { order: 3; width: 100%; }
-}
-
 .session-stats {
   display: flex;
   justify-content: center;
@@ -843,8 +810,6 @@ body.in-session .sidebar, body.in-session .page-bar, body.in-session .sb-backdro
 
 .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: var(--radius-sm); font-family: var(--mono); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .badge-yes { color: var(--success); background: var(--tag-conv-bg); }
-.badge-no { color: var(--text-dim); background: var(--bg-elev2); border: 1px solid var(--border); }
-.badge-mid { color: var(--accent-ink); background: var(--accent-100); }
 
 /* ============================================================================
  * Layout generico nuove sezioni
@@ -862,10 +827,7 @@ body.in-session .sidebar, body.in-session .page-bar, body.in-session .sb-backdro
 .page-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
 .page-header h2 { margin: 0; }
 
-/* ============================================================================
- * Funnel goals (dashboard) — stile "Hero + Sparkline", 1 tab Giorno/Settimana/Mese
- * condiviso sopra le due sezioni Setter/Venditore, 1 card a piena larghezza ciascuna.
- * ==========================================================================*/
+/* Tab Giorno/Settimana/Mese ("Migliore di sempre" in Dashboard). */
 
 .tf-tabs { display: flex; gap: 8px; margin: 4px 0 2px; }
 .tf-tab {
@@ -882,10 +844,6 @@ body.in-session .sidebar, body.in-session .page-bar, body.in-session .sb-backdro
 }
 .tf-tab:hover { color: var(--text); }
 .tf-tab.active { background: var(--neutral-0); color: var(--neutral-900); border-color: var(--neutral-0); font-weight: 600; box-shadow: var(--shadow-active); }
-
-/* ---------- Stile "Hero + Sparkline": prima tappa in grande, le altre come mini-tile ---------- */
-
-
 
 .assigned-edit-input {
   width: 84px;
@@ -928,8 +886,7 @@ body.in-session .sidebar, body.in-session .page-bar, body.in-session .sb-backdro
 .crm-table tr:last-child td { border-bottom: none; }
 .crm-table tr:hover td { background: var(--bg-elev2); }
 .crm-table td.crm-cell-center { vertical-align: middle; }
-.crm-client-name { font-weight: 700; display: block; line-height: 1.3; overflow-wrap: anywhere; }
-.crm-amount { font-family: var(--mono); font-weight: 700; }
+
 .crm-amount-link { background: transparent; border: none; color: var(--accent); font-family: var(--mono); font-weight: 700; cursor: pointer; padding: 4px 0; text-decoration: underline dotted; white-space: nowrap; }
 .crm-amount-link:hover { color: var(--accent-hover); }
 .crm-chip-group { display: flex; gap: 5px; flex-wrap: wrap; align-items: flex-start; max-width: 220px; }
@@ -949,9 +906,6 @@ body.in-session .sidebar, body.in-session .page-bar, body.in-session .sb-backdro
   line-height: 1.4;
 }
 .crm-chip.active { background: var(--accent-500); border-color: var(--accent-500); color: var(--on-accent); }
-.crm-chip.active.danger-chip { background: var(--neutral-900); border-color: var(--neutral-900); color: var(--neutral-0); }
-.crm-chip.active.annullato-chip { background: var(--neutral-600); border-color: var(--neutral-600); color: var(--neutral-0); }
-.crm-chip.active.spostato-chip { background: var(--neutral-400); border-color: var(--neutral-400); color: var(--neutral-0); }
 
 /* Appuntamento spostato: la riga vecchia resta visibile ma attenuata, con badge verso la nuova data. */
 tr.appt-row-moved > td { opacity: 0.6; }
@@ -986,12 +940,11 @@ tr.appt-row-moved > td { opacity: 0.6; }
 }
 .crm-inline-input:focus { border-color: var(--accent); outline: none; }
 .crm-name-input { font-weight: 700; margin-bottom: 5px; }
-.crm-phone-input { font-family: var(--mono); font-size: 0.74rem; color: var(--text-dim); }
+
 .crm-datetime-input { font-family: var(--mono); font-size: 0.76rem; min-width: 176px; }
 
-/* Telefono + tasto copia (usato nella riga Appuntamenti Venditore) */
-.crm-phone-row { display: flex; align-items: center; gap: 4px; }
-.crm-phone-row .crm-phone-input { flex: 1; min-width: 0; }
+/* Tasto copia del telefono (schermate di chiamata) */
+
 .crm-copy-phone-btn {
   background: var(--bg-elev2); border: 1px solid var(--border); border-radius: var(--radius-sm);
   color: var(--text-dim); cursor: pointer; padding: 5px 7px; font-size: 0.78rem; line-height: 1; flex-shrink: 0;
@@ -1056,31 +1009,8 @@ tr.appt-row-moved > td { opacity: 0.6; }
   font-family: var(--font-sans);
 }
 
-/* Widget "Registrazione Call" (link Drive/Fathom/ecc.) — Venditore, ancorato fixed
-   in fondo a destra sopra il resto del contenuto (non più una card a piena larghezza). */
-.call-rec-widget {
-  position: fixed; right: 18px; bottom: 18px; z-index: 40;
-  width: 320px; max-width: calc(100vw - 36px);
-  display: flex; flex-direction: column; align-items: flex-end;
-}
-.call-rec-toggle {
-  display: flex; align-items: center; justify-content: space-between; gap: 10px;
-  width: 100%; background: var(--bg-elev); border: 1px solid var(--border);
-  border-radius: var(--radius-sm); padding: 10px 14px; color: var(--text);
-  font-family: var(--font-sans); font-size: 0.82rem; font-weight: 600;
-  cursor: pointer; box-shadow: var(--shadow-active);
-}
-.call-rec-toggle:hover { border-color: var(--accent); }
-.call-rec-count {
-  background: var(--accent); color: var(--bg); border-radius: 999px;
-  padding: 1px 8px; font-size: 0.74rem; font-weight: 700;
-}
-.call-rec-widget.is-open .call-rec-toggle { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-.call-rec-panel {
-  width: 100%; background: var(--bg-elev); border: 1px solid var(--border); border-top: none;
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm); padding: 12px 14px;
-  box-shadow: var(--shadow-active); max-height: 60vh; overflow-y: auto;
-}
+/* Registrazioni call (link Drive/Fathom/ecc.): modale 🎙️ di Venditore → Lead. */
+
 .call-rec-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
 .call-rec-row { display: flex; align-items: center; gap: 8px; background: var(--bg-elev2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; }
 .call-rec-row a { color: var(--accent); text-decoration: none; font-size: 0.84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
@@ -1090,25 +1020,9 @@ tr.appt-row-moved > td { opacity: 0.6; }
   flex: 1; min-width: 120px; background: var(--bg-elev2); border: 1px solid var(--border);
   border-radius: var(--radius-sm); padding: 8px 10px; color: var(--text); font-size: 0.84rem;
 }
-@media (max-width: 640px) {
-  .call-rec-widget { right: 12px; bottom: 12px; width: calc(100vw - 24px); }
-}
 
-/* Sezione Statistiche Venditore */
-.vnd-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); }
-@media (max-width: 760px) { .vnd-stats-grid { grid-template-columns: repeat(2, 1fr); } }
-.vnd-timeframe-tabs { display: flex; gap: 8px; margin-bottom: 4px; }
+/* Tab interne (scheda lead). */
 
-/* Etichette di gruppo nella nav (Setting / Venditore) */
-.nav-group-label {
-  font-family: var(--mono); font-size: 0.62rem; font-weight: 700; text-transform: uppercase;
-  letter-spacing: 0.08em; color: var(--text-dim); align-self: center; margin-left: 4px;
-  padding-right: 2px; white-space: nowrap;
-}
-
-/* Sotto-tab dentro le schermate "Setting" e "Venditore" (Appuntamenti/Sessioni,
-   Appuntamenti/Statistiche) — un solo bottone di nav in alto, la scelta si fa qui. */
-.sub-tabs-bar { padding: 10px 14px; }
 .sub-tabs { display: flex; gap: 8px; }
 
 .installments-list { display: flex; flex-direction: column; gap: 8px; margin: 10px 0; }
@@ -1133,9 +1047,6 @@ tr.appt-row-moved > td { opacity: 0.6; }
 /* ============================================================================
  * Calendario commissioni
  * ==========================================================================*/
-
-.comm-summary-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); }
-@media (max-width: 700px) { .comm-summary-grid { grid-template-columns: repeat(2, 1fr); } }
 
 .cal-nav { display: flex; align-items: center; gap: 12px; justify-content: center; }
 .cal-nav button { background: var(--bg-elev2); border: 1px solid var(--border); color: var(--text); cursor: pointer; padding: 7px 12px; border-radius: var(--radius-sm); font-family: var(--mono); }
@@ -1272,9 +1183,9 @@ tr.appt-row-moved > td { opacity: 0.6; }
   .confirm-hero-when { font-size: 0.96rem; padding: 7px 14px; }
 }
 
-/* Banner fisso "ci sono ancora conferme da fare" — vive fuori da #app, subito sotto il
- * topbar (vedi renderConfirmAlertBanner in app.js), nascosto durante sessioni/round a
- * schermo intero dalla stessa regola che già nasconde #topbar in quei casi. */
+/* Banner fisso "ci sono ancora conferme da fare" — vive fuori da #app, sotto la barra
+ * della pagina (vedi renderConfirmAlertBanner in app.js), nascosto durante sessioni/round
+ * a schermo intero. */
 body.in-session #confirmAlertBanner { display: none; }
 .confirm-alert-banner {
   position: sticky;
@@ -1426,19 +1337,13 @@ body { line-height: 1.45; }
 .ld-sub-inputs .ld-input { flex: 1 1 120px; width: auto; }
 .ident > div:first-child { flex: 1 1 220px; min-width: 0; }
 .ld-static { font-size: 0.92rem; color: var(--text); text-transform: none; letter-spacing: 0; font-weight: 400; padding: 8px 0; }
-.ld-apt-extra { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
-.ld-small-link { font-size: 0.8rem; font-weight: 600; color: var(--accent); }
-.ld-esita-mini { padding: 4px 10px; font-size: 0.78rem; }
+
 .nstat .val small { font-size: 1rem; color: var(--text-dim); font-weight: 400; }
 .lead-modal .setrow { border-top: 1px solid var(--border); }
-.page-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
-.page-head h1 { margin: 0; font-size: 1.6rem; letter-spacing: -0.01em; }
-.page-head .d { color: var(--text-dim); }
 
 .who { font-weight: 700; background: none; border: 0; padding: 0; color: var(--text); font: inherit; font-weight: 700; cursor: pointer; text-align: left; }
 .who:hover { color: var(--accent); text-decoration: underline; }
-.what { color: var(--text-dim); font-size: 0.88rem; }
-.what q { color: var(--text); quotes: "“" "”"; }
+
 .late-tag { color: var(--danger); font-weight: 700; }
 .row-btns { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 .row-btns .btn-primary, .row-btns .btn-ghost { padding: 6px 12px; font-size: 0.82rem; }
@@ -1532,8 +1437,7 @@ body { line-height: 1.45; }
 .leads-tbl .sub { color: var(--text-dim); font-size: 0.8rem; }
 .leads-tbl .red { color: var(--danger); font-weight: 700; }
 .leads-tbl .miss { color: var(--danger); font-weight: 700; }
-.toolbar-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
-.toolbar-row .crm-filters { display: flex; gap: 8px; flex-wrap: wrap; }
+
 .pill .cnt { opacity: .7; margin-left: 4px; font-variant-numeric: tabular-nums; }
 
 /* statistiche */
@@ -1546,10 +1450,6 @@ body { line-height: 1.45; }
 .meter { height: 8px; border-radius: 99px; background: var(--bg-elev2); overflow: hidden; display: flex; }
 .meter i { display: block; height: 100%; background: var(--accent); }
 .meter i.ok { background: var(--success); } .meter i.ko { background: var(--danger); }
-.num-split { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.num-split div { background: var(--bg-elev2); border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; }
-.num-split b { display: block; font-size: 1.4rem; font-variant-numeric: tabular-nums; }
-.num-split span { font-size: 0.8rem; color: var(--text-dim); }
 
 /* modali */
 .lead-modal h3 { margin: 0 0 4px; }
@@ -1579,7 +1479,7 @@ body { line-height: 1.45; }
 @media (max-width: 900px) {
   .lead-grid { grid-template-columns: 1fr; }
   .new-stats { grid-template-columns: 1fr; }
-  .num-split { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  
 }
 @media (max-width: 560px) {
   .mrow, .pay-form, .pay-sum { grid-template-columns: 1fr; }
@@ -1730,7 +1630,6 @@ a { color: var(--neutral-900); }
 }
 .filters-bar { border: var(--border-line); background: var(--neutral-0); border-radius: var(--radius-card); padding: 14px 16px; gap: 10px; }
 .custom-range { font-family: var(--font-sans); color: var(--neutral-600); }
-.sub-tabs-bar { padding: 10px 14px; }
 
 /* ---------- Input ---------- */
 .field { font-family: var(--font-sans); font-size: 0.82rem; font-weight: 500; color: var(--neutral-600); }
@@ -1751,7 +1650,6 @@ a { color: var(--neutral-900); }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent-500); box-shadow: 0 0 0 3px var(--accent-100); }
 ::placeholder { color: var(--neutral-400); }
 input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color: var(--accent-500); }
-.crm-phone-input { color: var(--neutral-600); }
 
 /* ---------- Badge ---------- */
 .badge, .tag, .role-badge, .stpill, .apstate, .nchip, .moved-badge, .recov-badge{
@@ -1763,7 +1661,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .role-badge { border: none; }
 .role-badge.setter { color: var(--accent-ink); background: var(--accent-100); }
 .role-badge.venditore { color: var(--neutral-900); background: var(--neutral-100); }
-.badge-no { border: none; background: var(--neutral-100); color: var(--neutral-600); }
+
 .recov-badge { color: var(--accent-ink); background: var(--accent-100); }
 .stpill { border: 1px solid transparent; }
 .st-Nuovo { color: var(--neutral-900); background: var(--neutral-100); }
@@ -1794,7 +1692,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .crm-table tr:hover td { background: var(--neutral-50); }
 
 /* ---------- KPI (un blocco unico diviso da linee, come la guida) ---------- */
-.kpi-grid, .vnd-stats-grid, .comm-summary-grid {
+.kpi-grid{
   border: var(--border-line);
   background: var(--neutral-200);
   border-radius: var(--radius-card);
@@ -1802,14 +1700,14 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
   gap: 1px;
 }
 .kpi-card, .kpi-card.accented { border: none; border-radius: 0; background: var(--neutral-0); padding: 18px 20px; }
-.vnd-stats-grid > .card { border: none; border-radius: 0; }
+
 .kpi-value { font-family: var(--font-sans); font-size: 1.6rem; font-weight: 700; color: var(--neutral-900); }
 .kpi-label { font-family: var(--font-sans); font-size: 0.8rem; font-weight: 500; color: var(--neutral-600); }
 .stat-block .stat-label, .productivity-grid .stat-label, .trend-label,
-.cal-dow, .cal-daynum, .cal-detail-source, .session-card-sub, .bar-row, .breakdown-chip, .line-chart-yaxis-tick, .callback-row-sub, .callback-row-when, .session-callback-item-phone, .session-callback-item-when,
+.cal-dow, .cal-daynum, .cal-detail-source, .session-card-sub, .bar-row, .breakdown-chip, .line-chart-yaxis-tick, .session-callback-item-phone, .session-callback-item-when,
 .session-callback-sidebar-title, .session-pipeline-name,
 .checkbox-inline, .recov-entry-count-label, .crm-link-note, .note-card-meta, .sync-status,
-.cal-month-label, .back-link, .tf-tab, .stat-value, .trend-value, .bar-value, .kpi-value, #sessionTimer, .crm-amount, .crm-amount-link, .installment-total-row, .cal-day-total, .recov-entry-count,
+.cal-month-label, .back-link, .tf-tab, .stat-value, .trend-value, .bar-value, .kpi-value, #sessionTimer, .crm-amount-link, .installment-total-row, .cal-day-total, .recov-entry-count,
 .recov-hero-phone, .confirm-hero-phone, .confirm-hero-when, .outcome-btn-sub, .confirm-alert-toggle,
 .pause-banner, .second-call-banner, .active-session-indicator, .chip-select, .deal-stage-select, .crm-chip {
   font-family: var(--font-sans);
@@ -1820,7 +1718,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .rate-sub { color: var(--neutral-400); }
 .nstat { border-radius: var(--radius-card); }
 .nstat .lab em { color: var(--accent-ink); border-color: var(--accent-300); }
-.pay-sum div, .num-split div { background: var(--neutral-0); border-radius: var(--radius-control); }
+.pay-sum div{ background: var(--neutral-0); border-radius: var(--radius-control); }
 
 /* ---------- Obiettivi e barre (accento sul dato raggiunto, resto neutro) ---------- */
 
@@ -1858,11 +1756,11 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 .confirm-alert-toggle .blink-dot { background: var(--accent-500); }
 .confirm-alert-item { background: var(--neutral-0); }
 .confirm-alert-item-time { color: var(--accent-ink); }
-.crm-amount-link, .linkish, .ld-small-link, .call-rec-row a { color: var(--accent-ink); }
+.crm-amount-link, .linkish, .call-rec-row a { color: var(--accent-ink); }
 .crm-amount-link:hover { color: var(--neutral-900); }
 .who:hover, .ld-back:hover, .copy-mini:hover, .callback-edit-btn:hover{ color: var(--accent-ink); }
 .copy-mini:hover, .crm-copy-phone-btn:hover { border-color: var(--neutral-400); color: var(--neutral-900); }
-.call-rec-count { background: var(--accent-500); color: var(--on-accent); }
+
 .ev .mk i.k-appt { background: var(--neutral-900); border-color: var(--neutral-900); }
 .ev .mk i.k-azione { background: var(--accent-500); border-color: var(--accent-500); }
 .ev .mk i.k-soldi { background: var(--accent-300); border-color: var(--accent-300); }
@@ -2018,8 +1916,7 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
 @media (prefers-reduced-motion: reduce) { .sidebar { transition: none; } }
 
 /* Pagine Stats (Setting) e Statistiche (Venditore). */
-.stats-note { font-size: 0.82rem; margin: 0; }
-.stats-page-link { display: flex; justify-content: flex-end; }
+
 #app > .back-link { align-self: flex-start; }
 
 /* Tasti della barra strumenti delle liste: vanno a capo invece di uscire dallo schermo. */
@@ -2154,7 +2051,7 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
  * tab della guida a sinistra e il periodo esatto in grigio a destra. */
 .period-bar.filters-bar { background: transparent; border: none; padding: 0; gap: 8px 14px; }
 .period-bar .period-range-text { margin-left: auto; font-size: 0.84rem; color: var(--neutral-600); white-space: nowrap; }
-.period-bar > p, .period-bar .stats-note { margin: 0 !important; flex-basis: 100%; }
+.period-bar > p{ margin: 0 !important; flex-basis: 100%; }
 .period-bar .custom-range { margin-left: 0; }
 
 /* ============================================================================

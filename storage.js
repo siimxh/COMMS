@@ -27,31 +27,6 @@ function defaultOutcomesList() {
 }
 
 /**
- * Frasi motivazionali per il toggle "Frase motivazionale del giorno" (builder,
- * opzione 8). L'indice mostrato è dayOfYear % lunghezza array, quindi la stessa
- * frase resta stabile per tutto il giorno solare corrente (vedi utils.js:dayOfYear).
- */
-function motivationalQuotes() {
-  return [
-    'Ogni chiamata in più è un appuntamento in più domani.',
-    'Il "no" di oggi paga la commissione di domani.',
-    'Chi fissa di più, chiude di più.',
-    'La costanza batte il talento quando il talento non è costante.',
-    'Un appuntamento presentato vale più di dieci pianificati.',
-    'Le vendite si fanno con la disciplina, non con la fortuna.',
-    'Oggi è un altro giorno per battere il tuo record.',
-    'Il cliente compra la tua sicurezza, non solo il prodotto.',
-    'Chi molla al decimo "no" perde l\'undicesimo "sì".',
-    'La pipeline piena di oggi è il conto in banca di domani.',
-    'Non serve motivazione, serve un obiettivo scritto e un telefono in mano.',
-    'Ogni show-up è una prova che il metodo funziona.',
-    'Le rate pagate valgono quanto le rate chiuse: segui anche gli incassi.',
-    'Il ritmo giusto oggi evita lo sprint disperato a fine mese.',
-    'Un venditore fullstack setta E chiude: oggi fai entrambe le cose bene.'
-  ];
-}
-
-/**
  * Nuovo default per una riga di goals (funnel Setter e Venditore), per un singolo
  * timeframe (month/week/day). I target sono impostabili dall'utente in dashboard;
  * partono a 0 (nessun obiettivo impostato) finché l'utente non li edita.
@@ -147,7 +122,7 @@ function defaultData() {
     goals: defaultGoals(),
     settings: defaultSettings(),
 
-    // Registro link registrazioni call (solo sezione Venditore) — vedi renderCallRecordings
+    // Registro link registrazioni call (solo sezione Venditore) — vedi openCallRecordingsModal
     // in app.js. Elenco semplice di { id, label, url, createdAt }, nessun'altra struttura.
     callRecordings: [],
 

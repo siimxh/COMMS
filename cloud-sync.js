@@ -237,7 +237,7 @@ const CloudSync = {
   getData: null,        // funzione che restituisce il db corrente (impostata da app.js)
   leadTable: false,     // true se nel database c'è la tabella "lead" (si scopre al pull)
   _leadsToMove: false,  // true se i lead stanno ancora in "stato" e vanno spostati nella tabella
-  onStatus: null,       // callback per la spia in topbar
+  onStatus: null,       // callback per la spia "Salvato" nella barra della pagina
 
   /* --- Sessione di login --- */
 
