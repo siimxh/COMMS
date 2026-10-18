@@ -15,10 +15,10 @@ Due ruoli, nello stesso tool:
 
 Utenti: Simone (proprietario del tool, fa setter e venditore) e Hamza (collega setter, usa soprattutto la parte Setting e propone fix).
 
-- Repo: `siimxh/CRM-SETTER-VENDITORE`, branch `main`.
+- Repo: `siimxh/COMMS` (prima `siimxh/CRM-SETTER-VENDITORE`: GitHub reindirizza il nome vecchio), branch `main`. Se `git remote -v` mostra ancora il nome vecchio funziona lo stesso; per aggiornarlo: `git remote set-url origin https://github.com/siimxh/COMMS`.
 - **Versione in uso**: https://comms-wine.vercel.app — login + database Supabase. Vercel (progetto "comms", piano Hobby) pubblica il branch `main`: push su `main` = online in 1-2 minuti.
-- Dal 16/10/2026 c'è **una sola versione del codice**: `main`. Il branch `supabase` è fermo (era il cantiere del login) e non si usa più.
-- GitHub Pages https://siimxh.github.io/CRM-SETTER-VENDITORE/ pubblica anche lui `main` (stesso login, stessi dati). Nessuno lo usa: il link da dare è quello di Vercel.
+- C'è **una sola versione del codice**: `main`. Il branch `supabase` (cantiere del login) è fermo e non si usa più.
+- GitHub Pages pubblica anche lui `main` (stesso login, stessi dati). Col repo rinominato l'indirizzo diventa https://siimxh.github.io/COMMS/ (**da verificare**: GitHub Pages non reindirizza il nome vecchio). Nessuno lo usa: il link da dare è quello di Vercel.
 - `siimxh/TRACKER-OUTBOUND` è una versione vecchia: non toccarla.
 - Il repo è **pubblico**: niente dati dei lead, indirizzi email o dati personali nei file.
 
@@ -75,7 +75,7 @@ Claude
 - Oggetto: scherzoso, tutto in maiuscolo (sono amici).
 - **Mai** l'emoji ✨.
 - Metti in evidenza le modifiche alla parte Setting (è quella che usa Hamza).
-- Screenshot: JPG in `aggiornamenti/AAAA-MM-GG/` nel repo, inseriti nella mail come `<img>` con link `raw.githubusercontent.com/siimxh/CRM-SETTER-VENDITORE/main/aggiornamenti/...`.
+- Screenshot: JPG in `aggiornamenti/AAAA-MM-GG/` nel repo, inseriti nella mail come `<img>` con link `raw.githubusercontent.com/siimxh/COMMS/main/aggiornamenti/...` (le mail vecchie usano il nome vecchio del repo: GitHub li reindirizza).
 
 ### Calendari (quando servono)
 
@@ -96,8 +96,8 @@ Ordine di caricamento in `index.html`: `storage.js` → `utils.js` → `supabase
 | `cloud-sync.js` | Login e salvataggio sul database Supabase (senza librerie: fetch diretto alle API) |
 | `supabase/schema.sql` | Tabelle, regole RLS, foto notturna, storico modifiche. Si lancia dal SQL Editor di Supabase |
 | `supabase/lead.sql` | Solo la tabella `lead` (per un database che ha già lo schema) |
-| `lead.js` | Parte Venditore a lead: righe Venditore delle Task in Dashboard, lista Lead, scheda lead, "Com'è finita?", Fatto/Sposta, numeri nuovi. Tutto dentro `LeadCRM` |
-| `app.js` | Tutta l'interfaccia: routing, render, eventi, modali (~6.500 righe) |
+| `lead.js` | Parte Venditore a lead: righe Venditore delle Task in Dashboard, lista Lead, scheda lead, "Com'è finita?", Fatto/Sposta, numeri dei lead. Tutto dentro `LeadCRM` |
+| `app.js` | Tutta l'interfaccia: routing, render, eventi, modali (~6.800 righe) |
 | `style.css` | Stile. In testa i token della guida colori (`--accent-100..500`, `--neutral-0..900`, `--success`, `--danger`, raggi); i nomi vecchi (`--accent`, `--bg`...) puntano ai token. Niente colori scritti a mano nei componenti |
 | `aggiornamenti/` | Screenshot delle mail a Hamza, una cartella per rilascio |
 | `tools/` | `prova-tracker.js` (prova nel browser), `dati-finti.js` (dati di prova inventati, vedi sezione 7), `anonimizza-backup.js` (copia anonima di un backup), `eod-report.js` (numeri del modulo di fine giornata, letti dal database: lo usa la mail EOD delle 19) |
@@ -113,7 +113,7 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 **Base e routing**
 - `persist()` salva nella copia locale e accoda il salvataggio online (`CloudSync.schedule`). Chiamala dopo ogni modifica a `db`.
 - Avvio: `bootApp` → login (`loginSubmitAction`) → `startForUser` → `openUserData` (dati online, o import dei dati del browser al primo login). Account ed Esci: `openAccountModal`, `logoutAction` (Esci ricarica la pagina). Dentro 👤 ci sono Esporta, Importa, l'interruttore Parte Venditore e il permesso per le notifiche di sistema.
-- Layout (restyling, ottobre 2026): barra laterale `initSidebar`, `updateSidebarActive`, `openMobileSidebar`/`closeMobileSidebar` (compressa ricordata in localStorage `comms_barraCompatta`). Barra della pagina: `renderPageBar(section, tab)`; tab `SETTING_SUBROUTES`, `VENDITORE_SUBROUTES`. Un solo pulsante nero (`.btn-primary`) per vista.
+- Layout: barra laterale `initSidebar`, `updateSidebarActive`, `openMobileSidebar`/`closeMobileSidebar` (compressa ricordata in localStorage `comms_barraCompatta`). Barra della pagina: `renderPageBar(section, tab)`; tab `SETTING_SUBROUTES`, `VENDITORE_SUBROUTES`. Un solo pulsante nero (`.btn-primary`) per vista.
 - Periodo **unico**: Dashboard, Sessioni e Stats usano la stessa barra (`renderPeriodBar`, `wirePeriodBar`) e lo stesso periodo (`getPeriod`, `setPeriod`, `getPeriodRange`; `getPeriodRangeOrNull`, null = "Tutto"). Il browser si ricorda la scelta (localStorage `chiamateTracker_periodo`).
 - `renderRoute()` decide cosa mostrare da `location.hash`. Route (piatte, con trattino):
   - `#/dashboard` (pagina d'apertura)
@@ -123,20 +123,20 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
   - Route vecchie → `ROUTE_REDIRECTS`: `#/oggi` → Dashboard, `#/venditore-appuntamenti` e `#/venditore-tabella` → Lead. La pagina Oggi e la tabella Appuntamenti Venditore non esistono più.
   - Cambiando route si torna in cima alla pagina (`lastRenderedRouteKey`).
 - Priorità prima della route: richiamata in corso (`callbackCallActiveId`), sessione attiva non minimizzata, Round Conferme, Round Recupero. Se uno di questi è attivo, la route viene ignorata (e barra laterale e barra della pagina si nascondono).
-- Tema (🎨 Aspetto, `renderBuilderPage`): accento a rampa. `ACCENT_PRESETS` (Arancione = default, Indaco, Teal, Magenta) o colore a scelta (`accentRampFromHex` genera 500-100), Chiaro/Scuro (`settings.themeMode`), testo Normale/Grande, un effetto ("Numeri che contano"). `applyTheme` scrive inline solo le variabili d'accento (e il testo sopra l'accento, scuro se il bianco non arriva a 4,5:1). Accento verde → trend in blu; accento rosso → trend in viola. Preset e effetti vecchi spariti: `migrateSettings` (storage.js) riporta tutti su Arancione tenendo chiaro/scuro.
+- Tema (🎨 Aspetto, `renderBuilderPage`): accento a rampa. `ACCENT_PRESETS` (Arancione = default, Indaco, Teal, Magenta) o colore a scelta (`accentRampFromHex` genera 500-100), Chiaro/Scuro (`settings.themeMode`), testo Normale/Grande, un effetto ("Numeri che contano"). `applyTheme` scrive inline solo le variabili d'accento (e il testo sopra l'accento, scuro se il bianco non arriva a 4,5:1). Accento verde → trend in blu; accento rosso → trend in viola. I settings dei temi vecchi li sistema `migrateSettings` (storage.js): Arancione, tenendo chiaro/scuro.
 
 **Dashboard** (`renderDashboard`, eventi `wireDashboardSections`), dall'alto:
 1. Task da fare: `collectDashboardTasks`, `renderDashboardTasks`, `wireDashboardTasks`, "+ Task" → `openNewTaskModal`. Priorità 1 conferme di domani (da mezzanotte), 2 Da richiamare di oggi e scaduti + una riga "N da recuperare" + righe Venditore (`LeadCRM.dashboardTaskItems`: da esitare, senza prossima azione, azioni di oggi e scadute), 3 `db.tasks`. Prime 8 + "Mostra tutte".
-2. Prossimi pagamenti: `collectUpcomingPayments`, `renderDashboardPayments`, `wireDashboardPayments` (spunta "Pagato" sulla rata vera). Nome del centro, mai la persona. Rate non pagate di TUTTI gli appuntamenti chiusi, Setter e Venditore (dal 18/10 anche gli appuntamenti Venditore chiusi prima dell'ultimo dello stesso lead).
-   - Centro mancante (18/10): `centerMissingTagHtml` (pallino che pulsa + "centro mancante"), "Aggiungi centro" → `openCenterNameModal` (scrive `apt.centerName` dove manca e `lead.centro` se vuoto), avviso "N clienti senza nome del centro" in cima (`clientsMissingCenter`: un cliente = un appuntamento Setter chiuso o un lead Venditore). Stessa etichetta sui Setter chiusi senza centro in Setting → Appuntamenti e sui lead Cliente senza centro (lista e scheda, `leadMissingCenter` in lead.js).
+2. Prossimi pagamenti: `collectUpcomingPayments`, `renderDashboardPayments`, `wireDashboardPayments` (spunta "Pagato" sulla rata vera). Nome del centro, mai la persona. Rate non pagate di TUTTI gli appuntamenti chiusi, Setter e Venditore (anche più chiusure dello stesso lead).
+   - Centro mancante: `centerMissingTagHtml` (pallino che pulsa + "centro mancante"), "Aggiungi centro" → `openCenterNameModal` (scrive `apt.centerName` dove manca e `lead.centro` se vuoto), avviso "N clienti senza nome del centro" in cima (`clientsMissingCenter`: un cliente = un appuntamento Setter chiuso o un lead Venditore). Stessa etichetta sui Setter chiusi senza centro in Setting → Appuntamenti e sui lead Cliente senza centro (lista e scheda, `leadMissingCenter` in lead.js).
 3. Barra periodo `renderDashboardPeriodBar` (+ "Migliore di sempre", `renderBestPeriodCaption`).
 4. Quattro ciambelle `renderDashboardDonuts` (Setting a sinistra, Venditore a destra), componente unico `renderDonut(data, opts)` in SVG. Numeri da `computeSetterStats` (`passatiPerEsito`), `computeVenditoreStats` (`assegnatiPerEsito`, `assegnatiPassati`, `commAcconti`, `commRatePagate`, `commRateFuture`) e `computeFunnelValues`: uguali alle pagine Stats. Le due "Appuntamenti per esito" contano per data dell'appuntamento e solo quelli già passati (vedi sez. 6).
 5. Pace mese `renderMonthPaceSection` (obiettivo del mese ✎: è l'unico posto dove si cambiano i `db.goals`), Commissioni totali `renderCommissionKpiSection`, grafici nel tempo `renderAndamentoCharts` (`buildAndamentoSeries`, `renderLineChart`), calendario commissioni `renderCommissioniCalendarSection`.
-- Funnel, obiettivi a barre e tassi in Dashboard sono stati tolti (decisione di Simone, 17/10): non rimetterli.
+- Funnel, obiettivi a barre e tassi in Dashboard: tolti per decisione di Simone, non rimetterli.
 - Report da copiare: `generateSessionReport`, `generateAppointmentsReport`, `generateVenditoreAppointmentsReport`.
 
 **Stats**
-- Setting: `renderSettingStatistiche` (KPI, divisione per tipo di chiamata `renderCallTypesSection`). Venditore: `renderVenditoreStatistiche` (+ `LeadCRM.renderNewStatsSection`). Niente "Esiti nel periodo" (Simone, 16/10).
+- Setting: `renderSettingStatistiche` (KPI, divisione per tipo di chiamata `renderCallTypesSection`). Venditore: `renderVenditoreStatistiche` (+ `LeadCRM.renderNewStatsSection`). Niente "Esiti nel periodo" (decisione di Simone).
 
 **Sessioni di chiamata (Setter)**
 - Nuova sessione: `openNewSessionModal` → `startSessionAction` → `beginPipelineSession` / `createPipelineSession`.
@@ -149,7 +149,7 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 **Da richiamare (callback)**
 - Esito "Da richiamare" → `openCallbackModal`. Lista: filtro "Da richiamare" in Setting → Appuntamenti (`pendingCallbacksSorted`, `renderCallbackListRow`); gli scaduti stanno anche nelle Task della Dashboard. Modifica `openEditCallbackModal`, cestino `removeCallback`.
 - Richiamata: `startCallbackCall`, `renderCallbackCallScreen`, `logCallbackCall`, `appendCallbackCallToSession`.
-- Checklist nella richiamata con l'esito "conferma appuntamento" (Simone, 18/10): stessa regola della sessione (almeno una voce, unione). `saveCallbackConfirmChecklist`: se un solo appuntamento candidato ha lo stesso telefono (`sureConfirmApptForPhone`) salva subito, altrimenti "Quale appuntamento?" con la ricerca già sul nome. Se la chiamata è finita nella sessione aperta, "Annulla ultimo esito" la toglie, rimette la checklist e riporta il richiamo tra i Da richiamare (`undoState.callback`). Senza sessione aperta non c'è il tasto (come per ogni richiamata).
+- Checklist nella richiamata con l'esito "conferma appuntamento": stessa regola della sessione (almeno una voce, unione). `saveCallbackConfirmChecklist`: se un solo appuntamento candidato ha lo stesso telefono (`sureConfirmApptForPhone`) salva subito, altrimenti "Quale appuntamento?" con la ricerca già sul nome. Se la chiamata è finita nella sessione aperta, "Annulla ultimo esito" la toglie, rimette la checklist e riporta il richiamo tra i Da richiamare (`undoState.callback`). Senza sessione aperta non c'è il tasto (come per ogni richiamata).
 - Round Recupero: non ha un esito di conferma, quindi lì la checklist si salva solo con "Appuntamento fissato" (`openRecoveryAppointmentModal`).
 - Senza sessione aperta, le richiamate finiscono nella sessione automatica del giorno "Richiami" (`CALLBACK_AUTO_PIPELINE_ID`).
 - Notifica all'ora del richiamo, su ogni pagina: `startCallbackNotifications` (timer ogni 20 s, avviato a fine `startForUser`, uno solo), `refreshCallbackNotifications` (anche da `persist` e `renderRoute`), clic → `openCallbackFromNotification`, X → `cb.dismissedAt`. Notifica di sistema solo se il permesso è dato da 👤 Account (`cb.notifiedAt`). Funziona solo con il tool aperto.
@@ -157,16 +157,16 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 **Round Conferme**
 - Richiama gli appuntamenti Setter del giorno lavorativo dopo (il venerdì quelli del lunedì): `getConfirmTargetDateKeys`, `getPendingConfirmAppointments`.
 - Schermata: `renderConfirmRoundScreen`, `applyConfirmOutcome`, `exitConfirmRound`. Banner dalle 18: `renderConfirmAlertBanner`.
-- Checklist (18/10): pannello a destra con le voci già salvate sull'appuntamento spuntate e bloccate (`confirmChecklistItems`), spunte in corso su `apt.inCallChecklist`. "Confermato 24h" le salva in unione (`mergeChecklistIntoAppt`) solo se c'è almeno una voce; Annullato, Spostato e Skip le buttano, Non risposto le tiene.
+- Checklist: pannello a destra con le voci già salvate sull'appuntamento spuntate e bloccate (`confirmChecklistItems`), spunte in corso su `apt.inCallChecklist`. "Confermato 24h" le salva in unione (`mergeChecklistIntoAppt`) solo se c'è almeno una voce; Annullato, Spostato e Skip le buttano, Non risposto le tiene.
 - Le chiamate vanno nella sessione aperta se c'è (`appendConfirmCallToSession`), altrimenti nella sessione automatica del giorno "Conferme".
 - Messaggio WhatsApp: `CONFIRM_WHATSAPP_TEMPLATE`, `buildWhatsAppConfirmMessage`.
 
 **Round Recupero Appuntamenti**
 - Unico round fisso per no show e annullati, sia Setter sia Venditore: `addToRecoveryRound`, `renderRecoveryRoundScreen`, `applyRecoveryOutcome`.
-- Le chiamate del round contano nell'attività del giorno (dal 16/10): vanno nella sessione aperta se c'è, altrimenti nella sessione automatica del giorno "Recupero" (`logRecoveryCall`, `appendRecoveryCallToSession`). "Posticipato" e "Rimuovi" non sono chiamate.
+- Le chiamate del round contano nell'attività del giorno: vanno nella sessione aperta se c'è, altrimenti nella sessione automatica del giorno "Recupero" (`logRecoveryCall`, `appendRecoveryCallToSession`). "Posticipato" e "Rimuovi" non sono chiamate.
 - Sessioni automatiche: funzione comune `appendCallToAutoSession(pipelineId, nome, call)`.
-- Follow-up Venditore (restyling): "Fatto" su una prossima azione 📞 Chiamata scrive una chiamata `isLeadFollowUpCall` (`logLeadFollowUpCall`, sessione aperta o "Follow-up Venditore", `LEAD_FU_AUTO_PIPELINE_ID`). Stesso lead lo stesso giorno = 1 lead (`leadCallGroupIdToday`, anche tra recupero e follow-up). WhatsApp, audio, contratto, contenuto e "Com'è finita?" non sono chiamate.
-- No show Venditore (dal 16/10): **un posto solo**. Se il lead è aperto, il no show NON compare nel round (`visibleRecoveryEntries`, `LeadCRM.handlesRecovery`) ma nelle Task della Dashboard, come prossima azione "🔁 Recupero no show". "Fatto" su quella azione è una chiamata di recupero (conta nell'attività del giorno) e, se non risponde, vale come un follow-up senza risposta: dopo 6 il lead diventa Freddo. La voce del round resta nei dati e si chiude quando il lead risponde o esce dal giro.
+- Follow-up Venditore: "Fatto" su una prossima azione 📞 Chiamata scrive una chiamata `isLeadFollowUpCall` (`logLeadFollowUpCall`, sessione aperta o "Follow-up Venditore", `LEAD_FU_AUTO_PIPELINE_ID`). Stesso lead lo stesso giorno = 1 lead (`leadCallGroupIdToday`, anche tra recupero e follow-up). WhatsApp, audio, contratto, contenuto e "Com'è finita?" non sono chiamate.
+- No show Venditore: **un posto solo**. Se il lead è aperto, il no show NON compare nel round (`visibleRecoveryEntries`, `LeadCRM.handlesRecovery`) ma nelle Task della Dashboard, come prossima azione "🔁 Recupero no show". "Fatto" su quella azione è una chiamata di recupero (conta nell'attività del giorno) e, se non risponde, vale come un follow-up senza risposta: dopo 6 il lead diventa Freddo. La voce del round resta nei dati e si chiude quando il lead risponde o esce dal giro.
 
 **Appuntamenti (mini-CRM)**
 - Modello: `newAppointment(role)`. Stati Venditore: `DEAL_STAGES`, `dealStageDef`.
@@ -178,12 +178,12 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 - Soldi: `apptTotalSold`, `getEffectiveInstallments` (l'acconto incassato diventa una rata pagata sintetica).
 - Calendario commissioni per giorno: `renderCommissioniCalendarSection` (Dashboard).
 
-**Parte Venditore a lead (lead.js, dal 16/10/2026)**
+**Parte Venditore a lead (lead.js)**
 - `LeadCRM.ensureLeads()` collega ogni appuntamento Venditore a un lead (`apt.leadId`): stesso nome (senza la sigla " - MJ - N") o stesso telefono = stesso lead.
 - Venditore → Lead (`renderLeadList`): 🎙️ Registrazioni, Report, "+ Nuovo lead" (`openNewLead`: lead + primo appuntamento; è l'unico modo di creare appuntamenti Venditore), filtri in una tendina (localStorage `comms_filtriLeadAperti`), lista con ⋯ (`openLeadMenu`), calendario Venditore.
 - Scheda (`renderLead`): appuntamenti con data e stato (`apptsCardHtml`/`wireApptsCard`, stesse regole della vecchia tabella), "+ Appuntamento" (`openAddAppt`; su un lead Perso o Freddo lo riporta In trattativa, `reopenLeadForAppt`), 🗑 elimina lead (`openDeleteLead`: lead + appuntamenti Venditore + rate, con il conto delle commissioni; gli appuntamenti Setter con lo stesso nome restano). "Cose promesse" non si mostrano più: i `promises[]` restano nei dati.
 - `openEsito` ("Com'è finita?"), `openFatto`, `openSposta`, `openSetNext`, `renderNewStatsSection`.
-- Tipi di prossima azione (`AZIONI`): Chiamata, WhatsApp, Audio, Contratto, Contenuto (+ Recupero no show). "📅 Fissare appuntamento" tolto il 18/10: `migrateOldNextTypes` (in `ensureLeads`) lo cambia in Chiamata con la stessa data e ora. Nel "Fatto", dopo "Sì", il campo "Appuntamento fissato per" crea l'appuntamento (`createApptForLead`); su una 📞 Chiamata la telefonata vale "Appuntamento fissato". Il lead segue i cambi di stato degli appuntamenti: `onDealStageChanged`. Appuntamento cancellato: se il lead resta senza appuntamenti sparisce anche lui (`onApptDeleted`).
+- Tipi di prossima azione (`AZIONI`): Chiamata, WhatsApp, Audio, Contratto, Contenuto (+ Recupero no show). Il vecchio "📅 Fissare appuntamento" lo cambia in Chiamata (stessa data e ora) `migrateOldNextTypes`, dentro `ensureLeads`. Nel "Fatto", dopo "Sì", il campo "Appuntamento fissato per" crea l'appuntamento (`createApptForLead`); su una 📞 Chiamata la telefonata vale "Appuntamento fissato". Il lead segue i cambi di stato degli appuntamenti: `onDealStageChanged`. Appuntamento cancellato: se il lead resta senza appuntamenti sparisce anche lui (`onApptDeleted`).
 - Note: solo nello storico della scheda lead (`k: 'nota'`). Le vecchie note degli appuntamenti e la data di follow-up della tabella passano nel lead da sole (`moveApptExtras`, dentro `ensureLeads`).
 - Soldi: la scheda Pagamenti scrive sull'ultimo appuntamento chiuso del lead, o su quello scelto (tasto € o tendina se ce n'è più di uno). Stesse regole di commissione.
 - Interruttore `db.settings.venditoreOn` in 👤 Account: spento nasconde la voce Venditore, le righe Venditore delle Task e dei Prossimi pagamenti e le ciambelle Venditore.
@@ -199,6 +199,7 @@ Tutto sta in un unico oggetto `db`. Struttura completa e commentata in `storage.
 
 Dove viene salvato (vedi `cloud-sync.js`):
 - Online su Supabase: tabella `appuntamenti` (una riga per appuntamento), `sessioni` (una riga per sessione, chiamate dentro), `lead` (una riga per lead, tutto in `data`), `stato` (tutto il resto, una riga per utente). Si inviano solo le righe cambiate.
+- Limite noto: con due schede o due dispositivi aperti insieme, la riga `stato` (richiami, task, round, sessione in corso, impostazioni) la vince l'ultimo che salva, e una riga cancellata in una scheda può tornare se l'altra la modifica. Finché non si corregge: un solo tool aperto per volta.
 - Se la tabella `lead` non esiste, i lead restano dentro `stato`; al primo caricamento dopo averla creata (`supabase/lead.sql`) passano nella tabella da soli (`CloudSync.leadTable`).
 - Copia locale per utente: localStorage `chiamateTrackerData_v1__<id utente>`.
 - La chiave vecchia `chiamateTrackerData_v1` (versione senza login) non viene mai toccata: al primo login il tool la legge, scarica un backup e la carica online.
@@ -212,7 +213,7 @@ Dove viene salvato (vedi `cloud-sync.js`):
   - Setter: `presentedStatus` ∈ `no`, `confirmed24h`, `presented`, `no_show`, `annullato`, `spostato`.
   - Venditore: `dealStage` (vedi `DEAL_STAGES`), `notes[]`, `nextFollowUpDate` (YYYY-MM-DD).
   - Soldi: `cashCollected`, `totalSold`, `installments[]` (`amount`, `paid`, `paidDate`, `dueDate`).
-  - Restyling (assenti nei dati vecchi = "appuntamento di prima"): `centerName` (chiesto alla chiusura), `venditoreName` (solo Setter), `checklist: { <id>: true/false }` + `checklistPct` (solo Setter: fissati in chiamata o completati in conferma). Voci in `CHECKLIST_ITEMS` (storage.js): l'`id` non si cambia mai. `inCallChecklist` = spunte in corso del Round Conferme (sparisce all'esito).
+  - Campi del restyling (assenti nei dati vecchi = "appuntamento di prima"): `centerName` (chiesto alla chiusura), `venditoreName` (solo Setter), `checklist: { <id>: true/false }` + `checklistPct` (solo Setter: fissati in chiamata o completati in conferma). Voci in `CHECKLIST_ITEMS` (storage.js): l'`id` non si cambia mai. `inCallChecklist` = spunte in corso del Round Conferme (sparisce all'esito).
 - `leads[]`: lead della parte Venditore `{ id, name, centro, city, phone, email, setter, stato, next, promises[], history[], fuNoAnswer, wasFollowUp, callGroupId?, callGroupDate? }` (`callGroup*` = lead delle chiamate di oggi). Stati: Nuovo, Trattativa, Follow-up, Cliente, Perso, Freddo.
   - **Nomi identici:** due persone diverse con lo stesso nome identico finiscono in un lead solo (stesso nome = stesso lead, `ensureLeads`). Succede di rado e non c'è un controllo automatico. Se lo noti (dati, mail, appuntamenti dettati da Simone, due telefoni diversi nello stesso lead), **dillo a Simone** prima di toccare qualcosa: decide lui se separarli.
 - `callbacks[]`: i "Da richiamare" (+ `notifiedAt`, `dismissedAt` per le notifiche).
@@ -276,7 +277,7 @@ Prima di cambiarne una, chiedi a Simone.
 **Restyling (Simone, 17/10/2026)**
 - Le chiamate di Round Conferme, Da richiamare, Round Recupero e follow-up dei lead Venditore contano tutte come chiamate di Setting (Stats ed esiti), con la regola "stesso lead stesso giorno = 1".
 - Ciambella commissioni Venditore: Acconti incassati + Rate pagate + Rate future (10% delle rate non pagate degli appuntamenti con commissioni nel periodo). Al centro il totale delle tre e "di cui X € incassati" = acconti + rate pagate = commissioni Venditore delle Stats. Le rate future non entrano mai nelle commissioni.
-- Checklist: % = voci spuntate / 8, salvata sui fissati e (dal 18/10) anche con la conferma, ma solo se almeno una voce è spuntata: si unisce a quella già salvata (una voce presa resta presa). Grafico in Sessioni: una barra per giorno di inserimento (`createdAt`) = media delle % (solo appuntamenti con checklist, spostati esclusi); un appuntamento completato in conferma aggiorna la media del giorno in cui era stato fissato. Legenda = le 3 voci prese meno spesso.
+- Checklist: % = voci spuntate / 8, salvata sui fissati e anche con la conferma (Round Conferme, esito "conferma appuntamento" in sessione e nella richiamata; non nel Round Recupero, che non ha un esito di conferma), ma solo se almeno una voce è spuntata: si unisce a quella già salvata (una voce presa resta presa). Grafico in Sessioni: una barra per giorno di inserimento (`createdAt`) = media delle % (solo appuntamenti con checklist, spostati esclusi); un appuntamento completato in conferma aggiorna la media del giorno in cui era stato fissato. Legenda = le 3 voci prese meno spesso.
 
 **Risposte di Simone (18/10/2026)**
 - Prossimi pagamenti: tutte le rate non pagate di tutti gli appuntamenti chiusi (anche più chiusure dello stesso lead Venditore).
@@ -334,9 +335,7 @@ Per gli screenshot da mandare a Simone: viewport 1440×900, salva PNG fuori dal 
 
 ## 10. Dove andiamo
 
-Decisione di Simone (14/10/2026): **login + database Supabase**, il prima possibile, con il tool pubblicato su **Vercel (piano Hobby)**.
-
-- Fatto: login e database online dal 14/10, `main` portato alla versione nuova il 16/10.
-- Fatto: restyling (ottobre 2026, branch `restyling`): barra laterale, Dashboard con Task e Prossimi pagamenti, checklist in sessione, notifiche dei richiami, guida colori. Va su `main` solo dopo l'ok di Simone.
+- Fatto: login + database Supabase, tool pubblicato su **Vercel (piano Hobby)** (ottobre 2026).
+- Fatto: restyling (ottobre 2026): barra laterale, Dashboard con Task e Prossimi pagamenti, checklist in chiamata e in conferma, notifiche dei richiami, guida colori.
 - Chiavi Supabase: nel codice solo la chiave pubblica (anon) con le regole RLS attive. La chiave `service_role` mai nel repo.
 - Dopo il database: **gestione appuntamenti del venditore via chat** (Simone scrive cosa è successo, Claude aggiorna esito, nota, follow-up, calendario e promemoria). Dettagli e domande aperte nel file di passaggio.
