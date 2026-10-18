@@ -2116,6 +2116,7 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
 .donut-more:hover { color: var(--neutral-900); }
 .donut-item { min-width: 0; padding-top: 14px; border-top: var(--border-line); margin-top: 8px; }
 .donut-item h4 { margin: 0 0 4px; font-size: 0.86rem; font-weight: 500; color: var(--neutral-600); }
+.donut-item .donut-sub { margin: 0 0 4px; font-size: 0.78rem; color: var(--neutral-600); }
 .donut { container-type: inline-size; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .donut svg { display: block; width: 100%; height: auto; overflow: hidden; }
 .donut-wide { max-width: 540px; }

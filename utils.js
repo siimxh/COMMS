@@ -658,14 +658,19 @@ function computeVenditoreStats(db, range) {
 
   // Ciambelle della Dashboard (restyling 17/10/2026, step 8): stessi insiemi di sopra,
   // così i numeri sono per costruzione quelli delle Statistiche.
-  // Esiti degli ASSEGNATI (scheduledAt nel periodo, spostati esclusi): ogni appuntamento
-  // finisce in una sola voce, quindi la somma = assegnati. Chiuso vince sullo stato.
+  // Esiti degli ASSEGNATI GIÀ PASSATI (scheduledAt nel periodo e ≤ adesso, spostati
+  // esclusi; Simone, 18/10/2026: i futuri non sono mai "da esitare"). Ogni appuntamento
+  // finisce in una sola voce, quindi la somma = assegnatiPassati (che può essere minore di
+  // "assegnati" se il periodo comprende giorni futuri). Chiuso vince sullo stato.
+  const now = new Date();
   const assegnatiPerEsito = { chiusi: 0, trattativa: 0, perso: 0, no_show: 0, annullato: 0, non_in_target: 0, altro: 0 };
-  all.filter(a => !isMovedAppointment(a) && inR(a, 'scheduledAt')).forEach(a => {
+  const assegnatiPassatiList = all.filter(a => !isMovedAppointment(a) && inR(a, 'scheduledAt') && a.scheduledAt && new Date(a.scheduledAt) <= now);
+  assegnatiPassatiList.forEach(a => {
     if (a.closed) assegnatiPerEsito.chiusi++;
     else if (Object.prototype.hasOwnProperty.call(assegnatiPerEsito, a.dealStage) && a.dealStage !== 'chiusi' && a.dealStage !== 'altro') assegnatiPerEsito[a.dealStage]++;
-    else assegnatiPerEsito.altro++; // senza esito (da esitare / in arrivo)
+    else assegnatiPerEsito.altro++; // passato senza esito = da esitare
   });
+  const assegnatiPassati = assegnatiPassatiList.length;
   // Commissioni divise: acconto (rata sintetica 'deposit') e rate pagate, dagli STESSI
   // eventi di commissioniTot (acconti + rate = commissioniTot). Rate future = 10% delle
   // rate non ancora pagate degli appuntamenti chiusi che hanno almeno un evento di
@@ -684,7 +689,7 @@ function computeVenditoreStats(db, range) {
   return {
     assegnati, presentati, chiusi, persi, noShow, annullati, nonInTarget,
     showRate, showRateBase, conversionRate, totalVenduto, scontrinoMedio, commissioniTot,
-    assegnatiPerEsito, commAcconti, commRatePagate, commRateFuture
+    assegnatiPerEsito, assegnatiPassati, commAcconti, commRatePagate, commRateFuture
   };
 }
 
@@ -767,17 +772,23 @@ function computeSetterStats(db, range) {
   const weekdays = countWeekdays(spanStart, spanEnd);
   const mediaFissatiGiorno = weekdays > 0 ? round1(fissatiAppts.length / weekdays) : 0;
 
-  // Ciambella "Appuntamenti per esito" della Dashboard (step 8): gli stessi fissati di
-  // sopra divisi per esito attuale. Ogni appuntamento in una sola voce: somma = fissati.
-  // 'no' = nessun esito ancora (da esitare, anche quelli non ancora svolti).
-  const fissatiPerEsito = { presented: 0, no_show: 0, annullato: 0, spostato: 0, confirmed24h: 0, no: 0 };
-  fissatiAppts.forEach(a => {
-    const k = Object.prototype.hasOwnProperty.call(fissatiPerEsito, a.presentedStatus) ? a.presentedStatus : 'no';
-    fissatiPerEsito[k]++;
+  // Ciambella "Appuntamenti per esito" della Dashboard (Simone, 18/10/2026): per DATA
+  // DELL'APPUNTAMENTO (scheduledAt nel periodo) e solo appuntamenti già passati (ora ≤
+  // adesso), così mostra solo cose già successe. Spostati compresi (fetta a parte). Ogni
+  // appuntamento in una sola voce: somma = passatiNelPeriodo. Presentati + No show +
+  // Annullati = "svolti" qui sopra (stesse regole), Presentati = presentatiSvolti.
+  // I fissati (createdAt) e lo show rate NON cambiano.
+  // 'no' = passato senza esito (da esitare). I futuri non sono mai "da esitare".
+  const passatiPerEsito = { presented: 0, no_show: 0, annullato: 0, spostato: 0, confirmed24h: 0, no: 0 };
+  const passati = scoped.filter(a => a.scheduledAt && new Date(a.scheduledAt) <= now);
+  passati.forEach(a => {
+    const k = Object.prototype.hasOwnProperty.call(passatiPerEsito, a.presentedStatus) ? a.presentedStatus : 'no';
+    passatiPerEsito[k]++;
   });
 
   return {
-    fissatiPerEsito,
+    passatiPerEsito,
+    passatiNelPeriodo: passati.length,
     fissati: fissatiAppts.length,
     presentati: presentati.length,
     svolti: svolti.length,

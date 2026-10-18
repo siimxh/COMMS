@@ -1169,12 +1169,15 @@ function renderDonut(data, opts) {
  * Setting a sinistra, Venditore a destra, due ciambelle per blocco. Numeri presi dalle
  * STESSE funzioni delle pagine Stats, con lo stesso periodo (getPeriodRangeOrNull:
  * "Tutto" = tutto lo storico), così sono identici per costruzione:
- * 1 Setting · Appuntamenti per esito: computeSetterStats().fissatiPerEsito (i fissati del
- *   periodo per createdAt, spostati-nuovi esclusi, divisi per esito attuale). Centro = fissati.
+ * 1 Setting · Appuntamenti per esito: computeSetterStats().passatiPerEsito (Simone,
+ *   18/10: per DATA DELL'APPUNTAMENTO, solo quelli già passati; spostati compresi).
+ *   Centro = appuntamenti passati del periodo. Presentati/No show/Annullati = Stats.
  * 2 Setting · Commissioni: computeFunnelValues('setter') come le Stats (show 40 € a
  *   presentato + 3% dell'incassato). Centro = somma.
  * 3 Venditore · Appuntamenti per esito: computeVenditoreStats().assegnatiPerEsito
- *   (scheduledAt nel periodo, spostati esclusi). Centro = assegnati.
+ *   (scheduledAt nel periodo, spostati esclusi, solo già passati: i futuri non sono mai
+ *   "da esitare"). Centro = assegnati già passati: se il periodo comprende giorni futuri
+ *   può essere minore di "Assegnati" delle Statistiche.
  * 4 Venditore · Commissioni: computeVenditoreStats() → acconti + rate pagate (=
  *   commissioniTot, la commissione effettiva) + rate future (solo informazione).
  * In "Migliore di sempre" il periodo è quello migliore (come il resto della Dashboard). */
@@ -1186,7 +1189,7 @@ function renderDashboardDonuts() {
   const range = dashboardDonutRange();
   const st = computeSetterStats(db, range);
   const sc = computeFunnelValues(db, 'setter', range || getPeriodRange());
-  const fe = st.fissatiPerEsito;
+  const fe = st.passatiPerEsito;
   const setterAppts = renderDonut([
     { key: 'presented', label: 'Presentati', value: fe.presented },
     { key: 'no_show', label: 'No show', value: fe.no_show },
@@ -1194,7 +1197,7 @@ function renderDashboardDonuts() {
     { key: 'spostato', label: 'Spostati', value: fe.spostato },
     { key: 'confirmed24h', label: 'Confermati 24h', value: fe.confirmed24h },
     { key: 'no', label: 'Da esitare', value: fe.no }
-  ], { id: 'setter-esiti', centerLabel: 'fissati', ariaLabel: 'Appuntamenti Setter per esito' });
+  ], { id: 'setter-esiti', centerLabel: 'appuntamenti', ariaLabel: 'Appuntamenti Setter già passati, per esito' });
   const setterComm = renderDonut([
     { key: 'show', label: 'Da show', value: sc.commissioniShowUp || 0 },
     { key: 'venduto', label: 'Da venduto', value: sc.commissioniChiusure || 0 }
@@ -1212,8 +1215,8 @@ function renderDashboardDonuts() {
       { key: 'annullato', label: 'Annullati', value: ve.annullato },
       { key: 'non_in_target', label: 'Non in target', value: ve.non_in_target }
     ];
-    // Senza esito (in arrivo o da esitare): fuori dalle 6 voci decise, ma senza di loro
-    // la somma non tornerebbe con gli assegnati. Compare solo se ce ne sono.
+    // Passati senza esito (da esitare): fuori dalle 6 voci decise, ma senza di loro la
+    // somma non tornerebbe. Compare solo se ce ne sono. I futuri non entrano.
     if (ve.altro > 0) vAppts.push({ key: 'altro', label: 'Da esitare', value: ve.altro });
     const incassati = vs.commissioniTot;
     venditoreBlock = `
@@ -1221,7 +1224,8 @@ function renderDashboardDonuts() {
         <div class="donut-block-head"><h3>Venditore</h3><a class="donut-more" href="#/venditore-statistiche">Statistiche →</a></div>
         <div class="donut-item">
           <h4>Appuntamenti per esito</h4>
-          ${renderDonut(vAppts, { id: 'venditore-esiti', centerLabel: 'assegnati', ariaLabel: 'Appuntamenti Venditore per esito' })}
+          <p class="donut-sub">Già passati, per data dell'appuntamento</p>
+          ${renderDonut(vAppts, { id: 'venditore-esiti', centerLabel: 'appuntamenti', ariaLabel: 'Appuntamenti Venditore già passati, per esito' })}
         </div>
         <div class="donut-item">
           <h4>Commissioni</h4>
@@ -1241,6 +1245,7 @@ function renderDashboardDonuts() {
         <div class="donut-block-head"><h3>Setting</h3><a class="donut-more" href="#/setting-statistiche">Stats →</a></div>
         <div class="donut-item">
           <h4>Appuntamenti per esito</h4>
+          <p class="donut-sub">Già passati, per data dell'appuntamento</p>
           ${setterAppts}
         </div>
         <div class="donut-item">
