@@ -3219,7 +3219,7 @@ function renderConfirmRoundScreen() {
       const outcome = btn.dataset.confirmOutcome;
       if (outcome === 'spostato') { openConfirmMoveModal(apt.id); return; }
       if (outcome === 'annullato') {
-        showConfirm(`Annullare l'appuntamento di "${escapeHtml(apt.clientName || '(senza nome)')}"?`, () => {
+        showConfirm(`Annullare l'appuntamento di "${apt.clientName || '(senza nome)'}"?`, () => {
           applyConfirmOutcome(apt.id, 'annullato');
         }, { confirmLabel: 'Annulla appuntamento' });
         return;

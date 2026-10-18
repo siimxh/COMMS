@@ -83,8 +83,9 @@ const LeadCRM = (function () {
     const a = parseLocal(aKey), b = parseLocal(bKey); let n = 0; if (b <= a) return 0;
     const d = new Date(a); while (d < b) { d.setDate(d.getDate() + 1); if (isWeekday(d)) n++; } return n;
   }
-  function fmtShort(key) { const d = parseLocal(String(key).slice(0, 10)); return GG[d.getDay()].slice(0, 3) + ' ' + pad(d.getDate()) + '/' + pad(d.getMonth() + 1); }
-  const fmtDT = s => fmtShort(s) + ' · ' + String(s).slice(11, 16);
+  // Data mancante o non valida (appuntamenti vecchi senza data): "—" invece di un errore.
+  function fmtShort(key) { const d = parseLocal(String(key).slice(0, 10)); if (isNaN(d.getTime())) return '—'; return GG[d.getDay()].slice(0, 3) + ' ' + pad(d.getDate()) + '/' + pad(d.getMonth() + 1); }
+  const fmtDT = s => s ? fmtShort(s) + ' · ' + String(s).slice(11, 16) : 'senza data';
   function relDay(key) {
     const t = TODAY(); if (key === t) return 'oggi';
     if (key < t) { const n = workDaysBetween(key, t); return n <= 1 ? 'ieri' : 'da ' + n + ' giorni'; }
