@@ -5202,7 +5202,7 @@ function logCallAction(outcomeId) {
   // salvano sull'appuntamento confermato, se ce n'è almeno una: la sessione non sa il
   // nome del lead, quindi si chiede quale appuntamento (openConfirmChecklistPickModal).
   const isApptSet = outcome.label === APPOINTMENT_SET_OUTCOME_LABEL;
-  const isConfirmOutcome = !!outcome.isConversion && !isApptSet;
+  const isConfirmOutcome = isConfirmOutcomeDef(outcome);
   const checklistNow = Object.assign({}, s.checklist || {});
   if (!isApptSet) s.checklist = {};
 
@@ -5241,6 +5241,20 @@ function logCallAction(outcomeId) {
  * va nell'undoState della chiamata, così "Annulla ultimo esito" lo rimette. "Salta" = non
  * salva niente.
  */
+/** Esito "conferma appuntamento": l'esito isConversion che non è "Appuntamento Fissato". */
+function isConfirmOutcomeDef(outcome) {
+  return !!(outcome && outcome.isConversion && outcome.label !== APPOINTMENT_SET_OUTCOME_LABEL);
+}
+/** Collegamento sicuro richiamata → appuntamento: UN solo appuntamento candidato con lo
+ * stesso telefono (ultime 9 cifre, almeno 6 cifre). Il nome da solo non basta (due
+ * persone possono chiamarsi uguale): in quel caso si chiede "Quale appuntamento?". */
+function sureConfirmApptForPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '');
+  if (digits.length < 6) return null;
+  const key = digits.slice(-9);
+  const hits = confirmChecklistCandidates().filter(a => String(a.phone || '').replace(/\D/g, '').slice(-9) === key);
+  return hits.length === 1 ? hits[0] : null;
+}
 function confirmChecklistCandidates() {
   const start = startOfDay(new Date());
   return db.appointments
@@ -5248,7 +5262,8 @@ function confirmChecklistCandidates() {
       && (a.presentedStatus === 'no' || a.presentedStatus === 'confirmed24h' || !a.presentedStatus))
     .sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)));
 }
-function openConfirmChecklistPickModal(callId, items) {
+function openConfirmChecklistPickModal(callId, items, opts) {
+  opts = opts || {};
   const n = Object.keys(checklistOnIds(items)).length;
   const list = q => confirmChecklistCandidates().filter(a => matchesApptSearch(a, q || ''));
   const rowsHtml = q => {
@@ -5264,8 +5279,8 @@ function openConfirmChecklistPickModal(callId, items) {
   openModal(`
     <h3>Quale appuntamento?</h3>
     <p class="text-dim cpick-sub">Hai spuntato ${n} ${n === 1 ? 'voce' : 'voci'} della checklist. Scegli l'appuntamento che hai confermato: le aggiungo a quelle già salvate.</p>
-    <input type="search" class="crm-search-input cpick-search" id="cpickSearch" placeholder="Cerca per nome o telefono..." aria-label="Cerca appuntamento">
-    <div class="cpick-list" id="cpickList">${rowsHtml('')}</div>
+    <input type="search" class="crm-search-input cpick-search" id="cpickSearch" placeholder="Cerca per nome o telefono..." aria-label="Cerca appuntamento" value="${escapeHtml(opts.initialQuery || '')}">
+    <div class="cpick-list" id="cpickList">${rowsHtml(opts.initialQuery || '')}</div>
     <div class="modal-actions">
       <button class="btn-ghost" id="cpickSkip">Salta</button>
     </div>
@@ -5275,13 +5290,16 @@ function openConfirmChecklistPickModal(callId, items) {
   const wireRows = () => listEl.querySelectorAll('[data-cpick]').forEach(b => b.addEventListener('click', () => {
     const apt = db.appointments.find(a => a.id === b.dataset.cpick);
     const before = mergeChecklistIntoAppt(apt, items);
-    const s = db.activeSession;
-    const call = s && s.calls.find(c => c.id === callId);
-    if (call && call.undoState && before) call.undoState.apptChecklist = before;
+    if (opts.onSaved) opts.onSaved(before, apt);
+    else {
+      const s = db.activeSession;
+      const call = s && s.calls.find(c => c.id === callId);
+      if (call && call.undoState && before) call.undoState.apptChecklist = before;
+    }
     persist();
     closeModal();
     showToast(`Checklist salvata su ${apt.clientName || '(senza nome)'} (${CHECKLIST_ITEMS.filter(it => apt.checklist[it.id]).length}/${CHECKLIST_ITEMS.length}).`);
-    if (db.activeSession && location.hash.indexOf('sessione') !== -1) renderSessioneAttiva();
+    renderRoute();
   }));
   wireRows();
   search.addEventListener('input', () => { listEl.innerHTML = rowsHtml(search.value); wireRows(); });
@@ -5519,7 +5537,7 @@ function renderCallbackCallScreen() {
 
       <div class="outcome-grid">${buttonsHtml}</div>
         </div>
-        ${renderLiveChecklistPanel(cb.inCallChecklist)}
+        ${renderLiveChecklistPanel(cb.inCallChecklist, { hint: 'Si salva se fissi l\'appuntamento, o se lo confermi (con almeno una voce spuntata).' })}
       </div>
     </div>
   `;
@@ -5567,8 +5585,13 @@ function logCallbackCall(outcomeId) {
   if (!outcome) return;
 
   const isRetryAttempt = !!cb.inCallRetryPending;
+  // Stato del richiamo prima di questa chiamata: serve ad "Annulla ultimo esito" se la
+  // chiamata finisce nella sessione aperta e salva la checklist in conferma.
+  const cbBefore = {};
+  CALLBACK_UNDO_FIELDS.forEach(k => { cbBefore[k] = cb[k]; });
   // Checklist (5.4.3): passa alla modale solo se nasce un appuntamento; con ogni altro
-  // esito si azzera.
+  // esito si azzera. Con l'esito di conferma (Simone, 18/10) si salva sull'appuntamento
+  // confermato, come in sessione (saveCallbackConfirmChecklist).
   const checklistNow = Object.assign({}, cb.inCallChecklist || {});
   if (outcome.label !== APPOINTMENT_SET_OUTCOME_LABEL) cb.inCallChecklist = null;
 
@@ -5623,7 +5646,44 @@ function logCallbackCall(outcomeId) {
 
   if (outcome.label === APPOINTMENT_SET_OUTCOME_LABEL) {
     openAppointmentSetModal({ checklist: checklistNow, onSaved: () => { cb.inCallChecklist = null; } });
+  } else if (isConfirmOutcomeDef(outcome) && checklistHasAny(checklistNow)) {
+    saveCallbackConfirmChecklist(cb, callRecord, checklistNow, cbBefore);
   }
+}
+
+/* Checklist con l'esito di conferma in una RICHIAMATA (Simone, 18/10/2026): stessa regola
+ * della sessione. Si salva solo con almeno una voce, in unione (mergeChecklistIntoAppt).
+ * Collegamento sicuro (stesso telefono, un solo candidato) → salva subito; altrimenti
+ * "Quale appuntamento?" con la ricerca già sul nome del richiamo. Se la chiamata è finita
+ * nella sessione aperta, "Annulla ultimo esito" la toglie, rimette la checklist
+ * dell'appuntamento com'era e riporta il richiamo tra i Da richiamare. Senza sessione
+ * aperta (sessione automatica "Richiami") non c'è il tasto, come per ogni richiamata. */
+const CALLBACK_UNDO_FIELDS = ['status', 'resolvedOutcomeLabel', 'resolvedAt', 'callCount', 'lastCalledAt'];
+function saveCallbackConfirmChecklist(cb, callRecord, items, cbBefore) {
+  const onSaved = (before) => {
+    const s = db.activeSession;
+    if (!before || !s || s.calls[s.calls.length - 1] !== callRecord) return;
+    callRecord.undoState = {
+      retryCallsPending: s.retryCallsPending,
+      callAttemptsOnLead: s.callAttemptsOnLead,
+      currentLeadGroupId: s.currentLeadGroupId,
+      apptChecklist: before,
+      callback: Object.assign({ id: cb.id }, cbBefore)
+    };
+  };
+  const sure = sureConfirmApptForPhone(cb.phone);
+  if (sure) {
+    onSaved(mergeChecklistIntoAppt(sure, items), sure);
+    persist();
+    showToast(`Checklist salvata su ${sure.clientName || '(senza nome)'} (${CHECKLIST_ITEMS.filter(it => sure.checklist[it.id]).length}/${CHECKLIST_ITEMS.length}).`);
+    renderRoute();
+    return;
+  }
+  const q = cb.leadName || '';
+  openConfirmChecklistPickModal(callRecord.id, items, {
+    initialQuery: confirmChecklistCandidates().some(a => matchesApptSearch(a, q)) ? q : '',
+    onSaved
+  });
 }
 
 /** Calcola la data/ora per i quick button della tendina "Da richiamare" — 'custom' non ha
@@ -5959,7 +6019,8 @@ function wireAccountNotify() {
  * l'ultima chiamata segnata con i bottoni degli esiti e rimette il giro com'era prima
  * (lead in corso, richiamo immediato, tentativi). Se quell'esito aveva creato un "Da
  * richiamare" o un appuntamento, li toglie insieme. Si può premere più volte di fila.
- * Non vale per le chiamate del Round Conferme o dei richiami (non hanno undoState).
+ * Non vale per le chiamate del Round Conferme o dei richiami (non hanno undoState), tranne
+ * la richiamata con esito di conferma che ha salvato la checklist (saveCallbackConfirmChecklist).
  */
 function undoLastCallAction() {
   const s = db.activeSession;
@@ -5973,6 +6034,8 @@ function undoLastCallAction() {
   if (linkedApts.length) extra.push(`l'appuntamento di ${linkedApts.map(a => a.clientName || '(senza nome)').join(', ')}`);
   const ckApt = call.undoState.apptChecklist && db.appointments.find(a => a.id === call.undoState.apptChecklist.apptId);
   if (ckApt) extra.push(`la checklist salvata su ${ckApt.clientName || '(senza nome)'}`);
+  const undoCb = call.undoState.callback && (db.callbacks || []).find(c => c.id === call.undoState.callback.id);
+  if (undoCb) extra.push(`l'esito del richiamo di ${undoCb.leadName || '(senza nome)'} (torna da richiamare)`);
   const msg = `Annullare l'ultimo esito "${call.outcomeLabel}"?` + (extra.length ? ` Verrà tolto anche ${extra.join(' e ')}.` : '');
   showConfirm(msg, () => {
     s.calls.pop();
@@ -5982,6 +6045,14 @@ function undoLastCallAction() {
     if (call.undoState.checklist) s.checklist = Object.assign({}, call.undoState.checklist);
     // Checklist salvata con "conferma appuntamento": l'appuntamento torna com'era.
     if (call.undoState.apptChecklist) restoreApptChecklist(call.undoState.apptChecklist);
+    // Richiamata (conferma con checklist): il richiamo torna com'era prima della chiamata.
+    if (undoCb) {
+      CALLBACK_UNDO_FIELDS.forEach(k => {
+        if (call.undoState.callback[k] === undefined) delete undoCb[k]; else undoCb[k] = call.undoState.callback[k];
+      });
+      undoCb.inCallAttempts = 0;
+      undoCb.inCallRetryPending = false;
+    }
     if (linkedCbs.length) db.callbacks = db.callbacks.filter(c => c.sourceCallId !== call.id);
     if (linkedApts.length) db.appointments = db.appointments.filter(a => a.sourceCallId !== call.id);
     persist();

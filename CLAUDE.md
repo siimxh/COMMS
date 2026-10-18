@@ -149,6 +149,8 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 **Da richiamare (callback)**
 - Esito "Da richiamare" → `openCallbackModal`. Lista: filtro "Da richiamare" in Setting → Appuntamenti (`pendingCallbacksSorted`, `renderCallbackListRow`); gli scaduti stanno anche nelle Task della Dashboard. Modifica `openEditCallbackModal`, cestino `removeCallback`.
 - Richiamata: `startCallbackCall`, `renderCallbackCallScreen`, `logCallbackCall`, `appendCallbackCallToSession`.
+- Checklist nella richiamata con l'esito "conferma appuntamento" (Simone, 18/10): stessa regola della sessione (almeno una voce, unione). `saveCallbackConfirmChecklist`: se un solo appuntamento candidato ha lo stesso telefono (`sureConfirmApptForPhone`) salva subito, altrimenti "Quale appuntamento?" con la ricerca già sul nome. Se la chiamata è finita nella sessione aperta, "Annulla ultimo esito" la toglie, rimette la checklist e riporta il richiamo tra i Da richiamare (`undoState.callback`). Senza sessione aperta non c'è il tasto (come per ogni richiamata).
+- Round Recupero: non ha un esito di conferma, quindi lì la checklist si salva solo con "Appuntamento fissato" (`openRecoveryAppointmentModal`).
 - Senza sessione aperta, le richiamate finiscono nella sessione automatica del giorno "Richiami" (`CALLBACK_AUTO_PIPELINE_ID`).
 - Notifica all'ora del richiamo, su ogni pagina: `startCallbackNotifications` (timer ogni 20 s, avviato a fine `startForUser`, uno solo), `refreshCallbackNotifications` (anche da `persist` e `renderRoute`), clic → `openCallbackFromNotification`, X → `cb.dismissedAt`. Notifica di sistema solo se il permesso è dato da 👤 Account (`cb.notifiedAt`). Funziona solo con il tool aperto.
 
