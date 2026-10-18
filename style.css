@@ -1893,6 +1893,14 @@ input[type="checkbox"], input[type="radio"], input[type="range"] { accent-color:
   body.sb-collapsed .sb-collapse { transform: rotate(180deg); }
 }
 
+/* Tra 900 e 1199 px (bug 4, 18/10): le tab vanno su una seconda riga, così non
+   finiscono sotto "Salvato" / "In attesa di rete". */
+@media (min-width: 900px) and (max-width: 1199px) {
+  .page-bar { grid-template-columns: minmax(0, 1fr) auto; row-gap: 10px; }
+  .page-tabs { grid-column: 1 / -1; grid-row: 2; }
+  .page-tabs:empty { display: none; }
+}
+
 /* Sotto i 900 px: menu a scomparsa. */
 @media (max-width: 899px) {
   .menu-btn { display: inline-flex; }
