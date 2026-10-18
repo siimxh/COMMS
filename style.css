@@ -384,6 +384,7 @@ body.in-session .sidebar, body.in-session .page-bar, body.in-session .sb-backdro
   z-index: 100;
   padding: 16px;
 }
+.modal-box:focus { outline: none; }
 .modal-box {
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -2472,7 +2473,10 @@ a.btn-ghost, a.btn-primary { text-decoration: none; }
 .cb-notify:focus-visible { outline: 2px solid var(--neutral-900); outline-offset: 2px; }
 .cb-notify-ico { flex: none; width: 28px; height: 28px; border-radius: var(--radius-control); background: var(--accent-100); color: var(--accent-ink); display: grid; place-items: center; }
 .cb-notify-ico svg { width: 16px; height: 16px; }
-.cb-notify-main { flex: 1; min-width: 0; }
+.cb-notify-open { flex: 1; min-width: 0; display: flex; align-items: center; gap: 10px; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.cb-notify-open:focus-visible { outline: 2px solid var(--neutral-900); outline-offset: 4px; border-radius: var(--radius-control); }
+.cb-notify-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.cb-notify-title, .cb-notify-sub { display: block; }
 .cb-notify-title { font-size: 0.875rem; line-height: 1.3; overflow-wrap: anywhere; }
 .cb-notify-sub { font-size: 0.75rem; color: var(--neutral-600); margin-top: 1px; }
 .cb-notify-close { flex: none; align-self: flex-start; width: 28px; height: 28px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--neutral-600); font-size: 1.25rem; line-height: 1; cursor: pointer; }

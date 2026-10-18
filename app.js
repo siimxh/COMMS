@@ -5998,12 +5998,14 @@ function refreshCallbackNotifications() {
   const due = dueCallbackNotifications();
   const root = callbackNotifyRoot();
   const html = due.map(cb => `
-    <div class="cb-notify" data-cb-notify="${cb.id}" role="button" tabindex="0" title="Apri la richiamata">
-      <span class="cb-notify-ico" aria-hidden="true">${taskIconSvg('phone')}</span>
-      <div class="cb-notify-main">
-        <div class="cb-notify-title">Richiama <strong>${escapeHtml(cb.leadName || '(senza nome)')}</strong> adesso</div>
-        <div class="cb-notify-sub">ore ${fmtTime(cb.scheduledAt)}</div>
-      </div>
+    <div class="cb-notify" data-cb-notify-card="${cb.id}" role="group" aria-label="Richiamo">
+      <button type="button" class="cb-notify-open" data-cb-notify="${cb.id}" title="Apri la richiamata">
+        <span class="cb-notify-ico" aria-hidden="true">${taskIconSvg('phone')}</span>
+        <span class="cb-notify-main">
+          <span class="cb-notify-title">Richiama <strong>${escapeHtml(cb.leadName || '(senza nome)')}</strong> adesso</span>
+          <span class="cb-notify-sub">ore ${fmtTime(cb.scheduledAt)}</span>
+        </span>
+      </button>
       <button type="button" class="cb-notify-close" data-cb-notify-close="${cb.id}" aria-label="Chiudi la notifica" title="Chiudi">×</button>
     </div>`).join('');
   if (root.dataset.html !== html) { root.innerHTML = html; root.dataset.html = html; }
@@ -6045,18 +6047,19 @@ function onCallbackNotifyClick(e) {
     if (cb) { cb.dismissedAt = new Date().toISOString(); persist(); }
     return;
   }
-  const card = e.target.closest('[data-cb-notify]');
-  if (card) openCallbackFromNotification(card.dataset.cbNotify);
+  // CORREZIONE (18/10, bug 9): niente più pulsante dentro un pulsante. La notifica è un
+  // gruppo con due pulsanti fratelli (apri / chiudi); un clic sul bordo apre lo stesso.
+  const open = e.target.closest('[data-cb-notify]');
+  const card = e.target.closest('[data-cb-notify-card]');
+  if (open) openCallbackFromNotification(open.dataset.cbNotify);
+  else if (card) openCallbackFromNotification(card.dataset.cbNotifyCard);
 }
 
 function startCallbackNotifications() {
   if (callbackNotifyTimer) return;
   // Lo stesso giro controlla anche se è cambiato il giorno con una sessione aperta (bug 6).
   callbackNotifyTimer = setInterval(() => { refreshCallbackNotifications(); renderStaleSessionBanner(); }, CALLBACK_NOTIFY_EVERY_MS);
-  const root = callbackNotifyRoot();
-  root.addEventListener('keydown', e => {
-    if ((e.key === 'Enter' || e.key === ' ') && e.target.matches('[data-cb-notify]')) { e.preventDefault(); openCallbackFromNotification(e.target.dataset.cbNotify); }
-  });
+  callbackNotifyRoot(); // Invio e spazio li gestisce il pulsante stesso
   refreshCallbackNotifications();
 }
 
@@ -6178,14 +6181,60 @@ let npStep = 'pick';
 let npSelectedPipelineId = null;
 let npDraft = null;
 
+/* Finestre modali (CORREZIONE 18/10, bug 9): role="dialog" + aria-modal, titolo collegato,
+ * il fuoco entra nella finestra (primo campo, o la finestra stessa), Tab gira dentro,
+ * Esc la chiude (come il clic fuori), e alla chiusura il fuoco torna dov'era. */
+let modalReturnFocus = null;
+const MODAL_FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 function openModal(html) {
-  modalRoot.innerHTML = `<div class="modal-overlay" id="modalOverlay"><div class="modal-box">${html}</div></div>`;
+  const reopening = !!modalRoot.innerHTML; // stessa finestra ridisegnata (es. Rate dopo una modifica)
+  if (!reopening) modalReturnFocus = document.activeElement;
+  modalRoot.innerHTML = `<div class="modal-overlay" id="modalOverlay"><div class="modal-box" role="dialog" aria-modal="true" tabindex="-1">${html}</div></div>`;
   document.getElementById('modalOverlay').addEventListener('click', (e) => {
     if (e.target.id === 'modalOverlay') closeModal();
   });
+  const box = modalRoot.querySelector('.modal-box');
+  const title = box.querySelector('h1, h2, h3, h4');
+  if (title) {
+    if (!title.id) title.id = 'modalTitle';
+    box.setAttribute('aria-labelledby', title.id);
+  } else {
+    box.setAttribute('aria-label', 'Finestra');
+  }
+  const first = box.querySelector('input:not([disabled]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), select:not([disabled]), textarea:not([disabled])');
+  // Sul telefono niente fuoco sul campo (aprirebbe la tastiera): va sulla finestra.
+  let finePointer = true;
+  try { finePointer = window.matchMedia('(pointer: fine)').matches; } catch (e) { /* niente */ }
+  try { ((finePointer && !reopening && first) || box).focus({ preventScroll: true }); } catch (e) { /* niente */ }
 }
 
-function closeModal() { modalRoot.innerHTML = ''; }
+function closeModal() {
+  const hadModal = !!modalRoot.innerHTML;
+  modalRoot.innerHTML = '';
+  const back = modalReturnFocus;
+  modalReturnFocus = null;
+  if (hadModal && back && back !== document.body && document.contains(back) && typeof back.focus === 'function') {
+    try { back.focus({ preventScroll: true }); } catch (e) { /* niente */ }
+  }
+}
+
+document.addEventListener('keydown', e => {
+  const box = modalRoot.querySelector('.modal-box');
+  if (!box) return;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    closeModal();
+    return;
+  }
+  if (e.key !== 'Tab') return;
+  const items = [...box.querySelectorAll(MODAL_FOCUSABLE)].filter(el => el.offsetParent !== null || el === document.activeElement);
+  if (!items.length) { e.preventDefault(); box.focus(); return; }
+  const firstEl = items[0], lastEl = items[items.length - 1];
+  if (!box.contains(document.activeElement)) { e.preventDefault(); firstEl.focus(); }
+  else if (e.shiftKey && (document.activeElement === firstEl || document.activeElement === box)) { e.preventDefault(); lastEl.focus(); }
+  else if (!e.shiftKey && document.activeElement === lastEl) { e.preventDefault(); firstEl.focus(); }
+});
 
 /**
  * Conferma "sì/no" nello stile della pagina, al posto di window.confirm().
