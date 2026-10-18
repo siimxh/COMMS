@@ -831,7 +831,7 @@ const LeadCRM = (function () {
       const showSame = () => {
         const ex = existing(), el = box.querySelector('#nlSame');
         el.hidden = !ex;
-        if (ex) el.innerHTML = `C'è già il lead <b>${leadName(ex)}</b> (${STATO_LABEL[ex.stato] || esc(ex.stato)}): l'appuntamento va nella sua scheda.`;
+        if (ex) el.innerHTML = `C'è già il lead <b>${leadName(ex)}</b> (${STATO_LABEL[ex.stato] || esc(ex.stato)}): l'appuntamento va nella sua scheda${ex.stato === 'Perso' || ex.stato === 'Freddo' ? ' e il lead torna In trattativa' : ''}.`;
       };
       nameIn.addEventListener('input', showSame); phoneIn.addEventListener('input', showSame);
       box.querySelector('#nlCancel').addEventListener('click', closeModal);
@@ -856,7 +856,8 @@ const LeadCRM = (function () {
 
   /* ---------- "+ Appuntamento" dalla scheda lead (restyling 5.6) ----------
    * Crea un appuntamento Venditore del lead. Dalla scheda (o dal ⋯): Nuovo → In trattativa.
-   * Da "+ Nuovo lead" il lead resta Nuovo (è il suo primo appuntamento). La prossima azione
+   * Da "+ Nuovo lead" il lead resta Nuovo (è il suo primo appuntamento). Su un lead Perso
+   * o Freddo (anche da "+ Nuovo lead" con lo stesso nome) torna In trattativa. La prossima azione
    * diventa quell'appuntamento (l.next si svuota: la scheda e la lista mostrano
    * "📅 N° appuntamento"); un recupero no show aperto si chiude come risolto. */
   function addApptToLead(l, when, note) {
@@ -864,13 +865,24 @@ const LeadCRM = (function () {
     if (note) addHistory(l, { k: 'nota', t: 'Nota sull\'appuntamento del ' + fmtShort(when), s: note });
     l.next = null;
     closeRecovery(l, 'resolved', apt.id);
+    reopenLeadForAppt(l);
     return apt;
+  }
+  /** Nuovo appuntamento su un lead Perso o Freddo (Simone, 18/10/2026): il lead torna
+   * "In trattativa", con una riga nello storico. Il conteggio dei follow-up senza risposta
+   * riparte da 0 (scelta prudente: con 6 già segnati, il primo "non risponde" dopo
+   * l'appuntamento lo rimanderebbe subito in Freddo). */
+  function reopenLeadForAppt(l) {
+    if (l.stato !== 'Perso' && l.stato !== 'Freddo') return;
+    addHistory(l, { k: 'stato', t: 'Stato: In trattativa', s: 'riaperto con un nuovo appuntamento (era ' + STATO_LABEL[l.stato] + ')' });
+    l.stato = 'Trattativa';
+    l.fuNoAnswer = 0;
   }
   function openAddAppt(leadId) {
     const l = leadById(leadId); if (!l) return;
     modal(`
       <h3>Nuovo appuntamento · ${leadName(l)}</h3>
-      <p class="modal-sub">Diventa la prossima azione del lead${l.stato === 'Nuovo' ? ', che passa a In trattativa' : ''}.</p>
+      <p class="modal-sub">Diventa la prossima azione del lead${l.stato === 'Nuovo' || l.stato === 'Perso' || l.stato === 'Freddo' ? ', che passa a In trattativa' : ''}.</p>
       <div class="mrow">
         <label><span class="mlabel">Giorno</span><input type="date" class="ld-input" id="naDate" value="${workDay(1)}"></label>
         <label><span class="mlabel">Ora</span><input type="time" class="ld-input" id="naTime" value=""></label>
