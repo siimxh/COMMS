@@ -801,9 +801,9 @@ function openNewTaskModal() {
 /* ---------- Dashboard: Prossimi pagamenti (restyling 17/10/2026, step 7) ----------
  * Tutte le rate NON pagate degli appuntamenti chiusi, Setter e Venditore insieme, per
  * scadenza. Fonte: getEffectiveInstallments (l'acconto sintetico è sempre già pagato e
- * non compare). Venditore: solo l'appuntamento della scheda Pagamenti del lead (l'ultimo
- * chiuso, LeadCRM.paymentsApptOf); senza lead (raro) l'appuntamento stesso. Righe
- * Venditore nascoste se la parte Venditore è spenta.
+ * non compare). Venditore: TUTTI gli appuntamenti chiusi del lead (Simone, 18/10: "voglio
+ * vederle tutte"; prima solo l'ultimo chiuso, LeadCRM.paymentsApptOf). Ogni riga resta
+ * legata alla sua rata vera. Righe Venditore nascoste se la parte Venditore è spenta.
  * Riga: nome del CENTRO (mai la persona: se manca, nome del lead in grigio + "centro
  * mancante"), scadenza (rossa se passata), importo, ruolo, venditore (solo Setter),
  * spunta "Pagato": rata vera in apt.installments -> paid + paidDate di oggi. La
@@ -820,7 +820,6 @@ function collectUpcomingPayments() {
     if (a.role === 'venditore') {
       if (!LeadCRM.isOn()) return;
       lead = a.leadId ? leadsById[a.leadId] : null;
-      if (lead) { const pa = LeadCRM.paymentsApptOf(lead.id); if (!pa || pa.id !== a.id) return; }
     } else if (a.role !== 'setter') return;
     getEffectiveInstallments(a).forEach(inst => {
       if (inst.paid || inst.isDeposit) return;
