@@ -70,7 +70,21 @@ function loadPlaywright() {
     }
     const table = url.pathname.split('/').pop();
     if (table === 'lead' && noLeadTable) return reply(404, { code: 'PGRST205', message: "Could not find the table 'public.lead'" });
-    if (req.method() === 'GET') return reply(200, url.searchParams.get('select') === 'data' ? fake[table].map(r => ({ data: r.data })) : fake[table]);
+    if (req.method() === 'GET') {
+      const sel = url.searchParams.get('select');
+      if (sel && sel.startsWith('rev:')) return reply(200, fake[table].map(r => ({ rev: (r.data && r.data._rev) || null })));
+      return reply(200, sel === 'data' ? fake[table].map(r => ({ data: r.data })) : fake[table]);
+    }
+    if (req.method() === 'PATCH') {
+      // Scrittura condizionata di "stato" (cloud-sync.js): ?data->>_rev=eq.X | is.null
+      const body = JSON.parse(req.postData());
+      const cond = url.searchParams.get('data->>_rev');
+      const rows = fake[table].filter(r => { const rv = (r.data && r.data._rev) || null; return cond === 'is.null' ? rv === null : (cond ? cond === 'eq.' + rv : true); });
+      rows.forEach(r => Object.assign(r, body));
+      fake.patches = (fake.patches || 0) + 1;
+      if (!rows.length) fake.conflicts = (fake.conflicts || 0) + 1;
+      return reply(200, rows.map(r => ({ user_id: r.user_id })));
+    }
     if (req.method() === 'POST') {
       JSON.parse(req.postData()).forEach(r => {
         const i = fake[table].findIndex(x => x.user_id === r.user_id && x.id === r.id);

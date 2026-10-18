@@ -19,6 +19,18 @@
  *   e appena torna la rete). Le impronte stanno nel browser, quindi anche
  *   chiudendo la pagina le modifiche non ancora inviate partono alla riapertura.
  * - Spia in alto: "Salvato" / "Salvataggio…" / "In attesa di rete".
+ * - Due dispositivi (CORREZIONE 18/10, bug 1): la riga "stato" porta dentro i dati
+ *   un numero di versione `_rev`, nuovo a ogni scrittura. Prima di ogni invio il
+ *   tool controlla che online ci sia ancora la versione che conosce; se no (ha
+ *   salvato un altro dispositivo) riscarica tutto e UNISCE (`_reconcile`):
+ *   liste per id (task, richiami, Round Recupero, pipeline...), con le cancellazioni
+ *   di tutti e due i lati; appuntamenti, sessioni e lead: vince chi li ha cambiati,
+ *   una riga cancellata altrove resta cancellata. La scrittura di "stato" è
+ *   condizionata (PATCH ...&data->>_rev=eq.<versione>): se nel frattempo un altro
+ *   ha salvato, non sovrascrive e riprova dopo aver unito.
+ *   Non coperto: lo STESSO appuntamento (o sessione, lead, task, impostazione)
+ *   cambiato su due dispositivi insieme: resta una sola versione (la più recente
+ *   se ha una data, se no quella del dispositivo che salva).
  *
  * Date: nel tool restano nei formati di sempre. Solo qui, al confine col
  * database, gli orari "locali" senza fuso (scheduledAt, presentedAt, es.
@@ -195,8 +207,11 @@ function dbToState(data) {
 /* ---------- Impronte (hash) per capire cosa è cambiato ---------- */
 
 function cloudHash(obj) {
+  return cloudHashStr(JSON.stringify(obj) || '');
+}
+
+function cloudHashStr(str) {
   // cyrb53: veloce, 53 bit, più che sufficiente per riconoscere una riga cambiata.
-  const str = JSON.stringify(obj) || '';
   let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
   for (let i = 0; i < str.length; i++) {
     const ch = str.charCodeAt(i);
@@ -214,6 +229,160 @@ function cloudFingerprints(data) {
   (data.sessions || []).forEach(x => { s[x.id] = cloudHash(x); });
   if (CloudSync.leadTable) (data.leads || []).forEach(x => { l[x.id] = cloudHash(x); });
   return { a, s, l, st: cloudHash(dbToState(data)) };
+}
+
+/* ---------- Due dispositivi: unione sicura (bug 1, 18/10) ---------- */
+
+/** JSON con le chiavi in ordine: il database (jsonb) non conserva l'ordine delle chiavi. */
+function cloudStable(v) {
+  if (Array.isArray(v)) return '[' + v.map(x => cloudStable(x === undefined ? null : x)).join(',') + ']';
+  if (v && typeof v === 'object') {
+    return '{' + Object.keys(v).filter(k => v[k] !== undefined && typeof v[k] !== 'function').sort()
+      .map(k => JSON.stringify(k) + ':' + cloudStable(v[k])).join(',') + '}';
+  }
+  const j = JSON.stringify(v);
+  return j === undefined ? 'null' : j;
+}
+function cloudStableHash(v) { return cloudHashStr(cloudStable(v)); }
+
+/** true se è una lista di oggetti con id (task, richiami, pipeline...): si unisce voce per voce. */
+function cloudIsIdList(v) {
+  return Array.isArray(v) && v.every(x => x && typeof x === 'object' && !Array.isArray(x) && (typeof x.id === 'string' || typeof x.id === 'number'));
+}
+
+/** Impronta della riga "stato" com'era online: una per chiave, e per le liste una per voce. */
+function cloudStateBase(st) {
+  const b = {};
+  Object.keys(st || {}).forEach(k => {
+    const v = st[k];
+    if (v === undefined) return;
+    if (cloudIsIdList(v)) {
+      const l = {};
+      v.forEach(x => { l[String(x.id)] = cloudStableHash(x); });
+      b[k] = { l };
+    } else {
+      b[k] = { h: cloudStableHash(v) };
+    }
+  });
+  return b;
+}
+
+/** Il momento più recente scritto nella voce (campi che finiscono in "At"): serve a scegliere
+ * la versione più nuova quando la stessa voce è cambiata su tutti e due i dispositivi. */
+function cloudLastTouched(x) {
+  let max = 0;
+  Object.keys(x || {}).forEach(k => {
+    if (!/At$/.test(k) || !x[k]) return;
+    const t = new Date(x[k]).getTime();
+    if (Number.isFinite(t) && t > max) max = t;
+  });
+  return max;
+}
+
+/**
+ * Unione di una lista per id. L = qui, R = online, base = impronte della versione online
+ * che conoscevamo (null = non la conosciamo: si tiene tutto, niente cancellazioni).
+ * - voce cambiata da una parte sola: vince quella cambiata;
+ * - cambiata da tutte e due: la più recente (cloudLastTouched), a pari merito quella di qui;
+ * - voce che c'era e una parte l'ha cancellata: resta cancellata;
+ * - voce nuova (da una parte o dall'altra): si tiene.
+ */
+function cloudMergeList(lv, rv, base) {
+  const L = Array.isArray(lv) ? lv : [], R = Array.isArray(rv) ? rv : [];
+  const rMap = new Map(R.map(x => [String(x.id), x]));
+  const lIds = new Set();
+  const out = [];
+  L.forEach(x => {
+    const id = String(x.id);
+    lIds.add(id);
+    const r = rMap.get(id);
+    if (!r) {
+      if (base && id in base) return;   // cancellata sull'altro dispositivo
+      out.push(x);                      // nuova qui
+      return;
+    }
+    const lh = cloudStableHash(x), rh = cloudStableHash(r);
+    if (lh === rh) { out.push(x); return; }
+    const b = base ? base[id] : undefined;
+    const lCh = b === undefined || lh !== b;
+    const rCh = b === undefined || rh !== b;
+    if (rCh && !lCh) out.push(r);
+    else if (lCh && !rCh) out.push(x);
+    else out.push(cloudLastTouched(r) > cloudLastTouched(x) ? r : x);
+  });
+  R.forEach(r => {
+    const id = String(r.id);
+    if (lIds.has(id)) return;
+    if (base && id in base) return;     // cancellata qui
+    out.push(r);                        // nuova sull'altro dispositivo
+  });
+  return out;
+}
+
+/** Unione della riga "stato" chiave per chiave. Ritorna { merged, unsafe } (unsafe = c'era una
+ * differenza che non si poteva decidere: in quel caso vince la versione online). */
+function cloudMergeState(L, R, B) {
+  const merged = {};
+  let unsafe = false;
+  const keys = new Set([...Object.keys(L || {}), ...Object.keys(R || {})]);
+  keys.forEach(k => {
+    if (k === '_rev') return;
+    const lv = L[k], rv = R[k], b = B ? B[k] : undefined;
+    const listy = (lv !== undefined || rv !== undefined) &&
+      (lv === undefined || cloudIsIdList(lv)) && (rv === undefined || cloudIsIdList(rv));
+    let v;
+    if (listy) {
+      v = cloudMergeList(lv, rv, b && b.l ? b.l : null);
+    } else {
+      const lh = cloudStableHash(lv), rh = cloudStableHash(rv);
+      if (lh === rh) v = lv;
+      else if (b && 'h' in b) {
+        const lCh = lh !== b.h, rCh = rh !== b.h;
+        v = (rCh && !lCh) ? rv : lv;
+      } else { unsafe = true; v = rv; }
+    }
+    if (v !== undefined) merged[k] = v;
+  });
+  return { merged, unsafe };
+}
+
+/**
+ * Unione di appuntamenti / sessioni / lead (una riga ciascuno). base = impronte (cloudHash)
+ * delle righe com'erano online all'ultimo salvataggio.
+ * - cambiata qui: vince quella di qui (sarà inviata);
+ * - non cambiata qui: prende quella online;
+ * - c'era e online non c'è più: cancellata altrove → sparisce anche qui (anche se qui era
+ *   stata modificata: una riga cancellata non torna);
+ * - nuova qui o nuova online: si tiene.
+ * Aggiorna base per le righe prese da online / sparite.
+ */
+function cloudMergeRows(lv, rv, base) {
+  const L = Array.isArray(lv) ? lv : [], R = Array.isArray(rv) ? rv : [];
+  const rMap = new Map(R.map(x => [x.id, x]));
+  const lIds = new Set();
+  const out = [];
+  L.forEach(x => {
+    lIds.add(x.id);
+    const r = rMap.get(x.id);
+    if (r) {
+      if (cloudHash(x) !== base[x.id]) out.push(x);
+      else { out.push(r); base[x.id] = cloudHash(r); }
+    } else if (x.id in base) {
+      delete base[x.id];
+    } else {
+      out.push(x);
+    }
+  });
+  R.forEach(r => {
+    if (lIds.has(r.id) || r.id in base) return;
+    out.push(r);
+    base[r.id] = cloudHash(r);
+  });
+  return out;
+}
+
+function cloudNewRev() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 }
 
 /* ---------- Client Supabase minimo (Auth + REST) ---------- */
@@ -238,6 +407,10 @@ const CloudSync = {
   leadTable: false,     // true se nel database c'è la tabella "lead" (si scopre al pull)
   _leadsToMove: false,  // true se i lead stanno ancora in "stato" e vanno spostati nella tabella
   onStatus: null,       // callback per la spia "Salvato" nella barra della pagina
+  onMerged: null,       // callback dopo un'unione con le modifiche di un altro dispositivo
+  normalize: null,      // funzione che sistema i dati scaricati (mergeWithDefaults, da app.js)
+  blocked: false,       // true se il tool è aperto in un'altra scheda: questa non salva più
+  _pulledRev: null,     // versione (_rev) della riga "stato" letta all'ultimo pull
 
   /* --- Sessione di login --- */
 
@@ -386,6 +559,7 @@ const CloudSync = {
     },
 
     _saveSynced() {
+      if (this.blocked) return; // scheda vecchia: le impronte giuste sono quelle della scheda nuova
       if (this.synced) this.synced.leadTable = this.leadTable;
       try { localStorage.setItem(this._syncedKey(), JSON.stringify(this.synced)); } catch (e) { /* non bloccante */ }
     },
@@ -400,8 +574,12 @@ const CloudSync = {
       ]);
       this.leadTable = leadRows !== null;
       this._leadsToMove = false;
+      this._pulledRev = null;
       if (!stato || !stato.length) return null;
-      const data = Object.assign({}, stato[0].data || {}, {
+      const st = Object.assign({}, stato[0].data || {});
+      this._pulledRev = typeof st._rev === 'string' ? st._rev : null;
+      delete st._rev;
+      const data = Object.assign(st, {
         appointments: appts.map(rowToAppt),
         sessions: sessions.map(rowToSession)
       });
@@ -426,6 +604,10 @@ const CloudSync = {
     /** Dopo un pull: la versione appena scaricata è quella salvata online. */
     markSynced(data) {
       this.synced = cloudFingerprints(data);
+      // Versione della riga "stato" appena letta: il prossimo invio controlla che online sia ancora questa.
+      this.synced.rev = this._pulledRev;
+      this.synced.revKnown = true;
+      this.synced.stBase = cloudStateBase(dbToState(data));
       // Lead ancora dentro "stato": li segniamo come "non salvati" nella tabella, così
       // partono al prossimo invio, e "stato" viene riscritto senza di loro.
       if (this._leadsToMove) { this.synced.l = {}; this.synced.st = null; this._leadsToMove = false; }
@@ -447,7 +629,7 @@ const CloudSync = {
 
     /** Da chiamare dopo ogni modifica: invia le righe cambiate dopo un piccolo ritardo. */
     schedule() {
-      if (!this.session) return;
+      if (!this.session || this.blocked) return;
       this._setStatus('saving');
       clearTimeout(this._timer);
       this._timer = setTimeout(() => this.flush(), CLOUD_DEBOUNCE_MS);
@@ -457,7 +639,7 @@ const CloudSync = {
     async flush() {
       clearTimeout(this._timer);
       // getData() è null finché i dati dell'utente non sono caricati: niente da inviare.
-      if (!this.session || !this.getData || !this.getData()) return false;
+      if (!this.session || this.blocked || !this.getData || !this.getData()) return false;
       if (this._flushing) { this._again = true; return this._flushing; }
       this._flushing = (async () => {
         try {
@@ -485,60 +667,140 @@ const CloudSync = {
       return ok;
     },
 
+    /** Cosa c'è da inviare rispetto all'ultima versione salvata online. */
+    _changes(data, old) {
+      const fp = cloudFingerprints(data);
+      const c = {
+        fp,
+        changedA: (data.appointments || []).filter(x => fp.a[x.id] !== old.a[x.id]),
+        changedS: (data.sessions || []).filter(x => fp.s[x.id] !== old.s[x.id]),
+        changedL: this.leadTable ? (data.leads || []).filter(x => fp.l[x.id] !== old.l[x.id]) : [],
+        deletedA: Object.keys(old.a).filter(id => !(id in fp.a)),
+        deletedS: Object.keys(old.s).filter(id => !(id in fp.s)),
+        deletedL: this.leadTable ? Object.keys(old.l).filter(id => !(id in fp.l)) : [],
+        stateChanged: fp.st !== old.st
+      };
+      c.deletes = c.deletedA.length + c.deletedS.length + c.deletedL.length;
+      c.any = c.changedA.length || c.changedS.length || c.changedL.length || c.deletes || c.stateChanged;
+      return c;
+    },
+
+    /** Versione della riga "stato" online: { exists, rev }. Lettura leggera (solo _rev). */
+    async _onlineRev() {
+      const rows = await this._rest('GET', 'stato?select=rev:data->>_rev');
+      if (!Array.isArray(rows) || !rows.length) return { exists: false, rev: null };
+      return { exists: true, rev: typeof rows[0].rev === 'string' ? rows[0].rev : null };
+    },
+
+    /**
+     * Online è cambiato (un altro dispositivo ha salvato): riscarica tutto e unisce con
+     * i dati di qui, SENZA perdere né le modifiche di qui né quelle dell'altro.
+     * I dati uniti vanno nello stesso oggetto `data` (il db del tool), così le schermate
+     * aperte continuano a lavorare sugli stessi oggetti.
+     */
+    async _reconcile(data) {
+      const raw = await this.pull();
+      if (!raw) return false; // online non c'è niente: si scrive e basta
+      const remote = typeof this.normalize === 'function' ? this.normalize(raw) : raw;
+      const old = this.synced;
+      if (!old.l) old.l = {};
+      const out = {};
+      out.appointments = cloudMergeRows(data.appointments, remote.appointments, old.a);
+      out.sessions = cloudMergeRows(data.sessions, remote.sessions, old.s);
+      if (this.leadTable) out.leads = cloudMergeRows(data.leads, remote.leads, old.l);
+      const { merged, unsafe } = cloudMergeState(dbToState(data), dbToState(remote), old.stBase || null);
+      Object.assign(merged, out);
+      Object.keys(data).forEach(k => { if (!(k in merged)) delete data[k]; });
+      Object.assign(data, merged);
+      // Online adesso c'è la versione appena letta: la prossima scrittura parte da lì.
+      old.rev = this._pulledRev;
+      old.revKnown = true;
+      old.stBase = cloudStateBase(dbToState(remote));
+      old.st = null; // riscrive "stato" (con le modifiche unite e una versione nuova)
+      if (this._leadsToMove) { old.l = {}; this._leadsToMove = false; }
+      this._saveSynced();
+      if (typeof this.onMerged === 'function') this.onMerged({ unsafe });
+      return true;
+    },
+
     async _pushChanges(data) {
       const uid = this.session.user.id;
-      const fp = cloudFingerprints(data);
       // Le impronte si aggiornano passo per passo: se un invio fallisce a metà,
       // quello già arrivato online non viene rimandato al prossimo tentativo.
       if (!this.synced) this.synced = { a: {}, s: {}, l: {}, st: null };
-      const old = this.synced;
-      if (!old.l) old.l = {};
+      for (let attempt = 0; ; attempt++) {
+        const old = this.synced;
+        if (!old.l) old.l = {};
+        let c = this._changes(data, old);
+        if (!c.any) return;
 
-      const changedA = (data.appointments || []).filter(x => fp.a[x.id] !== old.a[x.id]);
-      const changedS = (data.sessions || []).filter(x => fp.s[x.id] !== old.s[x.id]);
-      const changedL = this.leadTable ? (data.leads || []).filter(x => fp.l[x.id] !== old.l[x.id]) : [];
-      const deletedA = Object.keys(old.a).filter(id => !(id in fp.a));
-      const deletedS = Object.keys(old.s).filter(id => !(id in fp.s));
-      const deletedL = this.leadTable ? Object.keys(old.l).filter(id => !(id in fp.l)) : [];
-      const stateChanged = fp.st !== old.st;
+        // 1. Online c'è ancora la versione che conosciamo? Se no: unione prima di scrivere.
+        const online = await this._onlineRev();
+        if (online.exists && (!old.revKnown || online.rev !== old.rev)) {
+          await this._reconcile(data);
+          c = this._changes(data, old);
+          if (!c.any) return;
+        }
 
-      if (!changedA.length && !changedS.length && !changedL.length && !deletedA.length && !deletedS.length && !deletedL.length && !stateChanged) return;
-
-      try {
-      // Ordine: prima i lead nuovi (se stanno passando da "stato" alla tabella non
-      // devono mai mancare in tutti e due i posti), poi stato, poi le altre righe.
-      if (changedL.length) {
-        await this._upsert('lead', changedL.map(x => ({ user_id: uid, id: x.id, data: x })), 'user_id,id');
-        changedL.forEach(x => { old.l[x.id] = fp.l[x.id]; });
+        let conflict = false;
+        try {
+          // Ordine: prima i lead nuovi (se stanno passando da "stato" alla tabella non
+          // devono mai mancare in tutti e due i posti), poi stato, poi le altre righe.
+          if (c.changedL.length) {
+            await this._upsert('lead', c.changedL.map(x => ({ user_id: uid, id: x.id, data: x })), 'user_id,id');
+            c.changedL.forEach(x => { old.l[x.id] = c.fp.l[x.id]; });
+          }
+          // "stato" si riscrive anche quando si cancella qualcosa: la versione nuova
+          // avvisa gli altri dispositivi, che così non rimandano online la riga cancellata.
+          if (c.stateChanged || c.deletes || !old.revKnown) {
+            const st = dbToState(data);
+            const rev = cloudNewRev();
+            const body = Object.assign({}, st, { _rev: rev });
+            if (online.exists) {
+              const cond = old.rev ? 'data->>_rev=eq.' + encodeURIComponent(old.rev) : 'data->>_rev=is.null';
+              const rows = await this._rest('PATCH', `stato?user_id=eq.${encodeURIComponent(uid)}&${cond}&select=user_id`,
+                { data: body }, { Prefer: 'return=representation' });
+              // Nessuna riga aggiornata: un altro dispositivo ha salvato proprio adesso.
+              if (!Array.isArray(rows) || !rows.length) conflict = true;
+            } else {
+              await this._upsert('stato', [{ user_id: uid, data: body }], 'user_id');
+            }
+            if (!conflict) {
+              old.st = c.fp.st;
+              old.rev = rev;
+              old.revKnown = true;
+              old.stBase = cloudStateBase(st);
+            }
+          }
+          if (!conflict) {
+            if (c.changedA.length) {
+              await this._upsert('appuntamenti', c.changedA.map(x => apptToRow(x, uid)), 'user_id,id');
+              c.changedA.forEach(x => { old.a[x.id] = c.fp.a[x.id]; });
+            }
+            if (c.changedS.length) {
+              await this._upsert('sessioni', c.changedS.map(x => sessionToRow(x, uid)), 'user_id,id');
+              c.changedS.forEach(x => { old.s[x.id] = c.fp.s[x.id]; });
+            }
+            if (c.deletedA.length) {
+              await this._deleteIds('appuntamenti', c.deletedA);
+              c.deletedA.forEach(id => { delete old.a[id]; });
+            }
+            if (c.deletedS.length) {
+              await this._deleteIds('sessioni', c.deletedS);
+              c.deletedS.forEach(id => { delete old.s[id]; });
+            }
+            if (c.deletedL.length) {
+              await this._deleteIds('lead', c.deletedL);
+              c.deletedL.forEach(id => { delete old.l[id]; });
+            }
+          }
+        } finally {
+          this._saveSynced();
+        }
+        if (!conflict) return;
+        if (attempt >= 3) throw new CloudError('I dati online cambiano di continuo: riprovo tra poco', 409);
       }
-      if (stateChanged) {
-        await this._upsert('stato', [{ user_id: uid, data: dbToState(data) }], 'user_id');
-        old.st = fp.st;
-      }
-      if (changedA.length) {
-        await this._upsert('appuntamenti', changedA.map(x => apptToRow(x, uid)), 'user_id,id');
-        changedA.forEach(x => { old.a[x.id] = fp.a[x.id]; });
-      }
-      if (changedS.length) {
-        await this._upsert('sessioni', changedS.map(x => sessionToRow(x, uid)), 'user_id,id');
-        changedS.forEach(x => { old.s[x.id] = fp.s[x.id]; });
-      }
-      if (deletedA.length) {
-        await this._deleteIds('appuntamenti', deletedA);
-        deletedA.forEach(id => { delete old.a[id]; });
-      }
-      if (deletedS.length) {
-        await this._deleteIds('sessioni', deletedS);
-        deletedS.forEach(id => { delete old.s[id]; });
-      }
-      if (deletedL.length) {
-        await this._deleteIds('lead', deletedL);
-        deletedL.forEach(id => { delete old.l[id]; });
-      }
-    } finally {
-      this._saveSynced();
-    }
-  },
+    },
 
   _setStatus(st) {
     this.status = st;

@@ -6583,6 +6583,71 @@ document.getElementById('loginForm').addEventListener('submit', loginSubmitActio
 let dbLoaded = false;
 CloudSync.getData = () => dbLoaded ? db : null;
 CloudSync.onStatus = setSyncStatus;
+CloudSync.normalize = mergeWithDefaults;
+CloudSync.onMerged = onCloudMerged;
+
+/** Un altro dispositivo aveva salvato: cloud-sync.js ha unito le sue modifiche con le
+ * nostre dentro "db". Si salva la copia locale e si ridisegna (non con una finestra aperta). */
+function onCloudMerged(info) {
+  Storage.save(db);
+  if (!modalRoot.innerHTML.trim()) renderRoute();
+  showToast(info && info.unsafe
+    ? 'Dati aggiornati da un altro dispositivo: dove non si potevano unire ho tenuto quelli online.'
+    : 'Ho unito le modifiche fatte su un altro dispositivo.', !!(info && info.unsafe));
+}
+
+/* ---------- Una scheda sola (CORREZIONE 18/10, bug 1) ----------
+ * Due schede dello stesso browser condividono la copia locale: la vecchia la
+ * sovrascriverebbe. Ogni scheda che apre il tool lo annuncia (BroadcastChannel e,
+ * di riserva, l'evento "storage"); le altre si fermano: niente più salvataggi né
+ * in locale né online, e una finestra che invita a usare la scheda nuova o a
+ * ricaricare questa (ricaricando diventa lei quella buona). */
+const TAB_ID = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const TAB_KEY = 'comms_schedaAttiva';
+let tabBlocked = false;
+let tabChannel = null;
+try { if (typeof BroadcastChannel !== 'undefined') tabChannel = new BroadcastChannel('comms_schede'); } catch (e) { tabChannel = null; }
+
+function announceThisTab() {
+  const msg = JSON.stringify({ tab: TAB_ID, t: Date.now() });
+  try { localStorage.setItem(TAB_KEY, msg); } catch (e) { /* senza localStorage resta il canale */ }
+  try { if (tabChannel) tabChannel.postMessage(msg); } catch (e) { /* niente */ }
+}
+
+function onOtherTabMessage(raw) {
+  let msg = null;
+  try { msg = JSON.parse(raw); } catch (e) { return; }
+  if (!msg || msg.tab === TAB_ID || !dbLoaded) return;
+  blockThisTab();
+}
+
+function blockThisTab() {
+  if (tabBlocked) return;
+  tabBlocked = true;
+  Storage.readOnly = true;
+  CloudSync.blocked = true;
+  clearTimeout(CloudSync._timer);
+  clearTimeout(CloudSync._retryTimer);
+  closeModal();
+  const el = document.createElement('div');
+  el.id = 'tabBlocked';
+  el.className = 'tab-blocked';
+  el.innerHTML = `
+    <div class="tab-blocked-card" role="alertdialog" aria-modal="true" aria-labelledby="tabBlockedTitle" aria-describedby="tabBlockedText">
+      <h3 id="tabBlockedTitle">Il tool è aperto in un'altra scheda</h3>
+      <p id="tabBlockedText">Per non perdere dati questa scheda si è fermata e non salva più.<br>Usa l'altra scheda e chiudi questa, oppure ricaricala: diventerà lei quella attiva.</p>
+      <div class="modal-actions"><button class="btn-primary" id="btnTabReload">Ricarica questa scheda</button></div>
+    </div>`;
+  document.body.appendChild(el);
+  document.body.classList.add('tab-is-blocked');
+  setSyncStatus(''); // "Salvato" qui non vale più
+  const btn = document.getElementById('btnTabReload');
+  btn.addEventListener('click', () => location.reload());
+  btn.focus();
+}
+
+if (tabChannel) tabChannel.onmessage = e => onOtherTabMessage(e.data);
+window.addEventListener('storage', e => { if (e.key === TAB_KEY && e.newValue) onOtherTabMessage(e.newValue); });
 // Uscendo dalla pagina (o passando a un'altra app sul telefono) prova a inviare subito.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden' && CloudSync.session) CloudSync.flush();
@@ -6655,6 +6720,8 @@ async function loginSubmitAction(e) {
 
 async function startForUser() {
   hideLoginScreen();
+  // Le altre schede aperte con il tool si fermano (vedi blockThisTab).
+  announceThisTab();
   appRoot.innerHTML = '<div class="text-dim" style="padding:60px 16px; text-align:center;">Carico i tuoi dati…</div>';
   try {
     const how = await openUserData();
@@ -6693,6 +6760,9 @@ async function openUserData() {
   CloudSync._loadSynced();
   const local = localStorage.getItem(Storage.key) ? Storage.load() : null;
 
+  // Modifiche fatte qui e non ancora inviate: partono, ma il salvataggio controlla
+  // prima la versione online e, se un altro dispositivo ha salvato nel frattempo,
+  // unisce invece di sovrascrivere (cloud-sync.js, _reconcile).
   if (local && CloudSync.synced && CloudSync.hasPending(local)) {
     db = local;
     dbLoaded = true;

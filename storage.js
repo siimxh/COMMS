@@ -321,6 +321,9 @@ const Storage = {
   // (STORAGE_KEY + '__' + id utente, vedi app.js openUserData): la chiave
   // vecchia senza utente resta intatta, è la fonte dell'import al primo login.
   key: STORAGE_KEY,
+  // true quando il tool è aperto in un'altra scheda (app.js blockThisTab): questa scheda
+  // non scrive più la copia locale, che ora è della scheda nuova.
+  readOnly: false,
   load() {
     try {
       const raw = localStorage.getItem(this.key);
@@ -333,6 +336,7 @@ const Storage = {
     }
   },
   save(data) {
+    if (this.readOnly) return;
     try {
       localStorage.setItem(this.key, JSON.stringify(data));
     } catch (e) {
