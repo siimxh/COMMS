@@ -2513,7 +2513,12 @@ function renderSessioneDetail(id) {
 function addToRecoveryRound(apt, role, reason) {
   db.recoveryRound = db.recoveryRound || [];
   const existingActive = db.recoveryRound.find(l => l.sourceAppointmentId === apt.id && l.status === 'active');
-  if (existingActive) return;
+  if (existingActive) {
+    // CORREZIONE (19/10): No show poi Annullato (o il contrario) sullo stesso appuntamento:
+    // la voce resta una sola, ma il motivo segue l'ultimo esito (prima restava "No Show").
+    if (reason) existingActive.sourceReason = reason;
+    return;
+  }
   db.recoveryRound.push({
     id: uid('recov'),
     sourceAppointmentId: apt.id,
@@ -2629,7 +2634,11 @@ function renderRecoveryRoundScreen() {
   const srcApt = db.appointments.find(a => a.id === lead.sourceAppointmentId);
   const displayName = (srcApt && srcApt.clientName) || lead.clientName || '(senza nome)';
   const displayPhone = (srcApt && srcApt.phone) || lead.phone || '';
-  const roleLabel = (lead.sourceReason === 'annullato' ? 'Annullato' : 'No Show') + (lead.sourceRole === 'venditore' ? ' da Venditore' : ' da Setting');
+  // Motivo: lo stato attuale dell'appuntamento se c'è (le voci delle prime versioni non
+  // hanno sourceReason e un annullato compariva come "No Show"), altrimenti quello salvato.
+  const srcStatus = srcApt ? (srcApt.role === 'venditore' ? srcApt.dealStage : srcApt.presentedStatus) : null;
+  const reasonNow = srcStatus === 'annullato' || srcStatus === 'no_show' ? srcStatus : lead.sourceReason;
+  const roleLabel = (reasonNow === 'annullato' ? 'Annullato' : 'No Show') + (lead.sourceRole === 'venditore' ? ' da Venditore' : ' da Setting');
 
   const notes = [...(lead.notes || [])].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
   const notesHtml = notes.length ? notes.map(n => `
