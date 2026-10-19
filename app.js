@@ -6259,7 +6259,13 @@ function undoLastCallAction() {
       undoCb.inCallRetryPending = false;
     }
     if (linkedCbs.length) db.callbacks = db.callbacks.filter(c => c.sourceCallId !== call.id);
-    if (linkedApts.length) db.appointments = db.appointments.filter(a => a.sourceCallId !== call.id);
+    if (linkedApts.length) {
+      // CORREZIONE (19/10): come ⋯ → Elimina. Se intanto l'appuntamento era finito nel Round
+      // Recupero (No show / Annullato) la voce si chiude, e un eventuale spostato si scollega:
+      // prima restava una voce attiva di un appuntamento che non esiste più.
+      linkedApts.forEach(a => { unlinkRescheduleOnDelete(a); deactivateRecoveryEntryForAppointment(a); });
+      db.appointments = db.appointments.filter(a => a.sourceCallId !== call.id);
+    }
     persist();
     showToast('Esito annullato.');
     renderSessioneAttiva();
