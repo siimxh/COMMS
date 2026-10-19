@@ -279,6 +279,40 @@ function callOutcomeLabelIn(c, pipeline) {
 }
 
 /**
+ * Stats su più sessioni (Simone, 19/10, punto C): anche le chiamate dei round nelle
+ * sessioni automatiche (Conferme, Recupero, Richiami, Follow-up: senza pipeline) vanno
+ * sotto "Non risp" e "Appuntamento Fissato". Le pipeline possono chiamarli in modo
+ * diverso: si usa l'etichetta più usata nelle chiamate di queste sessioni (a parità, o se
+ * non è mai usata, quella della prima pipeline che ce l'ha). Le chiamate che hanno già un
+ * esito di una pipeline (es. i Da richiamare richiamati) tengono il loro.
+ */
+function statsRoundCallLabels(sessions, pipelines) {
+  const list = pipelines || (typeof db !== 'undefined' && db && db.pipelines) || [];
+  const allIds = new Set();
+  const byKind = { noAnswer: new Map(), apptSet: new Map() }; // id -> etichetta
+  const order = { noAnswer: [], apptSet: [] };
+  list.forEach(p => (p.outcomes || []).forEach(o => {
+    allIds.add(o.id);
+    ['noAnswer', 'apptSet'].forEach(k => {
+      if ((k === 'noAnswer' ? o.isNoAnswer : normOutcomeLabel(o.label) === APPT_SET_LABEL_NORM)) {
+        byKind[k].set(o.id, o.label);
+        if (!order[k].includes(o.label)) order[k].push(o.label);
+      }
+    });
+  }));
+  const out = { allIds };
+  ['noAnswer', 'apptSet'].forEach(k => {
+    const uses = {};
+    (sessions || []).forEach(s => (s.calls || []).forEach(c => { if (byKind[k].has(c.outcomeId)) uses[c.outcomeLabel] = (uses[c.outcomeLabel] || 0) + 1; }));
+    let best = order[k][0] || null;
+    order[k].forEach(l => { if ((uses[l] || 0) > (uses[best] || 0)) best = l; });
+    Object.keys(uses).forEach(l => { if (uses[l] > (uses[best] || 0)) best = l; });
+    out[k] = best;
+  });
+  return out;
+}
+
+/**
  * Esiti di UNA sessione contati per LEAD (ultimo esito di ogni lead), non per chiamata —
  * stessa regola di computeStats: un lead chiamato 3 volte senza risposta è "1 Non risp",
  * non 3 (bug 13/10). Le chiamate vecchie senza groupId usano il raggruppamento posizionale.
@@ -312,6 +346,7 @@ function computeStats(sessions, pipelines) {
   let totalCalls = 0, totalDurationMs = 0, totalSkips = 0;
   const leads = []; // ogni elemento raggruppa le chiamate (1 o più) fatte allo stesso lead
   const groupIndexByGroupId = {}; // groupId -> indice in leads[], valido su TUTTE le sessioni passate
+  const roundLabels = statsRoundCallLabels(sessions, pipelines);
 
   sessions.forEach(s => {
     const end = s.endedAt ? new Date(s.endedAt) : new Date();
@@ -324,9 +359,14 @@ function computeStats(sessions, pipelines) {
     let currentLead = null;
     const pipeline = sessionPipelineOf(s, pipelines);
     s.calls.forEach(c => {
-      // Etichetta per gli esiti (fix A): i "Non risposto" dei round in una sessione normale
-      // vanno sotto l'esito "senza risposta" della sua pipeline. Copia: i dati non si toccano.
-      const label = callOutcomeLabelIn(c, pipeline);
+      // Etichetta per gli esiti (fix A): i "Non risposto" / "Appuntamento fissato" dei round
+      // vanno sotto l'esito della pipeline della sessione; nelle sessioni senza pipeline
+      // (automatiche) sotto quello più usato (punto C). Copia: i dati non si toccano.
+      let label = callOutcomeLabelIn(c, pipeline);
+      if (!pipeline) {
+        const kind = roundCallKind(c);
+        if (kind && !(c.outcomeId && roundLabels.allIds.has(c.outcomeId)) && roundLabels[kind]) label = roundLabels[kind];
+      }
       if (label !== c.outcomeLabel) c = Object.assign({}, c, { outcomeLabel: label });
       if (c.groupId) {
         if (Object.prototype.hasOwnProperty.call(groupIndexByGroupId, c.groupId)) {
