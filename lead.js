@@ -282,6 +282,13 @@ const LeadCRM = (function () {
     else if (st === 'trattativa') { if (l.stato === 'Nuovo') l.stato = 'Trattativa'; }
     else if (st === 'no_show' || st === 'annullato') startRecovery(l);
     if (!isOpen(l) && st !== 'no_show' && st !== 'annullato') closeRecovery(l);
+    // No show corretto (es. in "Presentato · trattativa") dalla tendina (Simone, 19/10): se non
+    // resta nessun no show da recuperare, "🔁 Recupero no show" diventa "📞 Chiamata" con la
+    // stessa data e ora (la nota automatica del recupero non vale più e si toglie).
+    if (st !== 'no_show' && st !== 'annullato' && isOpen(l) && l.next && l.next.type === 'recupero' && !recoveryEntryFor(l)) {
+      l.next = Object.assign({}, l.next, { type: 'chiamata' });
+      if (/richiamare per fissare di nuovo$/i.test(l.next.note || '')) l.next.note = '';
+    }
     persist();
   }
 
