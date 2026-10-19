@@ -251,12 +251,31 @@ function sessionPipelineOf(s, pipelines) {
 function pipelineNoAnswerOutcome(pipeline) {
   return pipeline && Array.isArray(pipeline.outcomes) ? pipeline.outcomes.find(o => o.isNoAnswer) || null : null;
 }
+/* "Appuntamento fissato" dei round (Recupero e follow-up Venditore) nello stesso esito
+ * "Appuntamento Fissato" della pipeline (Simone, 19/10, punto A): solo con l'esito della
+ * pipeline che si chiama così (maiuscole e spazi a parte), non con un altro esito di
+ * conversione come "conferma appuntamento". Se la pipeline non ce l'ha, resta com'è. */
+const APPT_SET_LABEL_NORM = 'appuntamento fissato';
+function normOutcomeLabel(s) { return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+function pipelineApptSetOutcome(pipeline) {
+  return pipeline && Array.isArray(pipeline.outcomes) ? pipeline.outcomes.find(o => normOutcomeLabel(o.label) === APPT_SET_LABEL_NORM) || null : null;
+}
+/** 'noAnswer' | 'apptSet' | null: in quale esito della pipeline può finire la chiamata. */
+function roundCallKind(c) {
+  if (c.isNoAnswer) return 'noAnswer';
+  if (c.isConversion && normOutcomeLabel(c.outcomeLabel) === APPT_SET_LABEL_NORM) return 'apptSet';
+  return null;
+}
+function pipelineOutcomeForKind(pipeline, kind) {
+  return kind === 'noAnswer' ? pipelineNoAnswerOutcome(pipeline) : kind === 'apptSet' ? pipelineApptSetOutcome(pipeline) : null;
+}
 function callOutcomeLabelIn(c, pipeline) {
-  if (!c.isNoAnswer || !pipeline) return c.outcomeLabel;
+  const kind = roundCallKind(c);
+  if (!kind || !pipeline) return c.outcomeLabel;
   const outs = Array.isArray(pipeline.outcomes) ? pipeline.outcomes : [];
   if (c.outcomeId && outs.some(o => o.id === c.outcomeId)) return c.outcomeLabel;
-  const na = pipelineNoAnswerOutcome(pipeline);
-  return na ? na.label : c.outcomeLabel;
+  const t = pipelineOutcomeForKind(pipeline, kind);
+  return t ? t.label : c.outcomeLabel;
 }
 
 /**

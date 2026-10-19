@@ -2827,16 +2827,17 @@ function appendRecoveryCallToSession(callRecord) {
  * Fix A (richiesta di Hamza, scelta di Simone, 19/10/2026): una chiamata senza risposta di
  * un round (Conferme, Recupero, follow-up Venditore) che entra nella sessione APERTA prende
  * l'esito "senza risposta" della pipeline di quella sessione (outcomeId + outcomeLabel), così
- * nella sessione c'è un solo chip "Non risp". Il flag di tipo (isConfirmCall, isRecoveryCall,
+ * nella sessione c'è un solo chip "Non risp". Stessa cosa per "Appuntamento fissato" (Recupero
+ * e follow-up) con l'esito "Appuntamento Fissato" della pipeline, se c'è (roundCallKind). Il flag di tipo (isConfirmCall, isRecoveryCall,
  * isLeadFollowUpCall) resta: la chiamata conta sempre nel suo tipo. Le chiamate già salvate
  * con "Non risposto" le sistema il conteggio (callOutcomeLabelIn in utils.js).
  */
-function noAnswerAsSessionOutcome(session, callRecord) {
-  if (!callRecord.isNoAnswer || callRecord.outcomeId) return callRecord;
-  const na = pipelineNoAnswerOutcome(sessionPipelineOf(session, db.pipelines));
-  if (na) {
-    callRecord.outcomeId = na.id;
-    callRecord.outcomeLabel = na.label;
+function roundCallAsSessionOutcome(session, callRecord) {
+  if (callRecord.outcomeId) return callRecord;
+  const t = pipelineOutcomeForKind(sessionPipelineOf(session, db.pipelines), roundCallKind(callRecord));
+  if (t) {
+    callRecord.outcomeId = t.id;
+    callRecord.outcomeLabel = t.label;
   }
   return callRecord;
 }
@@ -2850,7 +2851,7 @@ function noAnswerAsSessionOutcome(session, callRecord) {
 function appendCallToAutoSession(pipelineId, pipelineName, callRecord) {
   const live = sessionForNewCalls();
   if (live) {
-    live.calls.push(noAnswerAsSessionOutcome(live, callRecord));
+    live.calls.push(roundCallAsSessionOutcome(live, callRecord));
     return;
   }
   const todayKey = dateInputValue(new Date());
@@ -3158,7 +3159,7 @@ function appendConfirmCallToSession(callRecord) {
   }
   const live = sessionForNewCalls();
   if (live) {
-    live.calls.push(noAnswerAsSessionOutcome(live, callRecord));
+    live.calls.push(roundCallAsSessionOutcome(live, callRecord));
     return;
   }
   const todayKey = dateInputValue(new Date());
