@@ -2762,6 +2762,24 @@ function appendRecoveryCallToSession(callRecord) {
 }
 
 /**
+ * Fix A (richiesta di Hamza, scelta di Simone, 19/10/2026): una chiamata senza risposta di
+ * un round (Conferme, Recupero, follow-up Venditore) che entra nella sessione APERTA prende
+ * l'esito "senza risposta" della pipeline di quella sessione (outcomeId + outcomeLabel), così
+ * nella sessione c'è un solo chip "Non risp". Il flag di tipo (isConfirmCall, isRecoveryCall,
+ * isLeadFollowUpCall) resta: la chiamata conta sempre nel suo tipo. Le chiamate già salvate
+ * con "Non risposto" le sistema il conteggio (callOutcomeLabelIn in utils.js).
+ */
+function noAnswerAsSessionOutcome(session, callRecord) {
+  if (!callRecord.isNoAnswer || callRecord.outcomeId) return callRecord;
+  const na = pipelineNoAnswerOutcome(sessionPipelineOf(session, db.pipelines));
+  if (na) {
+    callRecord.outcomeId = na.id;
+    callRecord.outcomeLabel = na.label;
+  }
+  return callRecord;
+}
+
+/**
  * Mette una chiamata "fuori sessione" nell'attività del giorno: nella sessione aperta se
  * c'è, altrimenti nella sessione automatica del giorno con questo pipelineId (creata alla
  * prima chiamata, endedAt aggiornato a ogni chiamata). Stesso modello delle sessioni
@@ -2770,7 +2788,7 @@ function appendRecoveryCallToSession(callRecord) {
 function appendCallToAutoSession(pipelineId, pipelineName, callRecord) {
   const live = sessionForNewCalls();
   if (live) {
-    live.calls.push(callRecord);
+    live.calls.push(noAnswerAsSessionOutcome(live, callRecord));
     return;
   }
   const todayKey = dateInputValue(new Date());
@@ -3042,7 +3060,7 @@ function appendConfirmCallToSession(callRecord) {
   }
   const live = sessionForNewCalls();
   if (live) {
-    live.calls.push(callRecord);
+    live.calls.push(noAnswerAsSessionOutcome(live, callRecord));
     return;
   }
   const todayKey = dateInputValue(new Date());

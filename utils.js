@@ -233,11 +233,39 @@ function countSessionLeads(s, allSessions) {
 }
 
 /**
+ * "Non risposto" dei round dentro una sessione normale (fix A, richiesta di Hamza 19/10/2026,
+ * scelta di Simone). Le chiamate di Round Conferme, Round Recupero e follow-up Venditore
+ * finite nella sessione aperta avevano la loro etichetta ("Non risposto"), così nella
+ * sessione comparivano due esiti: "Non risp" (della pipeline) e "Non risposto".
+ * Regola: negli esiti, una chiamata senza risposta che non è un esito della pipeline della
+ * sessione (outcomeId null, o di un'altra pipeline) si conta sotto l'esito "senza risposta"
+ * della pipeline della sessione. Vale anche per le sessioni già salvate: i dati non cambiano,
+ * cambia solo il raggruppamento. Le sessioni automatiche (Conferme, Recupero, Richiami,
+ * Follow-up Venditore) non hanno una pipeline vera: lì l'etichetta resta quella della chiamata.
+ * I conti (chiamate, lead, senza risposta) non cambiano: si sposta solo l'etichetta.
+ */
+function sessionPipelineOf(s, pipelines) {
+  const list = pipelines || (typeof db !== 'undefined' && db && db.pipelines) || [];
+  return s && s.pipelineId ? list.find(p => p.id === s.pipelineId) || null : null;
+}
+function pipelineNoAnswerOutcome(pipeline) {
+  return pipeline && Array.isArray(pipeline.outcomes) ? pipeline.outcomes.find(o => o.isNoAnswer) || null : null;
+}
+function callOutcomeLabelIn(c, pipeline) {
+  if (!c.isNoAnswer || !pipeline) return c.outcomeLabel;
+  const outs = Array.isArray(pipeline.outcomes) ? pipeline.outcomes : [];
+  if (c.outcomeId && outs.some(o => o.id === c.outcomeId)) return c.outcomeLabel;
+  const na = pipelineNoAnswerOutcome(pipeline);
+  return na ? na.label : c.outcomeLabel;
+}
+
+/**
  * Esiti di UNA sessione contati per LEAD (ultimo esito di ogni lead), non per chiamata —
  * stessa regola di computeStats: un lead chiamato 3 volte senza risposta è "1 Non risp",
  * non 3 (bug 13/10). Le chiamate vecchie senza groupId usano il raggruppamento posizionale.
  */
-function sessionOutcomeCountsByLead(s) {
+function sessionOutcomeCountsByLead(s, pipelines) {
+  const pipeline = sessionPipelineOf(s, pipelines);
   const groups = [];
   const byId = {};
   let current = null;
@@ -255,12 +283,13 @@ function sessionOutcomeCountsByLead(s) {
   const counts = {};
   groups.forEach(g => {
     const last = g[g.length - 1];
-    counts[last.outcomeLabel] = (counts[last.outcomeLabel] || 0) + 1;
+    const label = callOutcomeLabelIn(last, pipeline);
+    counts[label] = (counts[label] || 0) + 1;
   });
   return counts;
 }
 
-function computeStats(sessions) {
+function computeStats(sessions, pipelines) {
   let totalCalls = 0, totalDurationMs = 0, totalSkips = 0;
   const leads = []; // ogni elemento raggruppa le chiamate (1 o più) fatte allo stesso lead
   const groupIndexByGroupId = {}; // groupId -> indice in leads[], valido su TUTTE le sessioni passate
@@ -274,7 +303,12 @@ function computeStats(sessions) {
     totalCalls += s.calls.length;
 
     let currentLead = null;
+    const pipeline = sessionPipelineOf(s, pipelines);
     s.calls.forEach(c => {
+      // Etichetta per gli esiti (fix A): i "Non risposto" dei round in una sessione normale
+      // vanno sotto l'esito "senza risposta" della sua pipeline. Copia: i dati non si toccano.
+      const label = callOutcomeLabelIn(c, pipeline);
+      if (label !== c.outcomeLabel) c = Object.assign({}, c, { outcomeLabel: label });
       if (c.groupId) {
         if (Object.prototype.hasOwnProperty.call(groupIndexByGroupId, c.groupId)) {
           leads[groupIndexByGroupId[c.groupId]].push(c);

@@ -250,6 +250,7 @@ Prima di cambiarne una, chiedi a Simone.
 - "Da richiamare" richiamato lo stesso giorno = stesso lead. Un altro giorno = lead nuovo.
 - Le conferme dello stesso appuntamento lo stesso giorno = un lead; un altro giorno = lead nuovo (`ensureConfirmGroupId`).
 - Contatori di sessione: `countSessionLeads`.
+- Un solo "Non risp" per sessione (richiesta di Hamza, scelta di Simone 19/10): i "Non risposto" di Round Conferme, Round Recupero e follow-up Venditore finiti in una sessione normale si contano sotto l'esito senza risposta della sua pipeline (`callOutcomeLabelIn` in utils.js, vale anche per le sessioni già salvate; le chiamate nuove lo prendono già, `noAnswerAsSessionOutcome`). Nelle sessioni automatiche resta "Non risposto".
 - Chiamate all'ora: tempo di sessione **senza le pause**.
 
 **Appuntamenti Setter**
