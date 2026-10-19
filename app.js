@@ -6760,6 +6760,8 @@ CloudSync.onMerged = onCloudMerged;
 /** Un altro dispositivo aveva salvato: cloud-sync.js ha unito le sue modifiche con le
  * nostre dentro "db". Si salva la copia locale e si ridisegna (non con una finestra aperta). */
 function onCloudMerged(info) {
+  // Le due copie possono avere ognuna la sua voce del round per lo stesso appuntamento.
+  mergeDuplicateRecoveryEntries(db.recoveryRound);
   Storage.save(db);
   if (!modalRoot.innerHTML.trim()) renderRoute();
   showToast(info && info.unsafe

@@ -282,6 +282,35 @@ function ensureDefaultOutcomesOnPipelines(pipelines) {
  * annidato con quello salvato, perdendo eventuali chiavi nuove aggiunte in un
  * aggiornamento successivo (es. un nuovo toggle) per chi ha già dati salvati.
  */
+/**
+ * Round Recupero: una sola voce ATTIVA per appuntamento (CORREZIONE 19/10). Con due
+ * dispositivi lo stesso appuntamento segnato No show su tutti e due creava due voci
+ * (id diversi: l'unione di cloud-sync le tiene entrambe) e il round lo contava due volte.
+ * Tiene la voce creata per prima, ci unisce tentativi, note e ultima chiamata delle altre,
+ * e chiude le altre ('removed', mergedInto = id tenuto). Restituisce true se ha cambiato qualcosa.
+ */
+function mergeDuplicateRecoveryEntries(list) {
+  if (!Array.isArray(list)) return false;
+  const byApt = {};
+  let changed = false;
+  list.forEach(r => {
+    if (!r || r.status !== 'active' || !r.sourceAppointmentId) return;
+    const keep = byApt[r.sourceAppointmentId];
+    if (!keep) { byApt[r.sourceAppointmentId] = r; return; }
+    const [k, d] = String(r.createdAt || '') < String(keep.createdAt || '') ? [r, keep] : [keep, r];
+    byApt[r.sourceAppointmentId] = k;
+    k.callCount = Math.max(k.callCount || 0, d.callCount || 0);
+    if (d.lastInteractionAt && (!k.lastInteractionAt || d.lastInteractionAt > k.lastInteractionAt)) k.lastInteractionAt = d.lastInteractionAt;
+    const ids = new Set((k.notes || []).map(n => n && n.id));
+    k.notes = (k.notes || []).concat((d.notes || []).filter(n => n && !ids.has(n.id)));
+    if (d.sourceReason) k.sourceReason = d.sourceReason;
+    d.status = 'removed';
+    d.mergedInto = k.id;
+    changed = true;
+  });
+  return changed;
+}
+
 function mergeWithDefaults(parsed) {
   const base = defaultData();
   const out = Object.assign({}, base, parsed);
@@ -301,6 +330,7 @@ function mergeWithDefaults(parsed) {
   out.leads = Array.isArray(parsed.leads) ? parsed.leads : [];
   out.callRecordings = Array.isArray(parsed.callRecordings) ? parsed.callRecordings : [];
   out.recoveryRound = Array.isArray(parsed.recoveryRound) ? parsed.recoveryRound : [];
+  mergeDuplicateRecoveryEntries(out.recoveryRound);
   out.recoveryRoundActive = !!parsed.recoveryRoundActive;
   out.recoveryRoundCurrentLeadId = parsed.recoveryRoundCurrentLeadId || null;
   out.callbacks = Array.isArray(parsed.callbacks) ? parsed.callbacks : [];
