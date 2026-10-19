@@ -2550,7 +2550,20 @@ function deactivateRecoveryEntryForAppointment(apt) {
  * stanno nelle Task della Dashboard come prossima azione del lead (Simone, 16/10: "un posto
  * solo"; prima in Oggi). Restano attive nei dati, così "Fatto" lì le aggiorna (LeadCRM.handlesRecovery). */
 function visibleRecoveryEntries() {
-  return (db.recoveryRound || []).filter(l => l.status === 'active' && !LeadCRM.handlesRecovery(l));
+  return (db.recoveryRound || []).filter(l => l.status === 'active' && !LeadCRM.handlesRecovery(l) && !isFutureNoShowEntry(l));
+}
+
+/** No show su un appuntamento non ancora passato (Simone, 19/10): è per forza un errore,
+ * quindi la voce non si vede nel round (né nei contatori) finché l'ora dell'appuntamento
+ * non è passata; dopo entra da sola. Vale solo per il No show: un Annullato si sa prima
+ * dell'appuntamento ed entra subito. */
+function isFutureNoShowEntry(entry) {
+  const a = db.appointments.find(x => x.id === entry.sourceAppointmentId);
+  if (!a || !a.scheduledAt) return false;
+  const st = a.role === 'venditore' ? a.dealStage : a.presentedStatus;
+  if (st !== 'no_show') return false;
+  const t = new Date(a.scheduledAt).getTime();
+  return Number.isFinite(t) && t > Date.now();
 }
 
 /** Vedi commento algoritmo sopra la sezione. */
