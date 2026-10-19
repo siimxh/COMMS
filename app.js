@@ -2867,6 +2867,7 @@ function logLeadFollowUpCall(lead, outcome) {
  * di nuovo alla prossima renderRecoveryRoundScreen, azzerando recoveryRoundCurrentLeadId).
  * - non_risposto / non_interessato / da_richiamare: sono vere chiamate effettuate ->
  *   incrementano callCount e aggiornano lastInteractionAt (usato per la rotazione).
+ *   non_interessato chiude anche la voce (Simone, 19/10).
  * - posticipato: l'utente ESPLICITAMENTE non chiama in questo momento -> callCount NON
  *   incrementa (non è una chiamata reale), ma lastInteractionAt sì, altrimenti il lead
  *   ricomparirebbe subito di nuovo (stesso callCount minimo, mai "toccato" prima) invece
@@ -2884,10 +2885,13 @@ function applyRecoveryOutcome(leadId, outcome) {
     logRecoveryCall(lead, outcome);
     lead.callCount = (lead.callCount || 0) + 1;
     lead.lastInteractionAt = now;
+    // "Non più interessato" (Simone, 19/10): la chiamata conta e il lead esce dal round.
+    if (outcome === 'non_interessato') { lead.status = 'removed'; lead.closedBy = 'non_interessato'; }
   } else if (outcome === 'posticipato') {
     lead.lastInteractionAt = now;
   } else if (outcome === 'rimosso') {
     lead.status = 'removed';
+    lead.closedBy = 'utente';
     lead.lastInteractionAt = now;
   }
   db.recoveryRoundCurrentLeadId = null;
