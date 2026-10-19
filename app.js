@@ -2559,6 +2559,32 @@ function deactivateRecoveryEntryForAppointment(apt) {
   });
 }
 
+/**
+ * Voci "fantasma" (Simone, 19/10): voci ATTIVE il cui appuntamento non esiste più (es.
+ * cancellato da ⋯ prima della correzione del 19/10). Si chiudono all'apertura del tool,
+ * senza cancellarle (status 'removed', closedBy 'fantasma'). Nel dubbio non si chiude:
+ * - nessun appuntamento caricato: non si tocca niente;
+ * - voce Venditore: resta se esiste ancora un lead con lo stesso nome.
+ * Restituisce true se ha chiuso qualcosa.
+ */
+function closeGhostRecoveryEntries() {
+  if (!Array.isArray(db.recoveryRound) || !Array.isArray(db.appointments) || !db.appointments.length) return false;
+  const ids = new Set(db.appointments.map(a => a.id));
+  const leadNames = new Set((db.leads || []).map(l => String(l.name || '').trim().toLowerCase()).filter(Boolean));
+  let changed = false;
+  db.recoveryRound.forEach(r => {
+    if (!r || r.status !== 'active' || !r.sourceAppointmentId || ids.has(r.sourceAppointmentId)) return;
+    if (r.sourceRole === 'venditore') {
+      const name = String(LeadCRM.parseApptName(r.clientName || '').name || '').trim().toLowerCase();
+      if (!name || leadNames.has(name)) return;
+    }
+    r.status = 'removed';
+    r.closedBy = 'fantasma';
+    changed = true;
+  });
+  return changed;
+}
+
 /** Voci del round da mostrare qui. I no show Venditore con un lead aperto NON ci sono:
  * stanno nelle Task della Dashboard come prossima azione del lead (Simone, 16/10: "un posto
  * solo"; prima in Oggi). Restano attive nei dati, così "Fatto" lì le aggiorna (LeadCRM.handlesRecovery). */
@@ -6977,6 +7003,7 @@ async function startForUser() {
     return;
   }
   document.getElementById('btnAccount').title = 'Account: ' + CloudSync.session.user.email;
+  if (closeGhostRecoveryEntries()) persist();
   applyTheme(db.settings);
   if (!appStarted) {
     appStarted = true;
