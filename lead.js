@@ -286,8 +286,14 @@ const LeadCRM = (function () {
     // resta nessun no show da recuperare, "🔁 Recupero no show" diventa "📞 Chiamata" con la
     // stessa data e ora (la nota automatica del recupero non vale più e si toglie).
     if (st !== 'no_show' && st !== 'annullato' && isOpen(l) && l.next && l.next.type === 'recupero' && !recoveryEntryFor(l)) {
-      l.next = Object.assign({}, l.next, { type: 'chiamata' });
-      if (/richiamare per fissare di nuovo$/i.test(l.next.note || '')) l.next.note = '';
+      // CORREZIONE (Simone, 19/10: "se lo tolgo deve tornare com'era"): No show rimesso su
+      // "— Da impostare —" = l'appuntamento è di nuovo da esitare (o ancora da fare), quindi
+      // il prossimo passo è lui, come prima del no show: niente "📞 Chiamata" in più per oggi.
+      if (!st && pendingAppt(l)) l.next = null;
+      else {
+        l.next = Object.assign({}, l.next, { type: 'chiamata' });
+        if (/richiamare per fissare di nuovo$/i.test(l.next.note || '')) l.next.note = '';
+      }
     }
     persist();
   }
