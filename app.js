@@ -2715,6 +2715,7 @@ function renderRecoveryRoundScreen() {
     btn.addEventListener('click', () => {
       const outcome = btn.dataset.recovOutcome;
       if (outcome === 'appuntamento_fissato') { openRecoveryAppointmentModal(lead.id); return; }
+      if (outcome === 'da_richiamare') { openRecoveryCallbackModal(lead.id); return; }
       if (outcome === 'rimosso') {
         showConfirm(`Rimuovere "${displayName}" dal round di recupero? Se in futuro fissi un nuovo appuntamento con gli stessi dati e fa di nuovo no-show, riapparirà come lead nuovo.`, () => {
           applyRecoveryOutcome(lead.id, 'rimosso');
@@ -2867,7 +2868,8 @@ function logLeadFollowUpCall(lead, outcome) {
  * di nuovo alla prossima renderRecoveryRoundScreen, azzerando recoveryRoundCurrentLeadId).
  * - non_risposto / non_interessato / da_richiamare: sono vere chiamate effettuate ->
  *   incrementano callCount e aggiornano lastInteractionAt (usato per la rotazione).
- *   non_interessato chiude anche la voce (Simone, 19/10).
+ *   non_interessato chiude anche la voce (Simone, 19/10); da_richiamare arriva da
+ *   openRecoveryCallbackModal, che crea il Da richiamare e chiude la voce.
  * - posticipato: l'utente ESPLICITAMENTE non chiama in questo momento -> callCount NON
  *   incrementa (non è una chiamata reale), ma lastInteractionAt sì, altrimenti il lead
  *   ricomparirebbe subito di nuovo (stesso callCount minimo, mai "toccato" prima) invece
@@ -2897,6 +2899,37 @@ function applyRecoveryOutcome(leadId, outcome) {
   db.recoveryRoundCurrentLeadId = null;
   persist();
   renderRecoveryRoundScreen();
+}
+
+/**
+ * "Da richiamare" dal round (Simone, 19/10): chiede giorno e ora con la stessa finestra
+ * degli esiti di sessione (openCallbackModal, nome e telefono già scritti, note del round
+ * copiate) e crea un vero Da richiamare. Solo al Salva: la chiamata conta (Non risposto
+ * escluso, è "Da richiamare"), la voce esce dal round (il lead ora è nei Da richiamare).
+ * Il richiamo usa il lead "di oggi" della voce: richiamato oggi = stesso lead.
+ * Annulla = non succede niente.
+ */
+function openRecoveryCallbackModal(leadId) {
+  const lead = (db.recoveryRound || []).find(l => l.id === leadId);
+  if (!lead) return;
+  const srcApt = db.appointments.find(a => a.id === lead.sourceAppointmentId);
+  openCallbackModal({
+    prefillName: (srcApt && srcApt.clientName) || lead.clientName || '',
+    prefillPhone: (srcApt && srcApt.phone) || lead.phone || '',
+    prefillNotes: lead.notes || [],
+    groupId: leadCallGroupIdToday(lead),
+    sourcePipelineId: null,
+    sourcePipelineName: RECOVERY_AUTO_PIPELINE_NAME,
+    afterSave: cb => {
+      if (!cb) return;
+      applyRecoveryOutcome(lead.id, 'da_richiamare');
+      lead.status = 'removed';
+      lead.closedBy = 'da_richiamare';
+      lead.callbackId = cb.id;
+      persist();
+      renderRecoveryRoundScreen();
+    }
+  });
 }
 
 /**
@@ -5827,8 +5860,8 @@ function openCallbackModal(opts) {
     <h3>${isReschedule ? 'Richiama più tardi' : 'Da richiamare'}</h3>
     <p class="text-dim" style="font-size:0.85rem;">Quando vuoi essere ricordato di richiamare questo lead?</p>
     ${!isReschedule ? `
-    <label class="field">Nome lead<input type="text" id="cbName" placeholder="Nome e cognome" autofocus></label>
-    <label class="field">Telefono (facoltativo)<input type="text" id="cbPhone" placeholder="Numero di telefono"></label>
+    <label class="field">Nome lead<input type="text" id="cbName" placeholder="Nome e cognome" value="${escapeHtml(opts.prefillName || '')}" autofocus></label>
+    <label class="field">Telefono (facoltativo)<input type="text" id="cbPhone" placeholder="Numero di telefono" value="${escapeHtml(opts.prefillPhone || '')}"></label>
     <button type="button" class="btn-ghost cb-notes-toggle" id="cbNotesToggle">📒 Note</button>
     <label class="field" id="cbNoteField" style="display:none;">Nota sul lead<textarea id="cbNote" rows="3" placeholder="Es. richiamare dopo le 18, vuole sapere i prezzi…"></textarea></label>
     ` : ''}
@@ -5874,6 +5907,7 @@ function openCallbackModal(opts) {
 
   document.getElementById('cbCancelBtn').addEventListener('click', () => {
     closeModal();
+    if (typeof opts.onCancel === 'function') opts.onCancel();
     if (isReschedule) {
       db.callbackCallActiveId = null;
       persist();
@@ -5884,6 +5918,7 @@ function openCallbackModal(opts) {
   document.getElementById('cbConfirmBtn').addEventListener('click', () => {
     const when = document.getElementById('cbWhen').value;
     if (!when) { showToast('Scegli quando richiamarlo.', true); return; }
+    let savedCallback = null;
 
     if (isReschedule) {
       const cb = (db.callbacks || []).find(c => c.id === opts.existingCallbackId);
@@ -5906,6 +5941,8 @@ function openCallbackModal(opts) {
       const phone = document.getElementById('cbPhone').value.trim();
       const noteText = document.getElementById('cbNote').value.trim();
       db.callbacks = db.callbacks || [];
+      // Note già scritte altrove (Round Recupero): passano nel richiamo, prima di quella nuova.
+      const oldNotes = (opts.prefillNotes || []).map(n => Object.assign({}, n));
       db.callbacks.push({
         id: uid('callback'),
         leadName: name,
@@ -5926,14 +5963,15 @@ function openCallbackModal(opts) {
         inCallGroupId: null,
         resolvedOutcomeLabel: null,
         resolvedAt: null,
-        notes: noteText ? [{ id: uid('nota'), text: noteText, createdAt: new Date().toISOString() }] : []
+        notes: oldNotes.concat(noteText ? [{ id: uid('nota'), text: noteText, createdAt: new Date().toISOString() }] : [])
       });
+      savedCallback = db.callbacks[db.callbacks.length - 1];
       persist();
       closeModal();
       showToast('Richiamo programmato.');
     }
 
-    if (typeof opts.afterSave === 'function') opts.afterSave();
+    if (typeof opts.afterSave === 'function') opts.afterSave(savedCallback);
   });
 }
 
