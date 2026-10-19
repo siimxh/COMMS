@@ -270,27 +270,77 @@ const LeadCRM = (function () {
     l.fuNoAnswer = 0;
   }
 
+  /* ---------- Prossima azione di prima (esito sbagliato e poi corretto) ----------
+   * Simone, 19/10: "se lo tolgo deve tornare com'era". Un esito che chiude il lead o ne cambia
+   * la prossima azione (Chiuso, Contratto firmato, Perso, Non in target, No show, Annullato)
+   * salva sul lead una copia di prima: l.prevNext = { next, fuNoAnswer, wasFollowUp, stato,
+   * apptId, at, after, afterFu } (after/afterFu = come li ha lasciati l'esito). Se quell'esito
+   * viene corretto e il lead torna aperto, la prossima azione di prima torna (anche se la sua
+   * data è passata: compare scaduta nelle Task), con il contatore dei follow-up. Se intanto la
+   * prossima azione è stata cambiata (a mano o con un "Fatto"), non si tocca niente. */
+  const STATO_A_MANO = { id: 'stato-a-mano' }; // copia fatta cambiando a mano lo stato del lead
+  const WRONG_STAGES = ['chiuso', 'contratto_firmato', 'perso', 'non_in_target', 'no_show', 'annullato'];
+  const nextKey = n => JSON.stringify(n || null);
+  const clone = o => (o ? JSON.parse(JSON.stringify(o)) : null);
+  /** true = il lead è ancora come l'ha lasciato l'esito salvato nella copia. */
+  const prevNextUntouched = (l, p) => nextKey(l.next) === nextKey(p.after) && (l.fuNoAnswer || 0) === (p.afterFu || 0);
+  /** Prima di un esito "che chiude": salva la copia. Se c'è già una copia per lo stesso
+   * appuntamento e nessuno ha toccato il lead (es. Chiuso → Perso), resta quella più vecchia. */
+  function savePrevNext(l, apt) {
+    const p = l.prevNext;
+    if (p && p.apptId === apt.id && prevNextUntouched(l, p)) return;
+    l.prevNext = { next: clone(l.next), fuNoAnswer: l.fuNoAnswer || 0, wasFollowUp: !!l.wasFollowUp, stato: l.stato, apptId: apt.id, at: new Date().toISOString() };
+  }
+  /** Dopo l'esito: ricorda come l'ha lasciato (per capire poi se è stato toccato). */
+  function markPrevNextAfter(l, apt) {
+    const p = l.prevNext; if (!p || p.apptId !== apt.id) return;
+    p.after = clone(l.next); p.afterFu = l.fuNoAnswer || 0;
+  }
+  /** Copia valida per correggere l'esito di questo appuntamento, o null. */
+  function prevNextFor(l, apt) {
+    const p = l.prevNext;
+    return p && p.apptId === apt.id && prevNextUntouched(l, p) ? p : null;
+  }
+  /** Rimette prossima azione e contatori di prima. Se prima non c'era una prossima azione,
+   * resta la regola di oggi (solo i contatori tornano). keepCounters = lascia i contatori. */
+  function restorePrevNext(l, p, keepCounters) {
+    if (!keepCounters) { l.fuNoAnswer = p.fuNoAnswer || 0; l.wasFollowUp = !!p.wasFollowUp; }
+    if (p.next) {
+      l.next = clone(p.next);
+      addHistory(l, { k: 'stato', t: 'Ripristinata la prossima azione di prima', s: actLabel(l.next) + (l.next.date ? ' · ' + fmtShort(l.next.date) : '') });
+    }
+  }
+
   /** Da chiamare quando cambia lo stato di un appuntamento (scheda lead → Appuntamenti):
    * il lead segue (chiuso -> Cliente, perso -> Perso, no show -> Recupero...). */
   function onDealStageChanged(apt, prevStage) {
     if (!apt || apt.role !== 'venditore') return;
+    const st = apt.dealStage;
+    const isWrong = WRONG_STAGES.includes(st);
+    // Esito "che chiude": copia di prima. Prima di ensureLeads, che a un lead senza prossima
+    // azione con un no show nel round mette subito "🔁 Recupero" (non è l'azione di prima).
+    const l0 = apt.leadId && leadById(apt.leadId);
+    if (isWrong && l0) savePrevNext(l0, apt);
     ensureLeads();
     const l = leadById(apt.leadId); if (!l) return;
-    const st = apt.dealStage;
+    // Esito corretto: la copia, se il lead non è stato toccato.
+    const prevCopy = isWrong ? null : prevNextFor(l, apt);
     // CORREZIONE (Simone, 19/10: "se lo tolgo deve tornare com'era"): Chiuso / Contratto
     // firmato o Perso / Non in target messo per errore e poi cambiato dalla tendina. Prima il
     // lead restava Cliente (o Perso). Torna aperto se:
     // - era Cliente per questo appuntamento e non resta nessun appuntamento chiuso;
     // - era Perso per questo appuntamento (l'ultimo con un esito).
-    // In trattativa se ha appuntamenti svolti, se no Nuovo. La prossima azione di prima non si
-    // conosce: se manca compare in rosso nelle Task (o è l'appuntamento da esitare).
+    // In trattativa se ha appuntamenti svolti, se no Nuovo; Follow-up se lo era prima
+    // dell'esito sbagliato (copia l.prevNext). La prossima azione di prima torna più sotto.
     const LOST = ['perso', 'non_in_target'];
     const wasClosedStage = prevStage === 'chiuso' || prevStage === 'contratto_firmato';
     const undoClient = l.stato === 'Cliente' && wasClosedStage && !isClosedAppt(apt) && !apptsOf(l).some(isClosedAppt);
     const undoLost = l.stato === 'Perso' && LOST.includes(prevStage) && !LOST.includes(st) && !isClosedAppt(apt)
       && !apptsOf(l).some(x => x.id !== apt.id && x.dealStage && x.dealStage !== 'spostato' && String(x.scheduledAt) > String(apt.scheduledAt));
     if (undoClient || undoLost) {
-      const to = LOST.includes(st) ? 'Perso' : (svoltiCount(l) ? 'Trattativa' : 'Nuovo');
+      const to = LOST.includes(st) ? 'Perso'
+        : (prevCopy && prevCopy.stato === 'Follow-up') ? 'Follow-up'
+        : (svoltiCount(l) ? 'Trattativa' : 'Nuovo');
       if (to !== l.stato) addHistory(l, { k: 'stato', t: 'Stato: ' + STATO_LABEL[to], s: 'corretto l\'esito dell\'appuntamento' });
       l.stato = to;
     }
@@ -299,6 +349,13 @@ const LeadCRM = (function () {
     else if (st === 'trattativa') { if (l.stato === 'Nuovo') l.stato = 'Trattativa'; }
     else if (st === 'no_show' || st === 'annullato') startRecovery(l);
     if (!isOpen(l) && st !== 'no_show' && st !== 'annullato') closeRecovery(l);
+    if (isWrong) markPrevNextAfter(l, apt);
+    else if (l.prevNext && l.prevNext.apptId === apt.id) {
+      // Esito corretto: se il lead è di nuovo aperto torna la prossima azione di prima. La copia
+      // si usa una volta sola (anche quando non serve: il lead è stato toccato o resta chiuso).
+      if (prevCopy && isOpen(l)) restorePrevNext(l, prevCopy);
+      delete l.prevNext;
+    }
     // No show corretto (es. in "Presentato · trattativa") dalla tendina (Simone, 19/10): se non
     // resta nessun no show da recuperare, "🔁 Recupero no show" diventa "📞 Chiamata" con la
     // stessa data e ora (la nota automatica del recupero non vale più e si toglie).
@@ -497,6 +554,11 @@ const LeadCRM = (function () {
         box.querySelectorAll('#eEsito button').forEach(x => x.classList.toggle('sel', x === b)); drawStep2();
       }));
       saveBtn.addEventListener('click', () => {
+        // Esito che chiude il lead o ne cambia la prossima azione: copia di prima, per poterlo
+        // correggere dalla tendina e ritrovare la prossima azione (onDealStageChanged).
+        const closing = (st.esito === 'presentato' && (st.chiuso === 'chiuso' || st.chiuso === 'contratto_firmato' || (st.chiuso === 'no' && st.stato === 'Perso')))
+          || ['no_show', 'annullato', 'non_in_target'].includes(st.esito);
+        if (closing) savePrevNext(l, a);
         if (st.esito === 'presentato' && (st.chiuso === 'chiuso' || st.chiuso === 'contratto_firmato')) {
           const centroIn = box.querySelector('#eCentro');
           const centro = centroIn ? centroIn.value.trim() : '';
@@ -505,6 +567,7 @@ const LeadCRM = (function () {
           applyDealStage(a, st.chiuso);
           if (l.stato !== 'Cliente') addHistory(l, { k: 'stato', t: 'Stato: Cliente', s: l.wasFollowUp ? 'Chiuso in follow-up' : '' });
           l.stato = 'Cliente'; l.next = null; closeRecovery(l);
+          markPrevNextAfter(l, a);
           persist(); closeModal(); ui.leadTab = 'pagamenti';
           location.hash = '#/lead/' + l.id; renderRoute();
           showToast('Cliente! Segna incassato e rate qui.');
@@ -535,6 +598,7 @@ const LeadCRM = (function () {
           l.stato = 'Perso'; l.next = null;
         }
         if (!isOpen(l) && st.esito !== 'no_show' && st.esito !== 'annullato') closeRecovery(l);
+        if (closing) markPrevNextAfter(l, a);
         persist(); rerender(); showToast('Esito salvato.');
       });
     });
@@ -1044,9 +1108,24 @@ const LeadCRM = (function () {
     });
     document.getElementById('leadStato').addEventListener('change', e => {
       const v = e.target.value;
+      // Prossima azione di prima anche qui (Simone, 19/10): aperto → Cliente / Perso / Freddo
+      // a mano salva la copia; rimesso aperto, la prossima azione torna (se nessuno l'ha toccata).
+      const wasOpen = isOpen(l);
+      const copy = !wasOpen && APERTI.includes(v) ? prevNextFor(l, STATO_A_MANO) : null;
+      if (wasOpen && !APERTI.includes(v)) savePrevNext(l, STATO_A_MANO);
       addHistory(l, { k: 'stato', t: 'Stato: ' + STATO_LABEL[v], s: 'cambiato a mano' });
       if (v === 'Follow-up' && l.stato !== 'Follow-up') { l.wasFollowUp = true; l.fuNoAnswer = 0; }
       l.stato = v; if (!APERTI.includes(v)) { l.next = null; closeRecovery(l); }
+      if (wasOpen && !APERTI.includes(v)) markPrevNextAfter(l, STATO_A_MANO);
+      else if (APERTI.includes(v) && l.prevNext && l.prevNext.apptId === STATO_A_MANO.id) {
+        if (copy) {
+          // Contatori di prima solo se torna lo stesso stato (Follow-up scelto ora riparte da 0).
+          restorePrevNext(l, copy, v !== copy.stato);
+          // Il round è stato chiuso con il cambio a mano: il recupero torna una Chiamata.
+          if (l.next && l.next.type === 'recupero' && !recoveryEntryFor(l)) l.next = Object.assign({}, l.next, { type: 'chiamata' });
+        }
+        delete l.prevNext;
+      }
       persist(); renderLead(id);
       if (missingNext(l)) openSetNext(l.id);
     });
