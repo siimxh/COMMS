@@ -166,6 +166,11 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 **Round Recupero Appuntamenti**
 - Unico round fisso per no show e annullati, sia Setter sia Venditore: `addToRecoveryRound`, `renderRecoveryRoundScreen`, `applyRecoveryOutcome`.
 - Le chiamate del round contano nell'attività del giorno: vanno nella sessione aperta se c'è, altrimenti nella sessione automatica del giorno "Recupero" (`logRecoveryCall`, `appendRecoveryCallToSession`). "Posticipato" e "Rimuovi" non sono chiamate.
+- Esiti del round (Simone, 19/10): Non risposto resta nel round; "Non più interessato" è una chiamata e chiude la voce; "Da richiamare" chiede giorno e ora e crea un vero Da richiamare con le note del round (`openRecoveryCallbackModal`), poi chiude la voce (Annulla = niente); "Appuntamento fissato" crea l'appuntamento Setter "Recuperato" e chiude la voce; Posticipato resta; Rimuovi chiude.
+- Entrata e uscita: No show e Annullato entrano (`addToRecoveryRound`, una voce attiva per appuntamento; il motivo segue l'ultimo esito). Qualsiasi altro stato, Spostato o appuntamento cancellato chiudono la voce (`deactivateRecoveryEntryForAppointment`, `closedBy: 'stato'`). Rimesso No show dopo una correzione: si riprende la voce chiusa da `'stato'` con tentativi e note. Voci chiuse dall'utente (`closedBy` `utente`, `non_interessato`, `da_richiamare`) non tornano.
+- No show su un appuntamento futuro: la voce c'è ma non si vede (round e contatori) finché l'ora non è passata (`isFutureNoShowEntry`). L'Annullato futuro entra subito.
+- Voci "fantasma" (appuntamento che non esiste più; per il Venditore anche senza un lead con quel nome): chiuse all'apertura, `closeGhostRecoveryEntries` (`closedBy: 'fantasma'`).
+- Contatori ("N da recuperare" nelle Task, numero sul tasto del round) = `visibleRecoveryEntries`. Con la parte Venditore spenta i no show Venditore compaiono nel round (Simone, 19/10: per sicurezza). Un lead Cliente che salta un appuntamento resta nel round.
 - Sessioni automatiche: funzione comune `appendCallToAutoSession(pipelineId, nome, call)`.
 - Follow-up Venditore: "Fatto" su una prossima azione 📞 Chiamata scrive una chiamata `isLeadFollowUpCall` (`logLeadFollowUpCall`, sessione aperta o "Follow-up Venditore", `LEAD_FU_AUTO_PIPELINE_ID`). Stesso lead lo stesso giorno = 1 lead (`leadCallGroupIdToday`, anche tra recupero e follow-up). WhatsApp, audio, contratto, contenuto e "Com'è finita?" non sono chiamate.
 - No show Venditore: **un posto solo**. Se il lead è aperto, il no show NON compare nel round (`visibleRecoveryEntries`, `LeadCRM.handlesRecovery`) ma nelle Task della Dashboard, come prossima azione "🔁 Recupero no show". "Fatto" su quella azione è una chiamata di recupero (conta nell'attività del giorno) e, se non risponde, vale come un follow-up senza risposta: dopo 6 il lead diventa Freddo. La voce del round resta nei dati e si chiude quando il lead risponde o esce dal giro.
@@ -274,6 +279,7 @@ Prima di cambiarne una, chiedi a Simone.
 
 **Lead (parte Venditore)**
 - No show / annullato: la prossima azione diventa sempre "🔁 Recupero no show". Un tentativo senza risposta conta come un follow-up senza risposta (6 → Freddo).
+- No show corretto dalla tendina in un altro esito: "🔁 Recupero no show" diventa "📞 Chiamata" con la stessa data e ora (Simone, 19/10; `onDealStageChanged`).
 - Numero dell'appuntamento (1°, 2°…): solo appuntamenti svolti (presentati, anche non in target). Spostati senza numero.
 - Follow-up = "no chiaro per adesso". Dopo 6 follow-up senza risposta il lead diventa Freddo.
 - Nessun lead aperto senza prossima azione (se manca compare in rosso nelle Task della Dashboard).
