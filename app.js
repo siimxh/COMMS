@@ -4139,6 +4139,9 @@ function openApptChecklistModal(apptId, onDone) {
   document.getElementById('apptMoreDel').addEventListener('click', () => {
     showConfirm(`Eliminare l'appuntamento di "${apt.clientName || '(senza nome)'}"?`, () => {
       unlinkRescheduleOnDelete(apt);
+      // CORREZIONE (19/10): come per il Venditore (scheda lead), un appuntamento cancellato
+      // esce dal Round Recupero; prima la voce restava attiva senza appuntamento.
+      deactivateRecoveryEntryForAppointment(apt);
       db.appointments = db.appointments.filter(x => x.id !== apt.id);
       persist();
       if (onDone) onDone();
