@@ -241,7 +241,8 @@ function countSessionLeads(s, allSessions) {
  * sessione (outcomeId null, o di un'altra pipeline) si conta sotto l'esito "senza risposta"
  * della pipeline della sessione. Vale anche per le sessioni già salvate: i dati non cambiano,
  * cambia solo il raggruppamento. Le sessioni automatiche (Conferme, Recupero, Richiami,
- * Follow-up Venditore) non hanno una pipeline vera: lì l'etichetta resta quella della chiamata.
+ * Follow-up Venditore) non hanno una pipeline vera: lì si usa l'etichetta più usata tra le
+ * pipeline (statsRoundCallLabels), come in Stats e nel report (Simone, 19/10).
  * I conti (chiamate, lead, senza risposta) non cambiano: si sposta solo l'etichetta.
  */
 function sessionPipelineOf(s, pipelines) {
@@ -311,14 +312,25 @@ function statsRoundCallLabels(sessions, pipelines) {
   });
   return out;
 }
+/** Etichetta di una chiamata in una sessione senza pipeline (automatica), con le etichette
+ *  di statsRoundCallLabels. Le chiamate con un esito di una pipeline tengono il loro. */
+function autoSessionCallLabel(c, roundLabels) {
+  const kind = roundCallKind(c);
+  if (kind && !(c.outcomeId && roundLabels.allIds.has(c.outcomeId)) && roundLabels[kind]) return roundLabels[kind];
+  return c.outcomeLabel;
+}
 
 /**
  * Esiti di UNA sessione contati per LEAD (ultimo esito di ogni lead), non per chiamata —
  * stessa regola di computeStats: un lead chiamato 3 volte senza risposta è "1 Non risp",
  * non 3 (bug 13/10). Le chiamate vecchie senza groupId usano il raggruppamento posizionale.
  */
-function sessionOutcomeCountsByLead(s, pipelines) {
+function sessionOutcomeCountsByLead(s, pipelines, allSessions) {
   const pipeline = sessionPipelineOf(s, pipelines);
+  // Sessione automatica (senza pipeline): "Non risposto" / "Appuntamento fissato" dei round
+  // sotto la stessa etichetta di Stats e report (Simone, 19/10). Etichetta più usata su tutte
+  // le sessioni. Solo l'etichetta: i conti e i dati non cambiano.
+  const roundLabels = pipeline ? null : statsRoundCallLabels(allSessions || (typeof db !== 'undefined' && db && db.sessions) || [s], pipelines);
   const groups = [];
   const byId = {};
   let current = null;
@@ -336,7 +348,7 @@ function sessionOutcomeCountsByLead(s, pipelines) {
   const counts = {};
   groups.forEach(g => {
     const last = g[g.length - 1];
-    const label = callOutcomeLabelIn(last, pipeline);
+    const label = pipeline ? callOutcomeLabelIn(last, pipeline) : autoSessionCallLabel(last, roundLabels);
     counts[label] = (counts[label] || 0) + 1;
   });
   return counts;
@@ -362,11 +374,7 @@ function computeStats(sessions, pipelines) {
       // Etichetta per gli esiti (fix A): i "Non risposto" / "Appuntamento fissato" dei round
       // vanno sotto l'esito della pipeline della sessione; nelle sessioni senza pipeline
       // (automatiche) sotto quello più usato (punto C). Copia: i dati non si toccano.
-      let label = callOutcomeLabelIn(c, pipeline);
-      if (!pipeline) {
-        const kind = roundCallKind(c);
-        if (kind && !(c.outcomeId && roundLabels.allIds.has(c.outcomeId)) && roundLabels[kind]) label = roundLabels[kind];
-      }
+      const label = pipeline ? callOutcomeLabelIn(c, pipeline) : autoSessionCallLabel(c, roundLabels);
       if (label !== c.outcomeLabel) c = Object.assign({}, c, { outcomeLabel: label });
       if (c.groupId) {
         if (Object.prototype.hasOwnProperty.call(groupIndexByGroupId, c.groupId)) {
