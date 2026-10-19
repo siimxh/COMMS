@@ -2519,6 +2519,19 @@ function addToRecoveryRound(apt, role, reason) {
     if (reason) existingActive.sourceReason = reason;
     return;
   }
+  // No show → Presentato (correzione) → di nuovo No show (Simone, 19/10): si riprende la
+  // voce di prima, con tentativi e note, invece di crearne una nuova da zero. Solo le voci
+  // chiuse da un cambio di stato (closedBy 'stato', vedi deactivateRecoveryEntryForAppointment):
+  // quelle tolte a mano, non interessate o passate ai Da richiamare restano chiuse.
+  const closed = db.recoveryRound.filter(l => l.sourceAppointmentId === apt.id && l.status === 'removed' && l.closedBy === 'stato');
+  if (closed.length) {
+    const back = closed[closed.length - 1];
+    back.status = 'active';
+    delete back.closedBy;
+    back.sourceRole = role;
+    if (reason) back.sourceReason = reason;
+    return;
+  }
   db.recoveryRound.push({
     id: uid('recov'),
     sourceAppointmentId: apt.id,
@@ -2542,7 +2555,7 @@ function addToRecoveryRound(apt, role, reason) {
  */
 function deactivateRecoveryEntryForAppointment(apt) {
   (db.recoveryRound || []).forEach(l => {
-    if (l.sourceAppointmentId === apt.id && l.status === 'active') l.status = 'removed';
+    if (l.sourceAppointmentId === apt.id && l.status === 'active') { l.status = 'removed'; l.closedBy = 'stato'; }
   });
 }
 
