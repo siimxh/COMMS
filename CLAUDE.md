@@ -280,6 +280,7 @@ Prima di cambiarne una, chiedi a Simone.
 **Lead (parte Venditore)**
 - No show / annullato: la prossima azione diventa sempre "🔁 Recupero no show". Un tentativo senza risposta conta come un follow-up senza risposta (6 → Freddo).
 - No show corretto dalla tendina in un altro esito: "🔁 Recupero no show" diventa "📞 Chiamata" con la stessa data e ora (Simone, 19/10; `onDealStageChanged`). Rimesso su "— Da impostare —": la prossima azione si toglie (il prossimo passo torna l'appuntamento, come prima del no show).
+- Chiuso / Contratto firmato o Perso / Non in target messo per errore e cambiato dalla tendina della scheda: il lead torna aperto (In trattativa se ha appuntamenti svolti, se no Nuovo), se non resta un altro appuntamento chiuso (Cliente) o se era l'ultimo appuntamento con un esito (Perso). La prossima azione di prima non si recupera: se manca è in rosso nelle Task (`onDealStageChanged(apt, prevStage)`).
 - Numero dell'appuntamento (1°, 2°…): solo appuntamenti svolti (presentati, anche non in target). Spostati senza numero.
 - Follow-up = "no chiaro per adesso". Dopo 6 follow-up senza risposta il lead diventa Freddo.
 - Nessun lead aperto senza prossima azione (se manca compare in rosso nelle Task della Dashboard).

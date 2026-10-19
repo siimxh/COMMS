@@ -272,11 +272,28 @@ const LeadCRM = (function () {
 
   /** Da chiamare quando cambia lo stato di un appuntamento (scheda lead → Appuntamenti):
    * il lead segue (chiuso -> Cliente, perso -> Perso, no show -> Recupero...). */
-  function onDealStageChanged(apt) {
+  function onDealStageChanged(apt, prevStage) {
     if (!apt || apt.role !== 'venditore') return;
     ensureLeads();
     const l = leadById(apt.leadId); if (!l) return;
     const st = apt.dealStage;
+    // CORREZIONE (Simone, 19/10: "se lo tolgo deve tornare com'era"): Chiuso / Contratto
+    // firmato o Perso / Non in target messo per errore e poi cambiato dalla tendina. Prima il
+    // lead restava Cliente (o Perso). Torna aperto se:
+    // - era Cliente per questo appuntamento e non resta nessun appuntamento chiuso;
+    // - era Perso per questo appuntamento (l'ultimo con un esito).
+    // In trattativa se ha appuntamenti svolti, se no Nuovo. La prossima azione di prima non si
+    // conosce: se manca compare in rosso nelle Task (o è l'appuntamento da esitare).
+    const LOST = ['perso', 'non_in_target'];
+    const wasClosedStage = prevStage === 'chiuso' || prevStage === 'contratto_firmato';
+    const undoClient = l.stato === 'Cliente' && wasClosedStage && !isClosedAppt(apt) && !apptsOf(l).some(isClosedAppt);
+    const undoLost = l.stato === 'Perso' && LOST.includes(prevStage) && !LOST.includes(st) && !isClosedAppt(apt)
+      && !apptsOf(l).some(x => x.id !== apt.id && x.dealStage && x.dealStage !== 'spostato' && String(x.scheduledAt) > String(apt.scheduledAt));
+    if (undoClient || undoLost) {
+      const to = LOST.includes(st) ? 'Perso' : (svoltiCount(l) ? 'Trattativa' : 'Nuovo');
+      if (to !== l.stato) addHistory(l, { k: 'stato', t: 'Stato: ' + STATO_LABEL[to], s: 'corretto l\'esito dell\'appuntamento' });
+      l.stato = to;
+    }
     if (st === 'chiuso' || st === 'contratto_firmato') { if (l.stato !== 'Cliente') addHistory(l, { k: 'stato', t: 'Stato: Cliente', s: 'dallo stato dell\'appuntamento' }); l.stato = 'Cliente'; l.next = null; }
     else if (st === 'perso' || st === 'non_in_target') { if (isOpen(l)) { addHistory(l, { k: 'stato', t: 'Stato: Perso', s: 'dallo stato dell\'appuntamento' }); l.stato = 'Perso'; l.next = null; } }
     else if (st === 'trattativa') { if (l.stato === 'Nuovo') l.stato = 'Trattativa'; }
@@ -1095,6 +1112,7 @@ const LeadCRM = (function () {
         return;
       }
       const def = dealStageDef(v);
+      const prev = a.dealStage || null; // per correggere un esito sbagliato (onDealStageChanged)
       if (def && def.isClosed && !a.closed) {
         openClosingDataModal(a, {
           defaultCentro: l.centro || '',
@@ -1102,14 +1120,14 @@ const LeadCRM = (function () {
           onSave: centro => {
             if (centro && !l.centro) l.centro = centro;
             applyDealStage(a, v);
-            onDealStageChanged(a);
+            onDealStageChanged(a, prev);
             again();
           }
         });
         return;
       }
       applyDealStage(a, v || null);
-      onDealStageChanged(a);
+      onDealStageChanged(a, prev);
       again();
     }));
     appRoot.querySelectorAll('[data-appt-pay]').forEach(b => b.addEventListener('click', () => {
