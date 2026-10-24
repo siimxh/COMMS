@@ -308,6 +308,11 @@ function renderRoute() {
     renderRecoveryRoundScreen();
     return;
   }
+  // Round Follow-up della parte Venditore (lead.js, Simone 24/10).
+  if (db.followUpRoundActive) {
+    if (LeadCRM.isOn()) { LeadCRM.renderFollowUpRound(); return; }
+    db.followUpRoundActive = false;
+  }
   document.body.classList.remove('in-session');
   clearInterval(sessionTimerInterval);
 
@@ -653,14 +658,17 @@ function collectDashboardTasks() {
     subHtml: 'Da richiamare',
     actionsHtml: `<button class="btn-ghost btn-sm" data-task-call="${c.id}">Chiama</button>`
   }));
-  // 2b — Round Recupero: una riga sola, con i conteggi che il round mostra davvero.
-  const toRecover = visibleRecoveryEntries().length;
-  if (toRecover > 0) items.push({
-    prio: 2, id: 'recovery', role: 'setter', icon: 'refresh', noLate: true,
-    due: todayKey + 'T00:00', hasTime: false,
-    titleHtml: `${toRecover} da recuperare`,
-    subHtml: 'Round Recupero', whenHtml: 'oggi',
-    actionsHtml: '<button class="btn-ghost btn-sm" data-task-recovery="1">Inizia</button>'
+  // 2b — Round Recupero: una riga per ruolo (Simone, 24/10), con i conteggi che il round
+  // mostra davvero. Ognuna apre il round solo con le sue persone.
+  ['setter', 'venditore'].forEach(role => {
+    const n = visibleRecoveryEntries().filter(e => recoveryEntryRole(e) === role).length;
+    if (n > 0) items.push({
+      prio: 2, id: 'recovery-' + role, role, icon: 'refresh', noLate: true,
+      due: todayKey + 'T00:00', hasTime: false,
+      titleHtml: `${n} da recuperare`,
+      subHtml: 'Round Recupero', whenHtml: 'oggi',
+      actionsHtml: `<button class="btn-ghost btn-sm" data-task-recovery="${role}">Inizia</button>`
+    });
   });
   // 2c — Lead Venditore (vuoto se la parte Venditore è spenta).
   LeadCRM.dashboardTaskItems().forEach(it => items.push(Object.assign({ prio: 2, role: 'venditore' }, it)));
@@ -748,6 +756,7 @@ function wireDashboardTasks() {
   root.querySelectorAll('[data-task-call]').forEach(b => b.addEventListener('click', () => startCallbackCall(b.dataset.taskCall)));
   root.querySelectorAll('[data-task-recovery]').forEach(b => b.addEventListener('click', () => {
     db.recoveryRoundActive = true;
+    db.recoveryRoundRole = b.dataset.taskRecovery;
     db.recoveryRoundCurrentLeadId = null;
     persist();
     renderRoute();
@@ -2621,9 +2630,21 @@ function isFutureNoShowEntry(entry) {
   return Number.isFinite(t) && t > Date.now();
 }
 
+/** Ruolo di una voce del round: i no show Venditore sono "venditore" solo con la parte
+ * Venditore accesa (spenta, stanno con il Setting: Simone 19/10). */
+function recoveryEntryRole(entry) {
+  return entry.sourceRole === 'venditore' && LeadCRM.isOn() ? 'venditore' : 'setter';
+}
+/** Voci del round aperto: solo quelle del ruolo da cui si è entrati (Simone, 24/10: Setting e
+ * Venditore separati; db.recoveryRoundRole, null = tutte). */
+function roundRecoveryEntries() {
+  const role = db.recoveryRoundRole;
+  return visibleRecoveryEntries().filter(e => !role || recoveryEntryRole(e) === role);
+}
+
 /** Vedi commento algoritmo sopra la sezione. */
 function pickNextRecoveryLead() {
-  const active = visibleRecoveryEntries();
+  const active = roundRecoveryEntries();
   if (!active.length) return null;
   const neverShown = active.filter(l => !l.lastInteractionAt);
   if (neverShown.length) return neverShown[Math.floor(Math.random() * neverShown.length)];
@@ -2637,12 +2658,12 @@ function pickNextRecoveryLead() {
  * Setting > Sessioni, su richiesta esplicita dell'utente per renderla più visibile.
  */
 function renderRecoveryRoundEntryCard() {
-  const waiting = visibleRecoveryEntries().length;
+  const waiting = visibleRecoveryEntries().filter(e => recoveryEntryRole(e) === 'setter').length;
   return `
     <section class="card recov-entry-card">
       <div class="recov-entry-info">
         <h3>🔁 Round Recupero Appuntamenti</h3>
-        <p class="text-dim" style="font-size:0.84rem;">Richiama i lead che hanno fatto no-show o hanno annullato, un lead a caso alla volta, finché tutti non sono stati sentiti almeno una volta.${LeadCRM.isOn() ? ' Qui ci sono anche i no show del Venditore.' : ''}</p>
+        <p class="text-dim" style="font-size:0.84rem;">Richiama i lead che hanno fatto no-show o hanno annullato, un lead a caso alla volta, finché tutti non sono stati sentiti almeno una volta.${LeadCRM.isOn() ? ' I no show del Venditore hanno il loro round: dalla Dashboard, blocco Venditore.' : ''}</p>
       </div>
       <div class="recov-entry-action">
         <div class="recov-entry-count">${waiting}</div>
@@ -2657,6 +2678,7 @@ function wireRecoveryRoundEntryCard() {
   if (!btn) return;
   btn.addEventListener('click', () => {
     db.recoveryRoundActive = true;
+    db.recoveryRoundRole = 'setter';
     db.recoveryRoundCurrentLeadId = null;
     persist();
     renderRoute();
@@ -2674,7 +2696,7 @@ function renderRecoveryRoundScreen() {
   db.recoveryRound = db.recoveryRound || [];
 
   let lead = db.recoveryRoundCurrentLeadId
-    ? visibleRecoveryEntries().find(l => l.id === db.recoveryRoundCurrentLeadId)
+    ? roundRecoveryEntries().find(l => l.id === db.recoveryRoundCurrentLeadId)
     : null;
   if (!lead) {
     lead = pickNextRecoveryLead();
@@ -2687,7 +2709,7 @@ function renderRecoveryRoundScreen() {
       <div class="session-screen">
         <div class="session-topbar">
           <button id="btnExitRecoveryRound" class="btn-danger-ghost">■ Esci dal round</button>
-          <div class="session-pipeline-name">🔁 Round Recupero Appuntamenti</div>
+          <div class="session-pipeline-name">🔁 Round Recupero${db.recoveryRoundRole === 'venditore' ? ' · Venditore' : db.recoveryRoundRole === 'setter' && LeadCRM.isOn() ? ' · Setting' : ' Appuntamenti'}</div>
           <div></div>
         </div>
         <div class="card" style="text-align:center; padding:60px 20px;">
@@ -2719,7 +2741,7 @@ function renderRecoveryRoundScreen() {
     <div class="session-screen">
       <div class="session-topbar">
         <button id="btnExitRecoveryRound" class="btn-danger-ghost">■ Esci dal round</button>
-        <div class="session-pipeline-name">🔁 Round Recupero Appuntamenti</div>
+        <div class="session-pipeline-name">🔁 Round Recupero${db.recoveryRoundRole === 'venditore' ? ' · Venditore' : db.recoveryRoundRole === 'setter' && LeadCRM.isOn() ? ' · Setting' : ' Appuntamenti'}</div>
         <div></div>
       </div>
       <div class="session-body">
@@ -2796,11 +2818,13 @@ function renderRecoveryRoundScreen() {
 }
 
 function exitRecoveryRound() {
+  const fromVenditore = db.recoveryRoundRole === 'venditore';
   db.recoveryRoundActive = false;
   db.recoveryRoundCurrentLeadId = null;
+  db.recoveryRoundRole = null;
   persist();
   document.body.classList.remove('in-session');
-  location.hash = '#/sessioni';
+  location.hash = fromVenditore ? '#/dashboard' : '#/sessioni';
   renderRoute();
 }
 
@@ -2985,6 +3009,15 @@ function applyRecoveryOutcome(leadId, outcome) {
 function openRecoveryCallbackModal(leadId) {
   const lead = (db.recoveryRound || []).find(l => l.id === leadId);
   if (!lead) return;
+  // Lead Venditore aperto (Simone, 24/10: una riga sola): una 📞 Chiamata nel Round
+  // Follow-up per il giorno scelto, niente Da richiamare Setter.
+  if (LeadCRM.recoveryCallLater(lead, () => {
+    applyRecoveryOutcome(lead.id, 'da_richiamare');
+    lead.status = 'removed';
+    lead.closedBy = 'da_richiamare';
+    persist();
+    renderRecoveryRoundScreen();
+  })) return;
   const srcApt = db.appointments.find(a => a.id === lead.sourceAppointmentId);
   openCallbackModal({
     prefillName: (srcApt && srcApt.clientName) || lead.clientName || '',
@@ -2996,7 +3029,6 @@ function openRecoveryCallbackModal(leadId) {
     afterSave: cb => {
       if (!cb) return;
       applyRecoveryOutcome(lead.id, 'da_richiamare');
-      LeadCRM.onRecoveryOutcome(lead, 'da_richiamare', { cb });
       lead.status = 'removed';
       lead.closedBy = 'da_richiamare';
       lead.callbackId = cb.id;

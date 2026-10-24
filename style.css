@@ -2669,3 +2669,7 @@ body { overflow-wrap: break-word; }
 .ap-stage[data-stage="spostato"] { color: var(--stage-spostato); background: var(--stage-spostato-bg); }
 .ap-stage[data-stage="non_in_target"] { color: var(--stage-non_in_target); background: var(--stage-non_in_target-bg); }
 .ld-menu-actions { justify-content: space-between; flex-wrap: wrap; }
+
+/* Blocco di una finestra che si mostra/nasconde con [hidden] (niente display inline). */
+.ld-block { display: block; }
+.ld-block[hidden] { display: none; }
