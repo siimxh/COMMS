@@ -470,32 +470,30 @@ const LeadCRM = (function () {
     if (!isOn()) return [];
     if (ensureLeads()) persist();
     const t = TODAY(), out = [];
-    const who = l => `<button class="who" data-lead="${l.id}">${leadName(l)}</button>${centroTxt(l) ? ` <span class="task-dim">· ${centroTxt(l)}</span>` : ''}`;
+    // Righe semplici (Simone, 24/10: T4): nome, cosa fare, quando, un tasto. Sposta e il
+    // resto stanno nella scheda del lead (clic sul nome).
+    const who = l => `<button class="who" data-lead="${l.id}">${leadName(l)}</button>`;
     daEsitare().forEach(a => {
       const l = leadById(a.leadId);
       out.push({
         id: 'esita-' + a.id, due: String(a.scheduledAt).slice(0, 16), hasTime: true, late: true, icon: 'clock',
-        titleHtml: who(l), subHtml: `${nOrd(apptNumber(a))} appuntamento · nessun esito`,
-        whenHtml: 'da esitare',
+        titleHtml: who(l), subHtml: `${nOrd(apptNumber(a))} appuntamento da esitare`,
         actionsHtml: `<button class="btn-ghost btn-sm" data-esita="${a.id}">Com'è finita?</button>`
       });
     });
     leads().filter(missingNext).forEach(l => out.push({
       id: 'miss-' + l.id, due: t + 'T00:00', hasTime: false, late: true, icon: 'alert',
-      titleHtml: who(l), subHtml: `Manca la prossima azione · ${STATO_LABEL[l.stato]}`, whenHtml: 'manca',
-      actionsHtml: `<button class="btn-ghost btn-sm" data-setnext="${l.id}">Imposta prossima azione</button>`
+      titleHtml: who(l), subHtml: 'Manca la prossima azione', whenHtml: 'oggi',
+      actionsHtml: `<button class="btn-ghost btn-sm" data-setnext="${l.id}">Imposta</button>`
     }));
     leads().forEach(l => {
       const n = l.next;
       if (!isOpen(l) || !n || !n.date || n.date > t) return; // solo oggi e scadute
       if (inRecoveryRound(l)) return; // si richiama dal Round Recupero, non dalle Task
-      const extra = (recoveryEntryFor(l) && l.fuNoAnswer ? ` · <b>${l.fuNoAnswer} di ${FREDDO_DOPO}</b> senza risposta` : '')
-        + (n.apptAt ? ' · appuntamento per ' + fmtDT(n.apptAt) : '')
-        + (n.note ? ` · <q>${esc(n.note)}</q>` : '');
       out.push({
         id: 'next-' + l.id, due: n.date + 'T' + (n.time || '00:00'), hasTime: !!n.time, icon: AZIONI_ICO[n.type] || 'phone',
-        titleHtml: who(l), subHtml: esc(actDef(n).l) + extra,
-        actionsHtml: `<button class="btn-ghost btn-sm" data-done="${l.id}">Fatto</button><button class="btn-ghost btn-sm" data-move="${l.id}">Sposta</button>`
+        titleHtml: who(l), subHtml: esc(actDef(n).l),
+        actionsHtml: `<button class="btn-ghost btn-sm" data-done="${l.id}">Fatto</button>`
       });
     });
     return out;
@@ -1093,6 +1091,25 @@ const LeadCRM = (function () {
   }
 
   /* ===================== Scheda lead ===================== */
+  /** "✎ Modifica dati": nome, centro, città, telefono, mail, setter in una finestra. */
+  function openEditLeadData(l, focus) {
+    const F = [['name', 'Nome e cognome', ''], ['centro', 'Centro', ''], ['city', 'Città', ''], ['phone', 'Telefono', ''], ['email', 'Mail', ''], ['setter', 'Setter', 'Es. MJ, HS, GM, s, OB']];
+    modal(`
+      <h3>Dati del lead</h3>
+      ${F.map(([k, lab, ph]) => `<label class="mblock" style="display:block"><span class="mlabel">${lab}</span><input type="text" class="ld-input" id="ed_${k}" value="${esc(l[k] || '')}" placeholder="${esc(ph || lab)}"></label>`).join('')}
+      <div class="mwarn" id="edWarn"></div>
+      <div class="modal-actions"><button class="btn-ghost" id="edCancel">Annulla</button><button class="btn-primary" id="edSave">Salva</button></div>
+    `, box => {
+      box.querySelector('#edCancel').addEventListener('click', closeModal);
+      if (focus) box.querySelector('#ed_' + focus).focus();
+      box.querySelector('#edSave').addEventListener('click', () => {
+        const name = box.querySelector('#ed_name').value.trim();
+        if (!name) { box.querySelector('#edWarn').textContent = 'Il nome non può essere vuoto.'; return; }
+        F.forEach(([k]) => { l[k] = box.querySelector('#ed_' + k).value.trim(); });
+        persist(); closeModal(); renderLead(l.id); showToast('Dati salvati.');
+      });
+    });
+  }
   function renderLead(id) {
     if (ensureLeads()) persist();
     const l = leadById(id); if (!l) { location.hash = '#/venditore-lead'; return; }
@@ -1100,7 +1117,7 @@ const LeadCRM = (function () {
     let nextHtml;
     if (inRecoveryRound(l)) {
       nextHtml = `<section class="card next-card">
-        <div class="card-label">Prossima azione</div>
+        <div class="card-label">Cosa fare adesso</div>
         <div class="next-big">🔁 Nel Round Recupero</div>
         <div class="next-meta">Lo richiami dal Round Recupero, in Setting → Appuntamenti.</div>
         ${l.fuNoAnswer ? `<div class="counter-line">Senza risposta: <b>${l.fuNoAnswer} di ${FREDDO_DOPO}</b><span class="dots6">${Array.from({ length: FREDDO_DOPO }, (_, i) => `<i class="${i < l.fuNoAnswer ? 'on' : ''}"></i>`).join('')}</span></div>` : ''}
@@ -1109,46 +1126,43 @@ const LeadCRM = (function () {
     } else if (l.next) {
       const late = l.next.date < TODAY();
       nextHtml = `<section class="card next-card ${late ? 'is-late' : ''}">
-        <div class="card-label">Prossima azione ${late ? '<span class="late-tag">in ritardo</span>' : ''}</div>
+        <div class="card-label">Cosa fare adesso ${late ? '<span class="late-tag">in ritardo</span>' : ''}</div>
         <div class="next-big">${actLabel(l.next)}</div>
         <div class="next-meta">${relDay(l.next.date)} · ${fmtShort(l.next.date)}${l.next.time ? ' · ore ' + l.next.time : ''}${l.next.apptAt ? ' · appuntamento per ' + fmtDT(l.next.apptAt) : ''}</div>
         ${l.next.note ? `<div>"${esc(l.next.note)}"</div>` : ''}
         ${l.stato === 'Follow-up' ? `<div class="counter-line">Follow-up senza risposta: <b>${l.fuNoAnswer || 0} di ${FREDDO_DOPO}</b><span class="dots6">${Array.from({ length: FREDDO_DOPO }, (_, i) => `<i class="${i < (l.fuNoAnswer || 0) ? 'on' : ''}"></i>`).join('')}</span></div>` : ''}
-        <div class="row-btns"><button class="btn-primary" data-done="${l.id}">Fatto</button><button class="btn-ghost" data-move="${l.id}">Sposta</button><button class="btn-ghost" data-setnext="${l.id}">Cambia</button></div>
+        <div class="row-btns"><button class="btn-primary" data-done="${l.id}">Fatto</button><button class="linkish" data-move="${l.id}">Sposta</button><button class="linkish" data-setnext="${l.id}">Cambia</button></div>
       </section>`;
     } else if (pend) {
       const st = setterOf(pend);
       nextHtml = `<section class="card next-card">
-        <div class="card-label">Prossimo passo</div>
+        <div class="card-label">Cosa fare adesso</div>
         <div class="next-big">📅 ${nOrd(apptNumber(pend))} appuntamento</div>
         <div class="next-meta">${fmtDT(pend.scheduledAt)}${st ? ' · Setter ' + esc(st) : ''}</div>
-        <div class="row-btns">${isDue(pend) ? `<button class="btn-primary" data-esita="${pend.id}">Com'è finita?</button>` : ''}<button class="btn-ghost" data-setnext="${l.id}">Aggiungi azione</button></div>
+        <div class="row-btns">${isDue(pend) ? `<button class="btn-primary" data-esita="${pend.id}">Com'è finita?</button>` : ''}<button class="linkish" data-setnext="${l.id}">Aggiungi azione</button></div>
       </section>`;
     } else if (isOpen(l)) {
       nextHtml = `<section class="card next-card is-missing">
-        <div class="card-label">Prossima azione <span class="late-tag">manca</span></div>
+        <div class="card-label">Cosa fare adesso <span class="late-tag">manca</span></div>
         <p class="ld-p">Questo lead è aperto ma non ha niente in programma.</p>
         <div class="row-btns"><button class="btn-primary" data-setnext="${l.id}">Imposta prossima azione</button></div>
       </section>`;
     } else {
-      nextHtml = `<section class="card"><div class="card-label">Prossima azione</div><p class="text-dim ld-p">${l.stato === 'Cliente' ? 'Cliente: niente da inseguire. Controlla le rate in Pagamenti.' : l.stato === 'Freddo' ? 'Freddo: nessuna azione. Puoi riaprirlo cambiando lo stato.' : 'Perso: nessuna azione. Puoi riaprirlo cambiando lo stato.'}</p></section>`;
+      nextHtml = `<section class="card"><div class="card-label">Cosa fare adesso</div><p class="text-dim ld-p">${l.stato === 'Cliente' ? 'Cliente: niente da inseguire. Controlla le rate in Pagamenti.' : l.stato === 'Freddo' ? 'Freddo: nessuna azione. Puoi riaprirlo cambiando lo stato.' : 'Perso: nessuna azione. Puoi riaprirlo cambiando lo stato.'}</p></section>`;
     }
     const tab = ui.leadTab;
-    const sv = svoltiCount(l);
     appRoot.innerHTML = `
       <div class="ld-top"><button class="ld-back" data-back="1">← Tutti i lead</button><button class="btn-icon ld-del-btn" id="leadDelete" title="Elimina il lead e i suoi appuntamenti" aria-label="Elimina il lead">🗑</button></div>
       <div class="lead-grid">
         <div class="lead-col">
-          <section class="card">
-            <div class="ident"><div><input class="ld-title-input" id="leadName" value="${esc(l.name)}" aria-label="Nome del lead" placeholder="Nome e cognome">
-                <div class="ld-sub-inputs"><input class="ld-input ld-small ${leadMissingCenter(l) ? 'cm-input' : ''}" id="leadCentro" value="${esc(l.centro || '')}" placeholder="Centro"><input class="ld-input ld-small" id="leadCity" value="${esc(l.city || '')}" placeholder="Città"></div></div>
-              <select class="ld-input ld-auto" id="leadStato" aria-label="Stato del lead">${STATI.map(s => `<option value="${s}" ${s === l.stato ? 'selected' : ''}>${STATO_LABEL[s]}</option>`).join('')}</select></div>
-            <div class="ld-mt"><span class="nchip">${sv} appuntament${sv === 1 ? 'o svolto' : 'i svolti'}</span>${leadMissingCenter(l) ? ` <button type="button" class="cm-tag-btn" id="leadCenterTag" title="Scrivi il nome del centro">${centerMissingTagHtml()}</button>` : ''}</div>
-            <dl class="kv">
-              <dt>Telefono</dt><dd><input class="ld-input ld-small" id="leadPhone" value="${esc(l.phone || '')}" placeholder="Telefono"> <button class="copy-mini" id="leadCopy">copia</button></dd>
-              <dt>Mail</dt><dd><input class="ld-input ld-small" id="leadEmail" value="${esc(l.email || '')}" placeholder="Mail"></dd>
-              <dt>Setter</dt><dd><input class="ld-input ld-small" id="leadSetter" value="${esc(l.setter || '')}" placeholder="Es. MJ, HS, GM, s, OB"></dd>
-            </dl>
+          <section class="card ld-head">
+            <div class="ld-head-top">
+              <h2 class="ld-name">${leadName(l)}</h2>
+              <select class="ld-input ld-auto ld-stato-select" id="leadStato" aria-label="Stato del lead">${STATI.map(s => `<option value="${s}" ${s === l.stato ? 'selected' : ''}>${STATO_LABEL[s]}</option>`).join('')}</select>
+            </div>
+            <div class="ld-head-line">${centroTxt(l) || '<span class="text-dim">Centro non segnato</span>'}${leadMissingCenter(l) ? ` <button type="button" class="cm-tag-btn" id="leadCenterTag" title="Scrivi il nome del centro">${centerMissingTagHtml()}</button>` : ''}</div>
+            <div class="ld-head-line ld-phone">${l.phone ? `<a href="tel:${esc(String(l.phone).replace(/\s/g, ''))}">${esc(l.phone)}</a> <button class="copy-mini" id="leadCopy">copia</button>` : '<span class="text-dim">Nessun telefono</span>'}</div>
+            <button class="linkish ld-edit-link" id="leadEditData">✎ Modifica dati</button>
           </section>
           ${nextHtml}
           ${apptsCardHtml(l)}
@@ -1166,18 +1180,13 @@ const LeadCRM = (function () {
     wireRowButtons(appRoot);
     appRoot.querySelector('[data-back]').addEventListener('click', () => { location.hash = '#/venditore-lead'; });
     appRoot.querySelectorAll('[data-ltab]').forEach(b => b.addEventListener('click', () => { ui.leadTab = b.dataset.ltab; renderLead(id); }));
-    const bindField = (elId, field) => document.getElementById(elId).addEventListener('change', e => { l[field] = e.target.value.trim(); persist(); });
-    bindField('leadName', 'name'); bindField('leadCity', 'city');
-    // Centro: se manca su un Cliente c'è l'etichetta "centro mancante" (clic = scrivilo qui).
-    document.getElementById('leadCentro').addEventListener('change', e => {
-      const was = leadMissingCenter(l);
-      l.centro = e.target.value.trim(); persist();
-      if (was !== leadMissingCenter(l)) renderLead(id);
-    });
+    // Dati del lead dietro "✎ Modifica dati" (Simone, 24/10: L1). "centro mancante" apre la
+    // stessa finestra sul campo Centro.
+    document.getElementById('leadEditData').addEventListener('click', () => openEditLeadData(l));
     const cTag = document.getElementById('leadCenterTag');
-    if (cTag) cTag.addEventListener('click', () => document.getElementById('leadCentro').focus());
-    bindField('leadPhone', 'phone'); bindField('leadEmail', 'email'); bindField('leadSetter', 'setter');
-    document.getElementById('leadCopy').addEventListener('click', async () => {
+    if (cTag) cTag.addEventListener('click', () => openEditLeadData(l, 'centro'));
+    const copyBtn = document.getElementById('leadCopy');
+    if (copyBtn) copyBtn.addEventListener('click', async () => {
       if (!l.phone) { showToast('Nessun numero da copiare.', true); return; }
       const ok = await copyToClipboard(l.phone); showToast(ok ? 'Numero copiato.' : 'Seleziona e copia il numero.', !ok);
     });
@@ -1224,39 +1233,61 @@ const LeadCRM = (function () {
    * della trattativa (stesse regole: Spostato chiede la nuova data, Chiuso / Contratto
    * firmato chiedono il centro, il lead segue con onDealStageChanged), elimina, € per i
    * soldi del singolo appuntamento chiuso. "+ Appuntamento" ne crea uno nuovo. */
+  /** Appuntamenti della scheda (Simone, 24/10: L3): una riga di testo per appuntamento,
+   * "1° · ven 23/10 · 10:00 · esito". Data, esito, Pagamenti ed Elimina stanno nel ⋯
+   * (openApptMenu), con le stesse regole di prima (wireApptControls). */
   function apptsCardHtml(l) {
     const list = apptsOf(l).slice().reverse(); // il più recente in alto
-    const opts = a => `<option value="" ${!a.dealStage ? 'selected' : ''}>— Da impostare —</option>` +
-      DEAL_STAGES.map(s => `<option value="${s.key}" ${a.dealStage === s.key ? 'selected' : ''}>${esc(s.label)}</option>`).join('');
+    const stageHtml = a => {
+      if (a.dealStage) { const d = dealStageDef(a.dealStage); return `<span class="ap-stage" data-stage="${a.dealStage}">${esc(d ? d.label : a.dealStage)}</span>`; }
+      return isDue(a) ? '<span class="late-tag">da esitare</span>' : '<span class="ap-stage">in arrivo</span>';
+    };
     return `<section class="card ld-appts">
       <div class="card-label">Appuntamenti <button class="btn-ghost btn-sm" id="leadAddAppt">+ Appuntamento</button></div>
-      ${list.length ? `<div class="ld-appt-list">${list.map(a => `
-        <div class="ld-appt ${a.dealStage === 'spostato' ? 'is-moved' : ''}" data-appt-item="${a.id}">
-          <div class="ld-appt-top">
-            <span class="ld-appt-num">${a.dealStage === 'spostato' ? 'Spostato' : nOrd(apptNumber(a))}</span>
-            <input type="datetime-local" class="ld-input ld-small ld-appt-when" data-appt-when="${a.id}" value="${esc(String(a.scheduledAt || '').slice(0, 16))}" aria-label="Data e ora">
-            ${isDue(a) ? `<span class="late-tag">da esitare</span>` : ''}
-          </div>
-          <div class="ld-appt-actions">
-            <select class="ld-input ld-small deal-stage-select" data-stage="${a.dealStage || ''}" data-appt-stage="${a.id}" aria-label="Stato della trattativa">${opts(a)}</select>
-            ${isClosedAppt(a) ? `<button class="btn-ghost btn-sm" data-appt-pay="${a.id}" title="Incassato e rate di questo appuntamento">€ Pagamenti</button>` : ''}
-            <button class="crm-row-del" data-appt-del="${a.id}" title="Elimina appuntamento" aria-label="Elimina appuntamento">×</button>
-          </div>
+      ${list.length ? `<div class="ld-appt-rows">${list.map(a => `
+        <div class="ld-appt-row ${a.dealStage === 'spostato' ? 'is-moved' : ''}">
+          <span class="ld-appt-num">${a.dealStage === 'spostato' ? '—' : nOrd(apptNumber(a))}</span>
+          <span class="ld-appt-date">${fmtDT(a.scheduledAt)}</span>
+          ${stageHtml(a)}
+          <button class="btn-icon ld-appt-menu" data-appt-menu="${a.id}" title="Cambia data o esito, pagamenti, elimina" aria-label="Opzioni dell'appuntamento">⋯</button>
         </div>`).join('')}</div>` : '<p class="text-dim ld-p">Nessun appuntamento.</p>'}
     </section>`;
   }
   function wireApptsCard(l) {
-    const again = () => { if (leadById(l.id)) renderLead(l.id); else { location.hash = '#/venditore-lead'; renderRoute(); } };
-    const find = id => db.appointments.find(a => a.id === id);
     document.getElementById('leadAddAppt').addEventListener('click', () => openAddAppt(l.id));
-    appRoot.querySelectorAll('[data-appt-when]').forEach(inp => inp.addEventListener('change', () => {
+    appRoot.querySelectorAll('[data-appt-menu]').forEach(b => b.addEventListener('click', () => openApptMenu(l, b.dataset.apptMenu)));
+  }
+  /** ⋯ di un appuntamento: data e ora, esito (tendina colorata), € Pagamenti se chiuso, Elimina. */
+  function openApptMenu(l, apptId) {
+    const a = db.appointments.find(x => x.id === apptId); if (!a) return;
+    const opts = `<option value="" ${!a.dealStage ? 'selected' : ''}>— Da impostare —</option>` +
+      DEAL_STAGES.map(s => `<option value="${s.key}" ${a.dealStage === s.key ? 'selected' : ''}>${esc(s.label)}</option>`).join('');
+    modal(`
+      <h3>${a.dealStage === 'spostato' ? 'Appuntamento spostato' : nOrd(apptNumber(a)) + ' appuntamento'} · ${leadName(l)}</h3>
+      <label class="mblock" style="display:block"><span class="mlabel">Data e ora</span><input type="datetime-local" class="ld-input" data-appt-when="${a.id}" value="${esc(String(a.scheduledAt || '').slice(0, 16))}"></label>
+      <label class="mblock" style="display:block"><span class="mlabel">Esito</span><select class="ld-input deal-stage-select" data-stage="${a.dealStage || ''}" data-appt-stage="${a.id}">${opts}</select></label>
+      <div class="modal-actions ld-menu-actions">
+        <button class="btn-danger-ghost" data-appt-del="${a.id}">Elimina</button>
+        ${isClosedAppt(a) ? `<button class="btn-ghost" data-appt-pay="${a.id}">€ Pagamenti</button>` : ''}
+        <button class="btn-primary" id="apMenuClose">Chiudi</button>
+      </div>
+    `, box => {
+      box.querySelector('#apMenuClose').addEventListener('click', closeModal);
+      wireApptControls(l, box);
+    });
+  }
+  /** Comandi di un appuntamento (dentro il ⋯): stesse regole della vecchia riga. */
+  function wireApptControls(l, root) {
+    const again = () => { closeModal(); if (leadById(l.id)) renderLead(l.id); else { location.hash = '#/venditore-lead'; renderRoute(); } };
+    const find = id => db.appointments.find(a => a.id === id);
+    root.querySelectorAll('[data-appt-when]').forEach(inp => inp.addEventListener('change', () => {
       const a = find(inp.dataset.apptWhen); if (!a || !inp.value) return;
       // presentedAt segue la data se era uguale (statistiche e commissioni sul giorno giusto).
       if (a.presentedAt && a.presentedAt === a.scheduledAt) a.presentedAt = inp.value;
       a.scheduledAt = inp.value;
       persist(); again();
     }));
-    appRoot.querySelectorAll('[data-appt-stage]').forEach(sel => sel.addEventListener('change', () => {
+    root.querySelectorAll('[data-appt-stage]').forEach(sel => sel.addEventListener('change', () => {
       const a = find(sel.dataset.apptStage); if (!a) return;
       const v = sel.value;
       if (v === 'spostato') {
@@ -1284,10 +1315,10 @@ const LeadCRM = (function () {
       onDealStageChanged(a, prev);
       again();
     }));
-    appRoot.querySelectorAll('[data-appt-pay]').forEach(b => b.addEventListener('click', () => {
-      ui.payApptId = b.dataset.apptPay; ui.leadTab = 'pagamenti'; renderLead(l.id);
+    root.querySelectorAll('[data-appt-pay]').forEach(b => b.addEventListener('click', () => {
+      closeModal(); ui.payApptId = b.dataset.apptPay; ui.leadTab = 'pagamenti'; renderLead(l.id);
     }));
-    appRoot.querySelectorAll('[data-appt-del]').forEach(b => b.addEventListener('click', () => {
+    root.querySelectorAll('[data-appt-del]').forEach(b => b.addEventListener('click', () => {
       const a = find(b.dataset.apptDel); if (!a) return;
       const last = apptsOf(l).length === 1;
       showConfirm(`Eliminare l'appuntamento del ${fmtDT(a.scheduledAt)}?${last ? ' È l\'unico: sparisce anche il lead.' : ''}`, () => {

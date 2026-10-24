@@ -582,10 +582,12 @@ function renderVenditoreStatistiche() {
 
 /* ---------- Dashboard ---------- */
 
-/* ---------- Dashboard: Task da fare (restyling 17/10/2026, step 5) ----------
- * Una lista unica, ordinata prima per priorità e poi per scadenza (la più vicina in alto):
+/* ---------- Dashboard: Task da fare (restyling 17/10/2026, step 5; semplificate 24/10) ----------
+ * Due blocchi, Setting e Venditore (Simone, 24/10: T2; con la parte Venditore spenta uno solo).
+ * Righe tutte uguali (T4): icona, nome, cosa fare, quando, UN tasto a destra. In ogni blocco
+ * l'ordine è prima per priorità e poi per scadenza (la più vicina in alto):
  *   1  Conferme degli appuntamenti Setter (getPendingConfirmAppointments, da mezzanotte:
- *      il banner delle 18 resta), una riga per appuntamento.
+ *      il banner delle 18 resta): una riga sola "N da confermare" (T1).
  *   2  Da richiamare di oggi e scaduti non fatti · "N da recuperare" (Round Recupero,
  *      una riga sola) · azioni dei lead Venditore (oggi + scadute, da esitare, lead senza
  *      prossima azione: LeadCRM.dashboardTaskItems, solo con la parte Venditore accesa).
@@ -594,7 +596,7 @@ function renderVenditoreStatistiche() {
  *      rossa se scadute. Spuntate non si cancellano.
  * Più di 8 righe: prime 8 +
  * "Mostra tutte (N)". Un solo pulsante nero nella vista: "+ Task" in alto a destra. */
-const DASH_TASKS_LIMIT = 8;
+const DASH_TASKS_LIMIT = 6; // righe per blocco prima di "Mostra tutte"
 const DAY_SHORT_IT = ['dom', 'lun', 'mar', 'mer', 'gio', 'ven', 'sab'];
 
 /** "oggi", "ieri", "domani" o "gio 15/10" per una data YYYY-MM-DD. */
@@ -629,22 +631,26 @@ function dueLabel(due, hasTime) {
 
 function collectDashboardTasks() {
   const items = [];
-  // 1 — Conferme. Il tasto apre il round partendo da questo appuntamento.
-  getPendingConfirmAppointments().forEach(a => items.push({
-    prio: 1, id: 'conf-' + a.id, role: 'setter', icon: 'check', noLate: true,
-    due: String(a.scheduledAt).slice(0, 16), hasTime: true,
-    titleHtml: escapeHtml(a.clientName || '(senza nome)'),
-    subHtml: 'Da confermare · appuntamento ' + escapeHtml(dueLabel(a.scheduledAt, true)),
-    whenHtml: 'conferma oggi',
-    actionsHtml: `<button class="btn-ghost btn-sm" data-task-confirm="${a.id}">Avvia <span class="hide-xs">Round Conferme</span><span class="show-xs">round</span></button>`
-  }));
-  // 2a — Da richiamare: oggi e scaduti non fatti.
   const todayKey = dateInputValue(new Date());
+  // 1 — Conferme: una riga sola (T1). Il tasto apre il round dal primo appuntamento.
+  const conf = getPendingConfirmAppointments().slice().sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)));
+  if (conf.length) {
+    const days = [...new Set(conf.map(a => String(a.scheduledAt).slice(0, 10)))].sort();
+    items.push({
+      prio: 1, id: 'conf', role: 'setter', icon: 'check', noLate: true,
+      due: todayKey + 'T00:00', hasTime: false,
+      titleHtml: `${conf.length} da confermare`,
+      subHtml: 'Round Conferme',
+      whenHtml: 'per ' + days.map(relDayLabel).join(', '),
+      actionsHtml: `<button class="btn-ghost btn-sm" data-task-confirm="${conf[0].id}">Inizia</button>`
+    });
+  }
+  // 2a — Da richiamare: oggi e scaduti non fatti.
   (db.callbacks || []).filter(c => c.status === 'pending' && c.scheduledAt && String(c.scheduledAt).slice(0, 10) <= todayKey).forEach(c => items.push({
     prio: 2, id: 'cb-' + c.id, role: 'setter', icon: 'phone',
     due: String(c.scheduledAt).slice(0, 16), hasTime: true,
     titleHtml: escapeHtml(c.leadName || '(senza nome)'),
-    subHtml: 'Da richiamare' + (c.sourcePipelineName ? ' · ' + escapeHtml(c.sourcePipelineName) : '') + ((c.notes || []).length ? ` · <q>${escapeHtml(c.notes[c.notes.length - 1].text || '')}</q>` : ''),
+    subHtml: 'Da richiamare',
     actionsHtml: `<button class="btn-ghost btn-sm" data-task-call="${c.id}">Chiama</button>`
   }));
   // 2b — Round Recupero: una riga sola, con i conteggi che il round mostra davvero.
@@ -653,16 +659,18 @@ function collectDashboardTasks() {
     prio: 2, id: 'recovery', role: 'setter', icon: 'refresh', noLate: true,
     due: todayKey + 'T00:00', hasTime: false,
     titleHtml: `${toRecover} da recuperare`,
-    subHtml: 'No show e annullati nel Round Recupero', whenHtml: 'da fare',
-    actionsHtml: '<button class="btn-ghost btn-sm" data-task-recovery="1">Entra nel round</button>'
+    subHtml: 'Round Recupero', whenHtml: 'oggi',
+    actionsHtml: '<button class="btn-ghost btn-sm" data-task-recovery="1">Inizia</button>'
   });
   // 2c — Lead Venditore (vuoto se la parte Venditore è spenta).
   LeadCRM.dashboardTaskItems().forEach(it => items.push(Object.assign({ prio: 2, role: 'venditore' }, it)));
   // 3 — Task scritte a mano.
+  // Con la parte Venditore spenta le task Venditore stanno nell'unico blocco.
   (db.tasks || []).filter(t => !t.doneAt).forEach(t => items.push({
-    prio: 3, id: 'task-' + t.id, role: t.role === 'venditore' ? 'venditore' : 'setter', taskId: t.id,
+    prio: 3, id: 'task-' + t.id, role: t.role === 'venditore' && LeadCRM.isOn() ? 'venditore' : 'setter', icon: 'check',
     due: (t.dueDate || todayKey) + 'T' + (t.dueTime || '00:00'), hasTime: !!t.dueTime,
-    titleHtml: escapeHtml(t.text || ''), subHtml: '', actionsHtml: ''
+    titleHtml: escapeHtml(t.text || ''), subHtml: 'Task',
+    actionsHtml: `<button class="btn-ghost btn-sm" data-task-done="${t.id}">Fatto</button>`
   }));
 
   const nowV = localDateTimeValue(new Date());
@@ -674,45 +682,53 @@ function collectDashboardTasks() {
   return items;
 }
 
+/** Riga uguale per tutti (T4): icona, nome, cosa fare, quando, un tasto. */
 function renderDashboardTaskRow(it) {
-  const lead = it.taskId
-    ? `<button class="task-check" data-task-done="${it.taskId}" title="Segna come fatta" aria-label="Segna come fatta"></button>`
-    : taskIconSvg(it.icon);
   return `
     <div class="task-row ${it.late ? 'is-late' : ''}">
-      <div class="task-lead">${lead}</div>
+      <div class="task-lead">${taskIconSvg(it.icon)}</div>
       <div class="task-main">
         <div class="task-title">${it.titleHtml}</div>
         ${it.subHtml ? `<div class="task-sub">${it.subHtml}</div>` : ''}
       </div>
-      <div class="task-meta">
-        <span class="task-when ${it.late ? 'late' : ''}">${it.whenHtml}</span>
-        <span class="role-pill ${it.role}">${it.role === 'venditore' ? 'Venditore' : 'Setter'}</span>
-      </div>
+      <span class="task-when ${it.late ? 'late' : ''}">${it.whenHtml}</span>
       <div class="task-actions">${it.actionsHtml || ''}</div>
+    </div>`;
+}
+
+/** Un blocco (Setting o Venditore): titolo, righe, "Mostra tutte" se sono tante. */
+function renderDashboardTaskGroup(role, title, items) {
+  const showAll = !!(uiState.dashTasksAll && uiState.dashTasksAll[role]);
+  const visible = showAll ? items : items.slice(0, DASH_TASKS_LIMIT);
+  return `
+    <div class="task-group">
+      ${title ? `<div class="task-group-head"><h3>${title}</h3>${items.length ? `<span class="count-pill">${items.length}</span>` : ''}</div>` : ''}
+      ${items.length ? `<div class="task-list">${visible.map(renderDashboardTaskRow).join('')}</div>` : '<p class="dash-list-empty">Niente da fare.</p>'}
+      ${items.length > DASH_TASKS_LIMIT ? `<button class="linkish dash-list-more" data-tasks-more="${role}">${showAll ? 'Mostra meno' : `Mostra tutte (${items.length})`}</button>` : ''}
     </div>`;
 }
 
 function renderDashboardTasks() {
   const items = collectDashboardTasks();
-  const showAll = !!uiState.dashTasksAll;
-  const visible = showAll ? items : items.slice(0, DASH_TASKS_LIMIT);
+  const two = LeadCRM.isOn();
   return `
     <section class="card dash-list-card" id="dashTasks">
-      <div class="dash-list-head">
-        <h2>Task da fare</h2>
-        ${items.length ? `<span class="count-pill">${items.length}</span>` : ''}
+      <div class="dash-list-head"><h2>Task da fare</h2></div>
+      <div class="task-cols ${two ? 'two' : ''}">
+        ${renderDashboardTaskGroup('setter', two ? 'Setting' : '', items.filter(it => it.role !== 'venditore'))}
+        ${two ? renderDashboardTaskGroup('venditore', 'Venditore', items.filter(it => it.role === 'venditore')) : ''}
       </div>
-      ${items.length ? `<div class="task-list">${visible.map(renderDashboardTaskRow).join('')}</div>` : '<p class="dash-list-empty">Niente da fare adesso.</p>'}
-      ${items.length > DASH_TASKS_LIMIT ? `<button class="linkish dash-list-more" id="btnTasksMore">${showAll ? 'Mostra meno' : `Mostra tutte (${items.length})`}</button>` : ''}
     </section>`;
 }
 
 function wireDashboardTasks() {
   const root = document.getElementById('dashTasks');
   if (!root) return;
-  const more = document.getElementById('btnTasksMore');
-  if (more) more.addEventListener('click', () => { uiState.dashTasksAll = !uiState.dashTasksAll; renderDashboard(); });
+  root.querySelectorAll('[data-tasks-more]').forEach(b => b.addEventListener('click', () => {
+    uiState.dashTasksAll = Object.assign({}, uiState.dashTasksAll);
+    uiState.dashTasksAll[b.dataset.tasksMore] = !uiState.dashTasksAll[b.dataset.tasksMore];
+    renderDashboard();
+  }));
   root.querySelectorAll('[data-task-done]').forEach(b => b.addEventListener('click', () => {
     const t = (db.tasks || []).find(x => x.id === b.dataset.taskDone);
     if (!t) return;
