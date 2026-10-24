@@ -255,7 +255,19 @@ const LeadCRM = (function () {
     });
     return changed;
   }
-  const recoveryNext = () => ({ type: 'recupero', date: TODAY(), time: '', note: 'Richiamare per fissare di nuovo' });
+  /** No show segnato su un appuntamento futuro (Simone, 24/10): il recupero parte dal giorno e
+   * dall'ora dell'appuntamento, e nelle Task compare solo dopo (vedi futureNoShowNext). */
+  const recoveryNext = apt => {
+    const at = apt && apt.dealStage === 'no_show' && String(apt.scheduledAt || '');
+    const future = at && new Date(at).getTime() > Date.now();
+    return { type: 'recupero', date: future ? at.slice(0, 10) : TODAY(), time: future ? at.slice(11, 16) : '', note: 'Richiamare per fissare di nuovo' };
+  };
+  /** true = "🔁 Recupero no show" di un no show segnato prima dell'ora dell'appuntamento: come nel
+   * Round Recupero (isFutureNoShowEntry), nelle Task compare solo quando l'ora è passata. */
+  function futureNoShowNext(l) {
+    const r = l.next && l.next.type === 'recupero' && recoveryEntryFor(l);
+    return !!(r && isFutureNoShowEntry(r));
+  }
   /** Il lead è uscito dal giro (cliente, perso, freddo, nuovo appuntamento): la voce del round si chiude. */
   function closeRecovery(l, status, apptId) {
     const r = recoveryEntryFor(l); if (!r) return;
@@ -264,9 +276,9 @@ const LeadCRM = (function () {
     r.lastInteractionAt = new Date().toISOString();
   }
   /** No show / annullato su un appuntamento del lead: si riparte dal recupero. */
-  function startRecovery(l) {
+  function startRecovery(l, apt) {
     if (!isOpen(l)) { if (l.stato === 'Cliente') return; addHistory(l, { k: 'stato', t: 'Stato: Nuovo', s: 'riaperto dopo il no show' }); l.stato = 'Nuovo'; }
-    l.next = recoveryNext();
+    l.next = recoveryNext(apt);
     l.fuNoAnswer = 0;
   }
 
@@ -275,8 +287,8 @@ const LeadCRM = (function () {
    * la prossima azione (Chiuso, Contratto firmato, Perso, Non in target, No show, Annullato)
    * salva sul lead una copia di prima: l.prevNext = { next, fuNoAnswer, wasFollowUp, stato,
    * apptId, at, after, afterFu } (after/afterFu = come li ha lasciati l'esito). Se quell'esito
-   * viene corretto e il lead torna aperto, la prossima azione di prima torna (anche se la sua
-   * data è passata: compare scaduta nelle Task), con il contatore dei follow-up. Se intanto la
+   * viene corretto e il lead torna aperto, la prossima azione di prima torna (se la sua
+   * data è passata, spostata a oggi: Simone 24/10), con il contatore dei follow-up. Se intanto la
    * prossima azione è stata cambiata (a mano o con un "Fatto"), non si tocca niente. */
   const STATO_A_MANO = { id: 'stato-a-mano' }; // copia fatta cambiando a mano lo stato del lead
   const WRONG_STAGES = ['chiuso', 'contratto_firmato', 'perso', 'non_in_target', 'no_show', 'annullato'];
@@ -307,6 +319,8 @@ const LeadCRM = (function () {
     if (!keepCounters) { l.fuNoAnswer = p.fuNoAnswer || 0; l.wasFollowUp = !!p.wasFollowUp; }
     if (p.next) {
       l.next = clone(p.next);
+      // Simone, 24/10: se la sua data è già passata torna spostata a oggi (stessa ora), non scaduta.
+      if (l.next.date && l.next.date < TODAY()) l.next.date = TODAY();
       addHistory(l, { k: 'stato', t: 'Ripristinata la prossima azione di prima', s: actLabel(l.next) + (l.next.date ? ' · ' + fmtShort(l.next.date) : '') });
     }
   }
@@ -347,13 +361,22 @@ const LeadCRM = (function () {
     if (st === 'chiuso' || st === 'contratto_firmato') { if (l.stato !== 'Cliente') addHistory(l, { k: 'stato', t: 'Stato: Cliente', s: 'dallo stato dell\'appuntamento' }); l.stato = 'Cliente'; l.next = null; }
     else if (st === 'perso' || st === 'non_in_target') { if (isOpen(l)) { addHistory(l, { k: 'stato', t: 'Stato: Perso', s: 'dallo stato dell\'appuntamento' }); l.stato = 'Perso'; l.next = null; } }
     else if (st === 'trattativa') { if (l.stato === 'Nuovo') l.stato = 'Trattativa'; }
-    else if (st === 'no_show' || st === 'annullato') startRecovery(l);
+    else if (st === 'no_show' || st === 'annullato') startRecovery(l, apt);
     if (!isOpen(l) && st !== 'no_show' && st !== 'annullato') closeRecovery(l);
     if (isWrong) markPrevNextAfter(l, apt);
     else if (l.prevNext && l.prevNext.apptId === apt.id) {
       // Esito corretto: se il lead è di nuovo aperto torna la prossima azione di prima. La copia
       // si usa una volta sola (anche quando non serve: il lead è stato toccato o resta chiuso).
-      if (prevCopy && isOpen(l)) restorePrevNext(l, prevCopy);
+      if (prevCopy && isOpen(l)) {
+        // Lead Perso o Freddo riaperto da un No show / Annullato messo per errore (Simone, 24/10:
+        // "deve tornare com'era"): torna Perso o Freddo, senza prossima azione.
+        if ((prevStage === 'no_show' || prevStage === 'annullato') && (prevCopy.stato === 'Perso' || prevCopy.stato === 'Freddo')) {
+          addHistory(l, { k: 'stato', t: 'Stato: ' + STATO_LABEL[prevCopy.stato], s: 'corretto l\'esito dell\'appuntamento' });
+          l.stato = prevCopy.stato; l.next = null;
+          l.fuNoAnswer = prevCopy.fuNoAnswer || 0; l.wasFollowUp = !!prevCopy.wasFollowUp;
+          closeRecovery(l);
+        } else restorePrevNext(l, prevCopy);
+      }
       delete l.prevNext;
     }
     // No show corretto (es. in "Presentato · trattativa") dalla tendina (Simone, 19/10): se non
@@ -428,6 +451,7 @@ const LeadCRM = (function () {
     leads().forEach(l => {
       const n = l.next;
       if (!isOpen(l) || !n || !n.date || n.date > t) return; // solo oggi e scadute
+      if (futureNoShowNext(l)) return; // no show segnato prima dell'ora: compare dopo
       const extra = (recoveryEntryFor(l) && l.fuNoAnswer ? ` · <b>${l.fuNoAnswer} di ${FREDDO_DOPO}</b> senza risposta` : '')
         + (n.apptAt ? ' · appuntamento per ' + fmtDT(n.apptAt) : '')
         + (n.note ? ` · <q>${esc(n.note)}</q>` : '');
@@ -591,7 +615,7 @@ const LeadCRM = (function () {
           const fresh = rescheduleAppointment(a, v); fresh.leadId = l.id;
         } else if (st.esito === 'no_show' || st.esito === 'annullato') {
           applyDealStage(a, st.esito);
-          startRecovery(l);
+          startRecovery(l, a);
         } else if (st.esito === 'non_in_target') {
           applyDealStage(a, 'non_in_target');
           addHistory(l, { k: 'stato', t: 'Stato: Perso', s: 'Non in target' });
