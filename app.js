@@ -4267,24 +4267,19 @@ function wireLiveChecklist(root, getItems, setItems) {
   });
 }
 
+/** ⋯ di un appuntamento Setter (Setting → Appuntamenti e lista della sessione): checklist,
+ * telefono, elimina. La checklist si può aggiornare (Simone, 24/10, fix di Hamza: le spunte
+ * non messe in chiamata o le informazioni prese dopo, per esempio in conferma). Ogni spunta si
+ * salva subito: apt.checklist + apt.checklistPct (grafico checklist in Sessioni). Un
+ * appuntamento senza checklist resta senza finché non si spunta almeno una voce. */
 function openApptChecklistModal(apptId, onDone) {
   const apt = db.appointments.find(x => x.id === apptId);
   if (!apt) return;
-  const hasChecklist = apt.checklist && typeof apt.checklist === 'object';
-  const pct = hasChecklist ? (apt.checklistPct != null ? apt.checklistPct : checklistPctOf(apt.checklist)) : null;
-  const items = hasChecklist ? CHECKLIST_ITEMS.map(it => {
-    const ok = apt.checklist[it.id] === true;
-    return `<li class="checklist-item ${ok ? 'ok' : 'ko'}"><span class="checklist-mark" aria-hidden="true">${ok ? '✓' : '✗'}</span><span>${escapeHtml(it.label)}</span><span class="sr-only">${ok ? 'presa' : 'mancante'}</span></li>`;
-  }).join('') : '';
+  const hadChecklist = !!(apt.checklist && typeof apt.checklist === 'object');
   openModal(`
     <h3>${escapeHtml(apt.clientName || '(senza nome)')}</h3>
     <p class="text-dim checklist-sub">Fissato il ${apt.createdAt ? escapeHtml(fmtDateTime(apt.createdAt)) : '—'} · appuntamento ${apt.scheduledAt ? escapeHtml(fmtApptWhen(apt.scheduledAt)) : '—'}</p>
-    <div class="checklist-card">
-      <div class="checklist-head"><strong>Checklist</strong></div>
-      ${hasChecklist
-        ? `${checklistBarHtml(pct)}<ul class="checklist-items">${items}</ul>`
-        : `<p class="text-dim checklist-empty">Checklist non compilata (appuntamento precedente).</p>`}
-    </div>
+    <div class="appt-checklist-edit">${renderLiveChecklistPanel(hadChecklist ? apt.checklist : {}, { hint: hadChecklist ? 'Spunta o togli le voci: si salva subito.' : 'Checklist non compilata: spunta le voci che hai preso, si salva subito.' })}</div>
     <label class="field">Telefono (facoltativo)<input type="tel" id="apptMorePhone" value="${escapeHtml(apt.phone || '')}" placeholder="Per il WhatsApp delle conferme"></label>
     <div class="modal-actions modal-actions-split">
       <button class="btn-danger-ghost" id="apptMoreDel">Elimina appuntamento</button>
@@ -4292,6 +4287,12 @@ function openApptChecklistModal(apptId, onDone) {
       <button class="btn-ghost" id="apptMoreClose">Chiudi</button>
     </div>
   `);
+  wireLiveChecklist(modalRoot, () => apt.checklist, items => {
+    const any = CHECKLIST_ITEMS.some(it => items[it.id] === true);
+    if (!any && !hadChecklist) { apt.checklist = null; apt.checklistPct = null; return; }
+    apt.checklist = checklistSnapshot(items);
+    apt.checklistPct = checklistPctOf(apt.checklist);
+  });
   const phoneInput = document.getElementById('apptMorePhone');
   const savePhone = () => {
     const v = phoneInput.value.trim() || null;
@@ -5242,6 +5243,10 @@ function renderSessioneAttiva() {
       showToast('Appuntamento aggiornato.');
     });
   });
+  // ⋯ di un appuntamento fissato: checklist da aggiornare (Simone, 24/10, fix di Hamza).
+  appRoot.querySelectorAll('[data-sess-apt-more]').forEach(btn => {
+    btn.addEventListener('click', () => openApptChecklistModal(btn.dataset.sessAptMore, () => { closeModal(); renderRoute(); }));
+  });
   appRoot.querySelectorAll('[data-call-callback]').forEach(btn => {
     btn.addEventListener('click', () => { if (!db.activeSession.pausedAt) startCallbackCall(btn.dataset.callCallback); });
   });
@@ -5261,6 +5266,8 @@ function renderSessionApptList(s) {
       <input type="text" class="crm-inline-input" data-sess-apt="${a.id}" data-field="clientName" value="${escapeHtml(a.clientName || '')}" placeholder="Nome e cognome">
       <input type="text" class="crm-inline-input" data-sess-apt="${a.id}" data-field="phone" value="${escapeHtml(a.phone || '')}" placeholder="Telefono">
       <input type="datetime-local" class="crm-inline-input" data-sess-apt="${a.id}" data-field="scheduledAt" value="${(a.scheduledAt || '').slice(0, 16)}">
+      <span class="sess-apt-check" title="Voci della checklist prese">${a.checklist ? CHECKLIST_ITEMS.filter(it => a.checklist[it.id] === true).length + '/' + CHECKLIST_ITEMS.length : '—'}</span>
+      <button class="btn-icon sess-apt-more" data-sess-apt-more="${a.id}" title="Checklist e telefono" aria-label="Checklist e telefono">⋯</button>
     </div>`).join('');
   return `
     <section class="sess-apt-list">

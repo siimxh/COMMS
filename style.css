@@ -1290,9 +1290,13 @@ body { line-height: 1.45; }
 /* Lista appuntamenti fissati in sessione, sotto i bottoni esito. */
 .sess-apt-list { margin-top: 18px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; background: var(--bg-elev); }
 .sess-apt-title { font-size: 0.85rem; font-weight: 700; color: var(--text-dim); margin-bottom: 8px; }
-.sess-apt-row { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 8px; margin-bottom: 6px; }
+.sess-apt-row { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) auto auto; gap: 8px; margin-bottom: 6px; align-items: center; }
+.sess-apt-row .crm-inline-input { min-width: 0; width: 100%; }
+.sess-apt-check { font-size: 0.82rem; font-weight: 600; color: var(--neutral-600); font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }
+.sess-apt-more { width: 34px; height: 34px; }
+.appt-checklist-edit .live-checklist { margin: 4px 0 12px; width: auto; max-width: none; position: static; }
 .sess-apt-row:last-child { margin-bottom: 0; }
-@media (max-width: 700px) { .sess-apt-row { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .sess-apt-row { grid-template-columns: 1fr auto auto; } .sess-apt-row .crm-inline-input { grid-column: 1 / -1; } }
 
 /* Tasto "↶ Annulla ultimo esito" in sessione (vedi undoLastCallAction in app.js) */
 .session-undo-row { display: flex; justify-content: flex-end; margin: -6px 0 10px; }
