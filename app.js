@@ -2585,11 +2585,11 @@ function closeGhostRecoveryEntries() {
   return changed;
 }
 
-/** Voci del round da mostrare qui. I no show Venditore con un lead aperto NON ci sono:
- * stanno nelle Task della Dashboard come prossima azione del lead (Simone, 16/10: "un posto
- * solo"; prima in Oggi). Restano attive nei dati, così "Fatto" lì le aggiorna (LeadCRM.handlesRecovery). */
+/** Voci del round da mostrare qui: Setter e Venditore. I no show Venditore si richiamano solo
+ * da qui (Simone, 24/10: "devono stare solamente nel round"; prima erano nelle Task della
+ * Dashboard). Gli esiti aggiornano anche il lead (LeadCRM.onRecoveryOutcome). */
 function visibleRecoveryEntries() {
-  return (db.recoveryRound || []).filter(l => l.status === 'active' && !LeadCRM.handlesRecovery(l) && !isFutureNoShowEntry(l));
+  return (db.recoveryRound || []).filter(l => l.status === 'active' && !isFutureNoShowEntry(l));
 }
 
 /** No show su un appuntamento non ancora passato (Simone, 19/10): è per forza un errore,
@@ -2626,7 +2626,7 @@ function renderRecoveryRoundEntryCard() {
     <section class="card recov-entry-card">
       <div class="recov-entry-info">
         <h3>🔁 Round Recupero Appuntamenti</h3>
-        <p class="text-dim" style="font-size:0.84rem;">Richiama i lead che hanno fatto no-show o hanno annullato, un lead a caso alla volta, finché tutti non sono stati sentiti almeno una volta.${LeadCRM.isOn() ? ' I no show del Venditore li trovi nelle Task della Dashboard, come prossima azione del lead.' : ''}</p>
+        <p class="text-dim" style="font-size:0.84rem;">Richiama i lead che hanno fatto no-show o hanno annullato, un lead a caso alla volta, finché tutti non sono stati sentiti almeno una volta.${LeadCRM.isOn() ? ' Qui ci sono anche i no show del Venditore.' : ''}</p>
       </div>
       <div class="recov-entry-action">
         <div class="recov-entry-count">${waiting}</div>
@@ -2949,9 +2949,13 @@ function applyRecoveryOutcome(leadId, outcome) {
     lead.closedBy = 'utente';
     lead.lastInteractionAt = now;
   }
+  // No show Venditore: il lead segue l'esito (Freddo dopo 6, Perso, Manca...). "Da richiamare"
+  // lo aggiorna openRecoveryCallbackModal, che ha il giorno e l'ora del richiamo.
+  const msg = outcome === 'da_richiamare' ? '' : LeadCRM.onRecoveryOutcome(lead, outcome);
   db.recoveryRoundCurrentLeadId = null;
   persist();
   renderRecoveryRoundScreen();
+  if (msg) showToast(msg);
 }
 
 /**
@@ -2976,6 +2980,7 @@ function openRecoveryCallbackModal(leadId) {
     afterSave: cb => {
       if (!cb) return;
       applyRecoveryOutcome(lead.id, 'da_richiamare');
+      LeadCRM.onRecoveryOutcome(lead, 'da_richiamare', { cb });
       lead.status = 'removed';
       lead.closedBy = 'da_richiamare';
       lead.callbackId = cb.id;
@@ -2988,9 +2993,10 @@ function openRecoveryCallbackModal(leadId) {
 /**
  * "Appuntamento fissato" dal round: stessa dinamica di creazione già usata altrove
  * (nome/telefono/data-ora), ma qui in un modal perché lo schermo del round non ha una
- * tabella. L'appuntamento nasce SEMPRE in Setting (role:'setter'), anche se il no-show
- * originale veniva da Venditore — richiesto esplicitamente dall'utente — con l'etichetta
- * "Recuperato" (vedi recoveredFromNoShow/recoveredFromRole e renderApptRow).
+ * tabella. L'appuntamento nasce in Setting (role:'setter') con l'etichetta "Recuperato" (vedi
+ * recoveredFromNoShow/recoveredFromRole e renderApptRow). Eccezione (Simone, 24/10): un no show
+ * Venditore con il suo lead diventa un nuovo appuntamento Venditore dello stesso lead
+ * (LeadCRM.addApptFromRecovery; con la parte Venditore spenta resta la regola Setter).
  * Il lead viene marcato 'resolved' (esce dal pool attivo del round).
  */
 function openRecoveryAppointmentModal(leadId) {
@@ -3000,10 +3006,11 @@ function openRecoveryAppointmentModal(leadId) {
   const prefillName = (srcApt && srcApt.clientName) || lead.clientName || '';
   const prefillPhone = (srcApt && srcApt.phone) || lead.phone || '';
   const nowLocal = localDateTimeValue(new Date());
+  const toLead = lead.sourceRole === 'venditore' && LeadCRM.isOn() && !!(srcApt && srcApt.leadId && (db.leads || []).some(x => x.id === srcApt.leadId));
 
   openModal(`
     <h3>Appuntamento fissato — recupero appuntamento</h3>
-    <p class="text-dim" style="font-size:0.85rem;">Va sempre in Setting, con l'etichetta "Recuperato".</p>
+    <p class="text-dim" style="font-size:0.85rem;">${toLead ? 'Nuovo appuntamento Venditore dello stesso lead.' : 'Va in Setting, con l\'etichetta "Recuperato".'}</p>
     <label class="field">Nome e cognome<input type="text" id="recovApptName" value="${escapeHtml(prefillName)}" placeholder="Nome e cognome"></label>
     <label class="field">Telefono<input type="text" id="recovApptPhone" value="${escapeHtml(prefillPhone)}" placeholder="Telefono (facoltativo)"></label>
     <label class="field">Data e ora appuntamento<input type="datetime-local" id="recovApptWhen" value="${nowLocal}"></label>
@@ -3023,6 +3030,24 @@ function openRecoveryAppointmentModal(leadId) {
     const when = document.getElementById('recovApptWhen').value;
     if (!name) { showToast('Inserisci il nome dell\'appuntamento.', true); nameInput.focus(); return; }
     if (!when) { showToast('Inserisci data e ora dell\'appuntamento.', true); return; }
+
+    if (toLead) {
+      const vApt = LeadCRM.addApptFromRecovery(lead, when);
+      if (vApt) {
+        lead.inCallChecklist = null;
+        lead.status = 'resolved';
+        lead.resolvedAppointmentId = vApt.id;
+        logRecoveryCall(lead, 'appuntamento_fissato');
+        lead.callCount = (lead.callCount || 0) + 1;
+        lead.lastInteractionAt = new Date().toISOString();
+        db.recoveryRoundCurrentLeadId = null;
+        persist();
+        closeModal();
+        showToast('Appuntamento Venditore aggiunto al lead.');
+        renderRecoveryRoundScreen();
+        return;
+      }
+    }
 
     const apt = newAppointment('setter');
     apt.clientName = name;

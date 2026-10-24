@@ -27,11 +27,12 @@
  * - Restyling 17/10 (5.6): la tabella Appuntamenti Venditore non c'è più. Tutto si fa
  *   dalla lista Lead ("+ Nuovo lead", Registrazioni, Report, calendario) e dalla scheda
  *   (appuntamenti con stato e data, "+ Appuntamento", Pagamenti, 🗑 elimina lead).
- * - No show / annullato (Simone, 16/10): la prossima azione è SEMPRE il recupero, e il lead
- *   compare in un posto solo: nelle Task della Dashboard (prima: Oggi), come prossima azione. Non compare più anche nel
- *   Round Recupero (vedi handlesRecovery). Segnare "Fatto" sul recupero è una chiamata di
- *   recupero: conta nell'attività del giorno e, se non risponde, vale come un follow-up
- *   senza risposta (dopo 6 il lead diventa Freddo).
+ * - No show / annullato (Simone, 24/10; prima 16/10 nelle Task): il lead va nel Round Recupero
+ *   e si richiama SOLO da lì. La prossima azione resta "🔁 Recupero no show" (in lista e nella
+ *   scheda: "Nel Round Recupero"), ma non compare nelle Task della Dashboard. Gli esiti del round
+ *   aggiornano il lead (onRecoveryOutcome): un "Non risposto" vale come un follow-up senza
+ *   risposta (dopo 6 il lead diventa Freddo), "Appuntamento fissato" crea l'appuntamento
+ *   Venditore del lead (addApptFromRecovery).
  *
  * Dati: db.leads[] (vedi storage.js) e apt.leadId sugli appuntamenti Venditore. Salvati
  * online nella tabella "lead" (o nella riga "stato" finché la tabella non c'è, vedi
@@ -239,13 +240,55 @@ const LeadCRM = (function () {
       const a = db.appointments.find(x => x.id === r.sourceAppointmentId); return a && a.leadId === l.id;
     })()) || null;
   }
-  /** true = questa voce del round la gestisce il lead (prossima azione nelle Task della Dashboard), quindi il
-   * Round Recupero non la mostra: un no show si vede in un posto solo. */
-  function handlesRecovery(entry) {
-    if (!isOn() || !entry || entry.sourceRole !== 'venditore') return false;
+  /** true = il lead aspetta il Round Recupero: la prossima azione è il recupero e la voce è
+   * nel round. Non compare nelle Task (un posto solo: il round, Simone 24/10). */
+  const inRecoveryRound = l => !!(l.next && l.next.type === 'recupero' && recoveryEntryFor(l));
+  /** Lead Venditore di una voce del round (o null). */
+  function leadOfEntry(entry) {
+    if (!entry || entry.sourceRole !== 'venditore') return null;
     const a = db.appointments.find(x => x.id === entry.sourceAppointmentId);
-    const l = a && a.leadId && leadById(a.leadId);
-    return !!(l && isOpen(l));
+    return (a && a.leadId && leadById(a.leadId)) || null;
+  }
+  /** Esito del Round Recupero su una voce Venditore: il lead segue (Simone, 24/10). Solo lead
+   * aperti (un Cliente che salta un appuntamento resta com'è). Ritorna un testo per il
+   * messaggio in basso, o ''.
+   * - non_risposto: un follow-up senza risposta; al 6° il lead è Freddo ed esce dal round;
+   * - non_interessato: il lead è Perso;
+   * - da_richiamare: la prossima azione è 📞 Chiamata al giorno e ora del richiamo (data.cb);
+   * - rimosso: niente prossima azione ("Manca" nelle Task: decide Simone). */
+  function onRecoveryOutcome(entry, outcome, data) {
+    const l = leadOfEntry(entry);
+    if (!l || !isOpen(l)) return '';
+    const T = { non_risposto: 'non ha risposto', non_interessato: 'non più interessato', da_richiamare: 'da richiamare', rimosso: 'tolto dal round' };
+    if (!T[outcome]) return '';
+    addHistory(l, { k: 'azione', t: AZIONI.recupero.l + ' · ' + T[outcome], s: 'Round Recupero' });
+    let msg = '';
+    if (outcome === 'non_risposto') {
+      l.fuNoAnswer = (l.fuNoAnswer || 0) + 1;
+      if (l.fuNoAnswer >= FREDDO_DOPO) {
+        addHistory(l, { k: 'stato', t: 'Stato: Freddo (automatico)', s: FREDDO_DOPO + '° follow-up senza risposta' });
+        l.stato = 'Freddo'; l.next = null;
+        entry.status = 'removed'; entry.closedBy = 'freddo';
+        msg = `${l.name}: ${FREDDO_DOPO}° tentativo senza risposta, ora è Freddo ed esce dal round.`;
+      }
+    } else if (outcome === 'non_interessato') {
+      addHistory(l, { k: 'stato', t: 'Stato: Perso', s: 'non più interessato (Round Recupero)' });
+      l.stato = 'Perso'; l.next = null;
+    } else if (outcome === 'da_richiamare') {
+      const at = String((data && data.cb && data.cb.scheduledAt) || '');
+      l.next = { type: 'chiamata', date: at.slice(0, 10) || TODAY(), time: at.slice(11, 16), note: 'Da richiamare (Round Recupero)' };
+    } else if (outcome === 'rimosso') l.next = null;
+    return msg;
+  }
+  /** "Appuntamento fissato" dal round su un no show Venditore (Simone, 24/10): nuovo
+   * appuntamento Venditore sullo stesso lead (non più un appuntamento Setter). Ritorna
+   * l'appuntamento, o null se la voce non ha un lead (allora resta la regola Setter). */
+  function addApptFromRecovery(entry, when) {
+    const l = isOn() && leadOfEntry(entry);
+    if (!l) return null;
+    const apt = addApptToLead(l, when, '');
+    addHistory(l, { k: 'azione', t: AZIONI.recupero.l + ' · appuntamento fissato', s: 'Round Recupero · ' + fmtDT(when) });
+    return apt;
   }
   /** Un lead aperto con un no show da recuperare ha sempre una prossima azione. */
   function syncRecoveryNext() {
@@ -256,18 +299,12 @@ const LeadCRM = (function () {
     return changed;
   }
   /** No show segnato su un appuntamento futuro (Simone, 24/10): il recupero parte dal giorno e
-   * dall'ora dell'appuntamento, e nelle Task compare solo dopo (vedi futureNoShowNext). */
+   * dall'ora dell'appuntamento (nel round compare solo dopo, isFutureNoShowEntry in app.js). */
   const recoveryNext = apt => {
     const at = apt && apt.dealStage === 'no_show' && String(apt.scheduledAt || '');
     const future = at && new Date(at).getTime() > Date.now();
     return { type: 'recupero', date: future ? at.slice(0, 10) : TODAY(), time: future ? at.slice(11, 16) : '', note: 'Richiamare per fissare di nuovo' };
   };
-  /** true = "🔁 Recupero no show" di un no show segnato prima dell'ora dell'appuntamento: come nel
-   * Round Recupero (isFutureNoShowEntry), nelle Task compare solo quando l'ora è passata. */
-  function futureNoShowNext(l) {
-    const r = l.next && l.next.type === 'recupero' && recoveryEntryFor(l);
-    return !!(r && isFutureNoShowEntry(r));
-  }
   /** Il lead è uscito dal giro (cliente, perso, freddo, nuovo appuntamento): la voce del round si chiude. */
   function closeRecovery(l, status, apptId) {
     const r = recoveryEntryFor(l); if (!r) return;
@@ -451,7 +488,7 @@ const LeadCRM = (function () {
     leads().forEach(l => {
       const n = l.next;
       if (!isOpen(l) || !n || !n.date || n.date > t) return; // solo oggi e scadute
-      if (futureNoShowNext(l)) return; // no show segnato prima dell'ora: compare dopo
+      if (inRecoveryRound(l)) return; // si richiama dal Round Recupero, non dalle Task
       const extra = (recoveryEntryFor(l) && l.fuNoAnswer ? ` · <b>${l.fuNoAnswer} di ${FREDDO_DOPO}</b> senza risposta` : '')
         + (n.apptAt ? ' · appuntamento per ' + fmtDT(n.apptAt) : '')
         + (n.note ? ` · <q>${esc(n.note)}</q>` : '');
@@ -471,6 +508,11 @@ const LeadCRM = (function () {
     root.querySelectorAll('[data-done]').forEach(b => b.addEventListener('click', () => openFatto(b.dataset.done)));
     root.querySelectorAll('[data-move]').forEach(b => b.addEventListener('click', () => openSposta(b.dataset.move)));
     root.querySelectorAll('[data-setnext]').forEach(b => b.addEventListener('click', () => openSetNext(b.dataset.setnext)));
+    // Scheda di un lead nel Round Recupero: apre il round direttamente su di lui.
+    root.querySelectorAll('[data-open-round]').forEach(b => b.addEventListener('click', () => {
+      db.recoveryRoundActive = true; db.recoveryRoundCurrentLeadId = b.dataset.openRound;
+      persist(); renderRoute();
+    }));
   }
 
   /* ===================== Blocco "prossima azione" =====================
@@ -848,6 +890,7 @@ const LeadCRM = (function () {
           const sv = svoltiCount(l); const pend = pendingAppt(l);
           let azione = '<span class="sub">—</span>', quando = '';
           if (missingNext(l)) azione = '<span class="miss">⚠️ Manca</span>';
+          else if (inRecoveryRound(l)) { azione = '🔁 Nel Round Recupero'; quando = ''; }
           else if (l.next) { azione = actLabel(l.next); quando = `<span class="${l.next.date < TODAY() ? 'red' : ''}">${relDay(l.next.date)}${l.next.time ? ' ' + l.next.time : ''}</span>`; }
           else if (pend) { azione = '📅 ' + nOrd(apptNumber(pend)) + ' appuntamento'; quando = isDue(pend) ? '<span class="red">da esitare</span>' : relDay(String(pend.scheduledAt).slice(0, 10)) + ' ' + String(pend.scheduledAt).slice(11, 16); }
           return `<tr data-lead-row="${l.id}">
@@ -1055,7 +1098,15 @@ const LeadCRM = (function () {
     const l = leadById(id); if (!l) { location.hash = '#/venditore-lead'; return; }
     const pend = pendingAppt(l);
     let nextHtml;
-    if (l.next) {
+    if (inRecoveryRound(l)) {
+      nextHtml = `<section class="card next-card">
+        <div class="card-label">Prossima azione</div>
+        <div class="next-big">🔁 Nel Round Recupero</div>
+        <div class="next-meta">Lo richiami dal Round Recupero, in Setting → Appuntamenti.</div>
+        ${l.fuNoAnswer ? `<div class="counter-line">Senza risposta: <b>${l.fuNoAnswer} di ${FREDDO_DOPO}</b><span class="dots6">${Array.from({ length: FREDDO_DOPO }, (_, i) => `<i class="${i < l.fuNoAnswer ? 'on' : ''}"></i>`).join('')}</span></div>` : ''}
+        <div class="row-btns"><button class="btn-primary" data-open-round="${recoveryEntryFor(l).id}">Chiamalo ora</button></div>
+      </section>`;
+    } else if (l.next) {
       const late = l.next.date < TODAY();
       nextHtml = `<section class="card next-card ${late ? 'is-late' : ''}">
         <div class="card-label">Prossima azione ${late ? '<span class="late-tag">in ritardo</span>' : ''}</div>
@@ -1422,6 +1473,6 @@ const LeadCRM = (function () {
   return {
     isOn, applyNav, ensureLeads, dashboardTaskItems, renderLeadList, renderLead, renderNewStatsSection, newStatsValues,
     wireRowButtons, accountToggleHtml, wireAccountToggle,
-    parseApptName, handlesRecovery, reportInfo, onInstallmentPaid
+    parseApptName, onRecoveryOutcome, addApptFromRecovery, reportInfo, onInstallmentPaid
   };
 })();
