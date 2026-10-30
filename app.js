@@ -308,11 +308,8 @@ function renderRoute() {
     renderRecoveryRoundScreen();
     return;
   }
-  // Round Follow-up della parte Venditore (lead.js, Simone 24/10).
-  if (db.followUpRoundActive) {
-    if (LeadCRM.isOn()) { LeadCRM.renderFollowUpRound(); return; }
-    db.followUpRoundActive = false;
-  }
+  // Il Round Follow-up non c'è più (Simone, 30/10): chi lo aveva aperto torna alle pagine.
+  if (db.followUpRoundActive) db.followUpRoundActive = false;
   document.body.classList.remove('in-session');
   clearInterval(sessionTimerInterval);
 
@@ -531,9 +528,65 @@ function renderSettingStatistiche() {
         ${rateCell('€' + round2(comm.commissioniChiusure || 0), 'Commissioni venduto', '3% dell\'incassato')}
       </div>
     </section>
+    ${renderHourlyChartsSection(range)}
     ${renderCallTypesSection(range)}
   `;
   wirePeriodBar(renderSettingStatistiche);
+}
+
+/**
+ * Setting → Stats: a che ora si fissano gli appuntamenti e a che ora rispondono (richiesta di
+ * Hamza, Simone 30/10). Periodo = la barra in alto (range null = "Tutto").
+ * - Fissati per ora: appuntamenti Setter per l'ora in cui sono stati salvati (createdAt, il
+ *   momento di "Appuntamento fissato" con il nome), spostati esclusi: gli stessi di "Appuntamenti
+ *   fissati" qui sopra.
+ * - Tasso di risposta per ora: OGNI chiamata (ogni tentativo, Simone 30/10), di tutti i tipi
+ *   (sessioni, conferme, richiami, recupero, follow-up). Risposta = esito che non è "senza
+ *   risposta" (isNoAnswer).
+ * Ore mostrate: dalle 8 alle 20, allargate se ci sono dati fuori.
+ */
+function hourlyChartData(range) {
+  const fissati = Array(24).fill(0), calls = Array(24).fill(0), answered = Array(24).fill(0);
+  (db.appointments || []).filter(a => a.role === 'setter' && isCountedAsNewBooking(a) && a.createdAt && (!range || inRange(a.createdAt, range)))
+    .forEach(a => { const h = new Date(a.createdAt).getHours(); if (h >= 0) fissati[h]++; });
+  const sessions = range ? getFilteredSessions(db, range, 'all') : db.sessions.slice();
+  sessions.forEach(s => (s.calls || []).forEach(c => {
+    if (!c.timestamp) return;
+    const h = new Date(c.timestamp).getHours(); if (!(h >= 0)) return;
+    calls[h]++; if (!c.isNoAnswer) answered[h]++;
+  }));
+  const used = [];
+  for (let h = 0; h < 24; h++) if (fissati[h] || calls[h]) used.push(h);
+  const from = Math.min(8, used.length ? used[0] : 8), to = Math.max(20, used.length ? used[used.length - 1] : 20);
+  const hours = []; for (let h = from; h <= to; h++) hours.push(h);
+  return { hours, fissati, calls, answered };
+}
+function hourlyBarsHtml(hours, valueOf, labelOf, tipOf, maxV) {
+  const cols = hours.map(h => {
+    const v = valueOf(h);
+    return `<div class="cchart-col hchart-col" title="${escapeHtml(tipOf(h))}">
+        <span class="cchart-plot"><span class="cchart-bar" style="height:${maxV ? Math.max(0, Math.min(100, v / maxV * 100)) : 0}%">${v ? `<span class="cchart-val">${labelOf(h)}</span>` : ''}</span></span>
+        <span class="cchart-date">${h}</span>
+      </div>`;
+  }).join('');
+  return `<div class="cchart-wrap"><div class="cchart-scroll"><div class="cchart-cols">${cols}</div></div></div>`;
+}
+function renderHourlyChartsSection(range) {
+  const d = hourlyChartData(range);
+  const totF = d.fissati.reduce((x, y) => x + y, 0);
+  const totC = d.calls.reduce((x, y) => x + y, 0);
+  const maxF = Math.max(0, ...d.hours.map(h => d.fissati[h]));
+  const rate = h => d.calls[h] ? d.answered[h] / d.calls[h] * 100 : 0;
+  const per = range ? escapeHtml(periodRangeShort(getPeriodRange())) : 'tutto lo storico';
+  return `
+    <section class="card hourly-charts">
+      <h3>Appuntamenti fissati per ora</h3>
+      <p class="text-dim cchart-sub">Ora in cui è stato fissato · ${totF} ${totF === 1 ? 'appuntamento' : 'appuntamenti'} · ${per}</p>
+      ${totF ? hourlyBarsHtml(d.hours, h => d.fissati[h], h => String(d.fissati[h]), h => `ore ${h}: ${d.fissati[h]} ${d.fissati[h] === 1 ? 'fissato' : 'fissati'}`, maxF) : '<p class="text-dim checklist-chart-empty">Nessun appuntamento fissato in questo periodo.</p>'}
+      <h3 class="hourly-second">Tasso di risposta per ora</h3>
+      <p class="text-dim cchart-sub">Risposte su chiamate fatte (ogni tentativo) · ${totC} ${totC === 1 ? 'chiamata' : 'chiamate'} · ${per}</p>
+      ${totC ? hourlyBarsHtml(d.hours, rate, h => fmtPctIt(rate(h)) + ' · ' + d.calls[h], h => `ore ${h}: ${d.answered[h]} risposte su ${d.calls[h]} chiamate`, 100) : '<p class="text-dim checklist-chart-empty">Nessuna chiamata in questo periodo.</p>'}
+    </section>`;
 }
 
 /**
@@ -656,7 +709,7 @@ function collectDashboardTasks() {
     due: String(c.scheduledAt).slice(0, 16), hasTime: true,
     titleHtml: escapeHtml(c.leadName || '(senza nome)'),
     subHtml: 'Da richiamare',
-    actionsHtml: `<button class="btn-ghost btn-sm" data-task-call="${c.id}">Chiama</button>`
+    actionsHtml: `<button class="btn-ghost btn-sm" data-task-call="${c.id}">Chiama</button><button class="btn-icon task-del-btn" data-task-cb-del="${c.id}" title="Togli dai da richiamare" aria-label="Togli dai da richiamare">🗑</button>`
   }));
   // 2b — Round Recupero: una riga per ruolo (Simone, 24/10), con i conteggi che il round
   // mostra davvero. Ognuna apre il round solo con le sue persone.
@@ -754,6 +807,8 @@ function wireDashboardTasks() {
     renderRoute();
   }));
   root.querySelectorAll('[data-task-call]').forEach(b => b.addEventListener('click', () => startCallbackCall(b.dataset.taskCall)));
+  // Da richiamare cancellabile anche da qui (Simone, 30/10).
+  root.querySelectorAll('[data-task-cb-del]').forEach(b => b.addEventListener('click', () => removeCallback(b.dataset.taskCbDel, () => renderDashboard())));
   root.querySelectorAll('[data-task-recovery]').forEach(b => b.addEventListener('click', () => {
     db.recoveryRoundActive = true;
     db.recoveryRoundRole = b.dataset.taskRecovery;
@@ -3009,15 +3064,6 @@ function applyRecoveryOutcome(leadId, outcome) {
 function openRecoveryCallbackModal(leadId) {
   const lead = (db.recoveryRound || []).find(l => l.id === leadId);
   if (!lead) return;
-  // Lead Venditore aperto (Simone, 24/10: una riga sola): una 📞 Chiamata nel Round
-  // Follow-up per il giorno scelto, niente Da richiamare Setter.
-  if (LeadCRM.recoveryCallLater(lead, () => {
-    applyRecoveryOutcome(lead.id, 'da_richiamare');
-    lead.status = 'removed';
-    lead.closedBy = 'da_richiamare';
-    persist();
-    renderRecoveryRoundScreen();
-  })) return;
   const srcApt = db.appointments.find(a => a.id === lead.sourceAppointmentId);
   openCallbackModal({
     prefillName: (srcApt && srcApt.clientName) || lead.clientName || '',
@@ -5793,7 +5839,7 @@ function renderCallbackCallScreen() {
       <div class="session-topbar">
         <button id="btnExitCallbackCall" class="btn-danger-ghost">■ Esci</button>
         <div class="session-pipeline-name">📞 Richiamo${pipeline ? ' — ' + escapeHtml(pipeline.name) : ''}</div>
-        <div></div>
+        <button id="btnRemoveCallbackCall" class="btn-ghost" title="Togli dai da richiamare">🗑 Togli</button>
       </div>
       <div class="session-body">
         <div class="session-main-col">
@@ -5828,6 +5874,11 @@ function renderCallbackCallScreen() {
   });
 
   wireCallbackNotesButtons(appRoot, renderCallbackCallScreen);
+  document.getElementById('btnRemoveCallbackCall').addEventListener('click', () => removeCallback(cb.id, () => {
+    db.callbackCallActiveId = null;
+    persist();
+    renderRoute();
+  }));
 
   const copyBtn = document.getElementById('btnCopyCbPhone');
   if (copyBtn) {

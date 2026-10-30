@@ -2677,3 +2677,10 @@ body { overflow-wrap: break-word; }
 /* Blocco di una finestra che si mostra/nasconde con [hidden] (niente display inline). */
 .ld-block { display: block; }
 .ld-block[hidden] { display: none; }
+
+/* Setting → Stats: grafici per ora (Simone, 30/10). Stesse barre del grafico checklist. */
+.hourly-charts .hourly-second { margin-top: 22px; }
+.hourly-charts .cchart-wrap { margin-top: 10px; }
+.hchart-col { cursor: default; }
+/* Cestino accanto a "Chiama" nei Da richiamare delle Task. */
+.task-del-btn { width: 32px; height: 32px; font-size: 0.9rem; }

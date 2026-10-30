@@ -1,38 +1,24 @@
-/* lead.js — parte Venditore a LEAD (mini-CRM): righe Venditore delle Task in Dashboard, lista Lead, scheda lead,
- * "Com'è finita?" (esito dell'appuntamento), Fatto / Sposta delle azioni, numeri nuovi.
+/* lead.js — parte Venditore a LEAD (mini-CRM): righe Venditore delle Task in Dashboard, lista Lead,
+ * scheda lead, numeri dei lead.
  *
- * Approvata da Simone come simulazione il 15/10/2026 ("tutto perfetto") e portata qui.
  * Decisioni di Simone (non cambiarle senza chiedere):
- * - Regola d'oro: nessun lead aperto senza prossima azione (se manca, compare in rosso).
- * - Niente sequenze automatiche: una prossima azione per lead. Le "cose promesse" non si
- *   mostrano più (restyling 5.6): i promises[] già salvati restano nei dati.
- * - Stati lead: Nuovo, In trattativa, Follow-up (= "no chiaro per adesso"), Cliente, Perso,
- *   Freddo. Separati dagli stati dell'appuntamento (DEAL_STAGES in app.js), che restano.
+ * - 30/10: i follow-up NON si gestiscono più nel tool (Simone li segue fuori, con un'automazione):
+ *   niente prossima azione, Round Follow-up, "Com'è finita?" né regola dei 6 follow-up. La scheda
+ *   ha i dati del lead (stato a tendina compreso), gli appuntamenti con l'esito, i pagamenti e le
+ *   note. L'esito si mette dal ⋯ dell'appuntamento; nelle Task restano i "da esitare" (openEsito
+ *   apre quel ⋯).
+ * - Stati lead: Nuovo, In trattativa, Follow-up, Cliente, Perso, Freddo. Separati dagli stati
+ *   dell'appuntamento (DEAL_STAGES in app.js); il lead segue gli esiti (onDealStageChanged).
  * - Numero dell'appuntamento (1°, 2°…): conta solo gli appuntamenti SVOLTI (presentati,
  *   anche non in target). Gli spostati restano nello storico ma non prendono numero.
- * - Follow-up: dopo il 6° follow-up senza risposta il lead diventa Freddo da solo.
- * - "Chiuso?": Sì, pagato (Chiuso) / Sì, contratto firmato (non sempre pagano subito) / No.
  * - Soldi: restano sull'APPUNTAMENTO chiuso (cashCollected, totalSold, installments), così
  *   commissioni e statistiche si calcolano come prima (utils.js). La scheda Pagamenti li
  *   legge e li scrive lì.
- * - Niente più "Fissare appuntamento" come prossima azione (Simone, 18/10/2026: c'è già la
- *   📞 Chiamata). Nel "Fatto" di un'azione, se ha risposto, il campo "Appuntamento fissato
- *   per" crea l'appuntamento Venditore del lead (esito "Appuntamento fissato" della
- *   chiamata). I lead con quella azione salvata passano a 📞 Chiamata, stessa data e ora
- *   (migrateOldNextTypes, dentro ensureLeads).
  * - Interruttore "Parte Venditore" in 👤 Account (db.settings.venditoreOn, per utente).
- * - Note e follow-up stanno SOLO nella scheda lead (Simone, 16/10). Le note che c'erano
- *   sugli appuntamenti passano nello storico del lead, la data di follow-up diventa la
- *   prossima azione (vedi moveApptExtras).
- * - Restyling 17/10 (5.6): la tabella Appuntamenti Venditore non c'è più. Tutto si fa
- *   dalla lista Lead ("+ Nuovo lead", Registrazioni, Report, calendario) e dalla scheda
- *   (appuntamenti con stato e data, "+ Appuntamento", Pagamenti, 🗑 elimina lead).
- * - No show / annullato (Simone, 24/10; prima 16/10 nelle Task): il lead va nel Round Recupero
- *   e si richiama SOLO da lì. La prossima azione resta "🔁 Recupero no show" (in lista e nella
- *   scheda: "Nel Round Recupero"), ma non compare nelle Task della Dashboard. Gli esiti del round
- *   aggiornano il lead (onRecoveryOutcome): un "Non risposto" vale come un follow-up senza
- *   risposta (dopo 6 il lead diventa Freddo), "Appuntamento fissato" crea l'appuntamento
- *   Venditore del lead (addApptFromRecovery).
+ * - No show / annullato (Simone, 24/10): il lead va nel Round Recupero Venditore e si richiama
+ *   solo da lì (l.next = "🔁 Recupero no show" resta come segno interno: inRecoveryRound). Gli
+ *   esiti del round aggiornano il lead (onRecoveryOutcome: Non più interessato = Perso);
+ *   "Appuntamento fissato" crea l'appuntamento Venditore del lead (addApptFromRecovery).
  *
  * Dati: db.leads[] (vedi storage.js) e apt.leadId sugli appuntamenti Venditore. Salvati
  * online nella tabella "lead" (o nella riga "stato" finché la tabella non c'è, vedi
@@ -56,10 +42,6 @@ const LeadCRM = (function () {
     recupero: { i: '🔁', l: 'Recupero no show' }
   };
   // Icona outline delle righe nelle Task della Dashboard (app.js TASK_ICONS).
-  const AZIONI_ICO = { chiamata: 'phone', whatsapp: 'message', contenuto: 'play', recupero: 'refresh' };
-  const FU_TYPES = ['chiamata', 'whatsapp', 'contenuto']; // follow-up del Round Follow-up
-  const ESITI = { presentato: 'Presentato', no_show: 'No show', annullato: 'Annullato', spostato: 'Spostato', non_in_target: 'Non in target' };
-  const FREDDO_DOPO = 6;
   const GG = ['domenica', 'lunedì', 'martedì', 'mercoledì', 'giovedì', 'venerdì', 'sabato'];
   
   const ui = { leadFilter: 'aperti', search: '', leadTab: 'storico' };
@@ -116,17 +98,6 @@ const LeadCRM = (function () {
   }
   const svoltiCount = l => apptsOf(l).filter(isSvolto).length;
   const pendingAppt = l => apptsOf(l).find(isPending);
-  // Un lead in Follow-up può restare senza follow-up in programma ("Nessun follow-up", Simone
-  // 24/10): niente "Manca" nelle Task, nella lista compare "nessun follow-up da N giorni".
-  const missingNext = l => isOpen(l) && !l.next && !pendingAppt(l) && l.stato !== 'Follow-up';
-  const noFollowUp = l => l.stato === 'Follow-up' && !l.next && !pendingAppt(l);
-  /** Giorni dall'ultimo follow-up fatto (o dall'ultima riga dello storico). */
-  function daysSinceFu(l) {
-    const h = (l.history || []).filter(x => x.d).map(x => String(x.d)).sort().pop();
-    const ref = String(l.lastFuAt || h || l.createdAt || '').slice(0, 10);
-    if (!ref) return 0;
-    return Math.max(0, Math.round((parseLocal(TODAY()) - parseLocal(ref)) / 86400000));
-  }
   const lastClosedAppt = l => apptsOf(l).filter(isClosedAppt).pop() || null;
   function daEsitare() {
     return vndAppts().filter(a => a.leadId && leadById(a.leadId) && isDue(a)).sort((a, b) => String(a.scheduledAt).localeCompare(String(b.scheduledAt)));
@@ -278,15 +249,7 @@ const LeadCRM = (function () {
     if (!T[outcome]) return '';
     addHistory(l, { k: 'azione', t: AZIONI.recupero.l + ' · ' + T[outcome], s: 'Round Recupero' });
     let msg = '';
-    if (outcome === 'non_risposto') {
-      l.fuNoAnswer = (l.fuNoAnswer || 0) + 1;
-      if (l.fuNoAnswer >= FREDDO_DOPO) {
-        addHistory(l, { k: 'stato', t: 'Stato: Freddo (automatico)', s: FREDDO_DOPO + '° follow-up senza risposta' });
-        l.stato = 'Freddo'; l.next = null;
-        entry.status = 'removed'; entry.closedBy = 'freddo';
-        msg = `${l.name}: ${FREDDO_DOPO}° tentativo senza risposta, ora è Freddo ed esce dal round.`;
-      }
-    } else if (outcome === 'non_interessato') {
+    if (outcome === 'non_interessato') {
       addHistory(l, { k: 'stato', t: 'Stato: Perso', s: 'non più interessato (Round Recupero)' });
       l.stato = 'Perso'; l.next = null;
     } else if (outcome === 'rimosso') l.next = null;
@@ -490,20 +453,8 @@ const LeadCRM = (function () {
       out.push({
         id: 'esita-' + a.id, due: String(a.scheduledAt).slice(0, 16), hasTime: true, late: true, icon: 'clock',
         titleHtml: who(l), subHtml: `${nOrd(apptNumber(a))} appuntamento da esitare`,
-        actionsHtml: `<button class="btn-ghost btn-sm" data-esita="${a.id}">Com'è finita?</button>`
+        actionsHtml: `<button class="btn-ghost btn-sm" data-esita="${a.id}">Metti l'esito</button>`
       });
-    });
-    leads().filter(missingNext).forEach(l => out.push({
-      id: 'miss-' + l.id, due: t + 'T00:00', hasTime: false, late: true, icon: 'alert',
-      titleHtml: who(l), subHtml: 'Manca la prossima azione', whenHtml: 'oggi',
-      actionsHtml: `<button class="btn-ghost btn-sm" data-setnext="${l.id}">Imposta</button>`
-    }));
-    // Follow-up (Simone, 24/10): una riga sola, si fanno dal Round Follow-up.
-    const fu = followUpItems().length;
-    if (fu) out.push({
-      prio: 1, id: 'fu-round', due: t + 'T00:00', hasTime: false, noLate: true, icon: 'message',
-      titleHtml: `${fu} follow-up da fare`, subHtml: 'Round Follow-up', whenHtml: 'oggi',
-      actionsHtml: '<button class="btn-ghost btn-sm" data-fu-round="1">Inizia</button>'
     });
     return out;
   }
@@ -512,390 +463,18 @@ const LeadCRM = (function () {
   function wireRowButtons(root) {
     root.querySelectorAll('[data-lead]').forEach(b => b.addEventListener('click', () => { ui.leadTab = 'storico'; location.hash = '#/lead/' + b.dataset.lead; }));
     root.querySelectorAll('[data-esita]').forEach(b => b.addEventListener('click', () => openEsito(b.dataset.esita)));
-    root.querySelectorAll('[data-done]').forEach(b => b.addEventListener('click', () => openFatto(b.dataset.done)));
-    root.querySelectorAll('[data-move]').forEach(b => b.addEventListener('click', () => openSposta(b.dataset.move)));
-    root.querySelectorAll('[data-setnext]').forEach(b => b.addEventListener('click', () => openSetNext(b.dataset.setnext)));
-    root.querySelectorAll('[data-fu-round]').forEach(b => b.addEventListener('click', () => startFollowUpRound(null)));
-    // Scheda di un lead nel Round Recupero: apre il round direttamente su di lui.
-    root.querySelectorAll('[data-open-round]').forEach(b => b.addEventListener('click', () => {
-      db.recoveryRoundActive = true; db.recoveryRoundRole = 'venditore'; db.recoveryRoundCurrentLeadId = b.dataset.openRound;
-      persist(); renderRoute();
-    }));
   }
 
-  /* ===================== Blocco "prossima azione" =====================
-   * Le cose promesse non si chiedono più (restyling 5.6): i promises[] già salvati
-   * restano nei dati, ma non si mostrano. */
-  function nextBlockHtml(prefix, opts) {
-    opts = opts || {};
-    const def = opts.def || {};
-    // Simone, 24/10: tre tipi (Chiamata, WhatsApp, Contenuto) e solo il giorno, niente ora.
-    const types = FU_TYPES;
-    const t0 = def.type && types.includes(def.type) ? def.type : 'chiamata';
-    return `
-      <div class="mblock" id="${prefix}NextWrap">
-        <span class="mlabel">${opts.label || 'Prossimo follow-up'}</span>
-        <div class="choice" id="${prefix}Type">${types.map(k => `<button type="button" data-v="${k}" class="${t0 === k ? 'sel' : ''}">${AZIONI[k].i} ${AZIONI[k].l}</button>`).join('')}</div>
-        <label><span class="mlabel">Giorno</span><input type="date" class="ld-input" id="${prefix}Date" value="${def.date || workDay(1)}"></label>
-        <label><span class="mlabel">Cosa fare (una riga)</span><input type="text" class="ld-input" id="${prefix}Note" value="${esc(def.note || '')}" placeholder="Es. chiedile se ne ha parlato col socio"></label>
-      </div>`;
-  }
-  function wireNextBlock(box, prefix) {
-    box.querySelectorAll('#' + prefix + 'Type button').forEach(b => b.addEventListener('click', () => {
-      box.querySelectorAll('#' + prefix + 'Type button').forEach(x => x.classList.remove('sel')); b.classList.add('sel');
-    }));
-  }
-  function readNextBlock(box, prefix) {
-    const sel = box.querySelector('#' + prefix + 'Type .sel');
-    const next = {
-      type: sel ? sel.dataset.v : 'chiamata',
-      date: box.querySelector('#' + prefix + 'Date').value,
-      time: '',
-      note: box.querySelector('#' + prefix + 'Note').value.trim()
-    };
-    return { next };
-  }
-
-  /* ===================== Com'è finita? (esito dell'appuntamento) ===================== */
+  /* ===================== Esito di un appuntamento =====================
+   * Simone, 30/10: niente più "Com'è finita?" e niente follow-up nel tool (li gestisce fuori).
+   * "Metti l'esito" (Task della Dashboard, riga da esitare) apre il ⋯ dell'appuntamento: data
+   * ed esito con la tendina, con le stesse regole della scheda (onDealStageChanged: Cliente,
+   * Perso, no show → Round Recupero, chiusura → nome del centro). */
   function openEsito(apptId) {
     const a = db.appointments.find(x => x.id === apptId); if (!a) return;
     if (ensureLeads()) persist();
     const l = leadById(a.leadId); if (!l) return;
-    const n = apptNumber(a);
-    const st = { esito: null, chiuso: null, stato: l.stato === 'Nuovo' ? 'Trattativa' : l.stato };
-    const setter = setterOf(a);
-    modal(`
-      <h3>${leadName(l)} · com'è finita?</h3>
-      <p class="modal-sub">${nOrd(n)} appuntamento · ${fmtDT(a.scheduledAt)}${setter ? ' · Setter ' + esc(setter) : ''}</p>
-      <div class="choice" id="eEsito">${Object.keys(ESITI).map(k => `<button type="button" data-v="${k}">${ESITI[k]}</button>`).join('')}</div>
-      <div id="eStep2"></div>
-      <div class="mwarn" id="eWarn"></div>
-      <div class="modal-actions"><button class="btn-ghost" id="eCancel">Annulla</button><button class="btn-primary" id="eSave" disabled>Salva</button></div>
-    `, box => {
-      const step2 = box.querySelector('#eStep2'), saveBtn = box.querySelector('#eSave'), warn = box.querySelector('#eWarn');
-      box.querySelector('#eCancel').addEventListener('click', closeModal);
-      const drawStep2 = () => {
-        warn.textContent = '';
-        if (st.esito === 'presentato') {
-          step2.innerHTML = `
-            <span class="mlabel">Chiuso?</span>
-            <div class="choice big" id="eChiuso">
-              <button type="button" class="yes ${st.chiuso === 'chiuso' ? 'sel' : ''}" data-v="chiuso">Sì, ha pagato</button>
-              <button type="button" class="yes ${st.chiuso === 'contratto_firmato' ? 'sel' : ''}" data-v="contratto_firmato">Sì, contratto firmato</button>
-              <button type="button" class="no ${st.chiuso === 'no' ? 'sel' : ''}" data-v="no">No</button>
-            </div>
-            <div id="eStep3"></div>`;
-          step2.querySelectorAll('#eChiuso button').forEach(b => b.addEventListener('click', () => { st.chiuso = b.dataset.v; drawStep2(); }));
-          const s3 = step2.querySelector('#eStep3');
-          if (st.chiuso === 'chiuso' || st.chiuso === 'contratto_firmato') {
-            // Restyling step 6: alla chiusura si chiede il nome del centro (per i Prossimi
-            // pagamenti in Dashboard), precompilato con il centro del lead.
-            if (st.centro === undefined) st.centro = a.centerName || l.centro || '';
-            const centroVal = st.centro;
-            s3.innerHTML = `<label class="mblock" style="display:block"><span class="mlabel">Nome del centro</span><input type="text" class="ld-input" id="eCentro" maxlength="120" value="${esc(centroVal)}" placeholder="Es. Centro Prova 1"></label>
-              <p class="mhint">Il lead diventa <b>Cliente</b>${st.chiuso === 'contratto_firmato' ? ' (contratto firmato, pagamento ancora da incassare)' : ''}. Incassato e rate li segni dopo, nella scheda <b>Pagamenti</b>.</p>`;
-            s3.querySelector('#eCentro').addEventListener('input', e => { st.centro = e.target.value; });
-            saveBtn.disabled = false;
-          } else if (st.chiuso === 'no') {
-            s3.innerHTML = `
-              <span class="mlabel">A che punto è il lead?</span>
-              <div class="choice" id="eStato">
-                <button type="button" data-v="Trattativa">In trattativa</button>
-                <button type="button" data-v="Follow-up">Da follow-uppare</button>
-                <button type="button" data-v="Perso">Perso</button>
-              </div>
-              <label class="mblock ld-block" id="eApptWrap"><span class="mlabel">Prossimo appuntamento</span><input type="datetime-local" class="ld-input" id="eApptAt" value=""></label>
-              <div id="eNext">${nextBlockHtml('e', { label: 'Come lo follow-uppi?', def: { type: 'whatsapp', date: workDay(1) } })}
-                <p class="mhint">Va nel <b>Round Follow-up</b> il giorno scelto. Dopo ${FREDDO_DOPO} follow-up senza un appuntamento diventa Freddo.</p></div>
-              <label class="mblock" style="display:block"><span class="mlabel">Nota della call (una riga)</span><input type="text" class="ld-input" id="eCallNote" placeholder="Es. prezzo ok, vuole vedere risultati di altri centri"></label>`;
-            const markStato = () => {
-              s3.querySelectorAll('#eStato button').forEach(x => x.classList.toggle('sel', x.dataset.v === st.stato));
-              s3.querySelector('#eNext').hidden = st.stato !== 'Follow-up';
-              s3.querySelector('#eApptWrap').hidden = st.stato !== 'Trattativa';
-            };
-            s3.querySelectorAll('#eStato button').forEach(b => b.addEventListener('click', () => { st.stato = b.dataset.v; markStato(); }));
-            if (!['Trattativa', 'Follow-up', 'Perso'].includes(st.stato)) st.stato = 'Trattativa';
-            markStato(); wireNextBlock(s3, 'e'); saveBtn.disabled = false;
-          } else saveBtn.disabled = true;
-        } else if (st.esito === 'spostato') {
-          step2.innerHTML = `<label class="mblock" style="display:block"><span class="mlabel">Nuova data e ora</span><input type="datetime-local" class="ld-input" id="eMoved" value=""></label>
-            <p class="mhint">Resta nello storico della scheda lead. Non conta nel numero dell'appuntamento.</p>`;
-          saveBtn.disabled = false;
-        } else if (st.esito === 'no_show' || st.esito === 'annullato') {
-          step2.innerHTML = `<p class="mhint">Il lead va nel <b>Round Recupero</b> (nelle Task: "da recuperare"). Ogni tentativo senza risposta conta come un follow-up: dopo ${FREDDO_DOPO} diventa Freddo.</p>`; saveBtn.disabled = false;
-        } else if (st.esito === 'non_in_target') {
-          step2.innerHTML = `<p class="mhint">Conta come presentato, fuori dal closing rate. Il lead diventa <b>Perso</b> (non in target).</p>`; saveBtn.disabled = false;
-        } else { step2.innerHTML = ''; saveBtn.disabled = true; }
-      };
-      box.querySelectorAll('#eEsito button').forEach(b => b.addEventListener('click', () => {
-        st.esito = b.dataset.v; st.chiuso = null;
-        box.querySelectorAll('#eEsito button').forEach(x => x.classList.toggle('sel', x === b)); drawStep2();
-      }));
-      saveBtn.addEventListener('click', () => {
-        // Esito che chiude il lead o ne cambia la prossima azione: copia di prima, per poterlo
-        // correggere dalla tendina e ritrovare la prossima azione (onDealStageChanged).
-        const closing = (st.esito === 'presentato' && (st.chiuso === 'chiuso' || st.chiuso === 'contratto_firmato' || (st.chiuso === 'no' && st.stato === 'Perso')))
-          || ['no_show', 'annullato', 'non_in_target'].includes(st.esito);
-        if (closing) savePrevNext(l, a);
-        if (st.esito === 'presentato' && (st.chiuso === 'chiuso' || st.chiuso === 'contratto_firmato')) {
-          const centroIn = box.querySelector('#eCentro');
-          const centro = centroIn ? centroIn.value.trim() : '';
-          a.centerName = centro;
-          if (centro && !l.centro) l.centro = centro;
-          applyDealStage(a, st.chiuso);
-          if (l.stato !== 'Cliente') addHistory(l, { k: 'stato', t: 'Stato: Cliente', s: l.wasFollowUp ? 'Chiuso in follow-up' : '' });
-          l.stato = 'Cliente'; l.next = null; closeRecovery(l);
-          markPrevNextAfter(l, a);
-          persist(); closeModal(); ui.leadTab = 'pagamenti';
-          location.hash = '#/lead/' + l.id; renderRoute();
-          showToast('Cliente! Segna incassato e rate qui.');
-          return;
-        }
-        if (st.esito === 'presentato') {
-          // Simone, 24/10: In trattativa = c'è già il prossimo appuntamento (data e ora
-          // obbligatorie, nasce l'appuntamento); Da follow-uppare = tipo + giorno, Round Follow-up.
-          let r = null, apptAt = '';
-          if (st.stato === 'Follow-up') {
-            r = readNextBlock(box, 'e');
-            if (!r.next.date) { warn.textContent = 'Scegli il giorno del follow-up.'; return; }
-          } else if (st.stato === 'Trattativa') {
-            apptAt = box.querySelector('#eApptAt').value;
-            if (!apptAt) { warn.textContent = 'Scegli data e ora del prossimo appuntamento.'; return; }
-          }
-          const note = box.querySelector('#eCallNote').value.trim();
-          applyDealStage(a, st.stato === 'Perso' ? 'perso' : 'trattativa');
-          if (note) addHistory(l, { k: 'nota', t: 'Nota della call', s: note });
-          if (st.stato !== l.stato) addHistory(l, { k: 'stato', t: 'Stato: ' + STATO_LABEL[st.stato], s: st.stato === 'Follow-up' ? 'Da follow-uppare' : '' });
-          if (st.stato === 'Follow-up' && l.stato !== 'Follow-up') { l.wasFollowUp = true; l.fuNoAnswer = 0; }
-          l.stato = st.stato;
-          l.next = r ? r.next : null;
-          if (apptAt) addApptToLead(l, apptAt, '');
-        } else if (st.esito === 'spostato') {
-          const v = box.querySelector('#eMoved').value; if (!v) { warn.textContent = 'Scegli la nuova data.'; return; }
-          const fresh = rescheduleAppointment(a, v); fresh.leadId = l.id;
-        } else if (st.esito === 'no_show' || st.esito === 'annullato') {
-          applyDealStage(a, st.esito);
-          startRecovery(l, a);
-        } else if (st.esito === 'non_in_target') {
-          applyDealStage(a, 'non_in_target');
-          addHistory(l, { k: 'stato', t: 'Stato: Perso', s: 'Non in target' });
-          l.stato = 'Perso'; l.next = null;
-        }
-        if (!isOpen(l) && st.esito !== 'no_show' && st.esito !== 'annullato') closeRecovery(l);
-        if (closing) markPrevNextAfter(l, a);
-        persist(); rerender(); showToast('Esito salvato.');
-      });
-    });
-  }
-
-  /* ===================== Fatto e Round Follow-up (Simone, 24/10) =====================
-   * I follow-up (📞 Chiamata, 💬 WhatsApp, 🎬 Contenuto, solo il giorno) sono la prossima
-   * azione del lead. Dal giorno previsto stanno nel Round Follow-up (solo Venditore), che si
-   * apre come il Round Recupero: WhatsApp e Contenuto hanno Fatto / Skip / Annullo, le
-   * chiamate gli esiti del Round Recupero. Ogni follow-up fatto conta 1: al 6° il lead è
-   * Freddo (un appuntamento fissato riporta il conto a 0, addApptToLead). Dopo "Fatto" si
-   * chiede la prossima azione, con "Nessun follow-up". Nella scheda "Fatto" non chiede se ha
-   * risposto: le chiamate si fanno dal round ("Chiama ora"). */
-  /** Lead nel Round Follow-up: follow-up di oggi o già passati, i saltati in fondo. */
-  function followUpItems() {
-    if (!isOn()) return [];
-    const t = TODAY();
-    return leads().filter(l => isOpen(l) && l.next && FU_TYPES.includes(l.next.type) && l.next.date && l.next.date <= t && !inRecoveryRound(l))
-      .sort((a, b) => String(a.next.skippedAt || '').localeCompare(String(b.next.skippedAt || ''))
-        || (a.next.date + (a.next.time || '')).localeCompare(b.next.date + (b.next.time || '')));
-  }
-  function startFollowUpRound(leadId) {
-    db.followUpRoundActive = true; db.followUpRoundCurrentLeadId = leadId || null;
-    persist(); renderRoute();
-  }
-  function exitFollowUpRound() {
-    db.followUpRoundActive = false; db.followUpRoundCurrentLeadId = null;
-    persist(); document.body.classList.remove('in-session');
-    location.hash = '#/dashboard'; renderRoute();
-  }
-  /** Follow-up fatto: storico, conto dei 6, niente prossima azione. true = è diventato Freddo. */
-  function markFollowUpDone(l, label) {
-    const n = l.next || {};
-    const late = !!(n.date && n.date < TODAY());
-    addHistory(l, { k: late ? 'late' : 'azione', t: actDef(n).l + ' · ' + label + (late ? ' · in ritardo' : ' · in tempo'), s: '', late, lateBy: late ? workDaysBetween(n.date, TODAY()) : 0 });
-    l.fuNoAnswer = (l.fuNoAnswer || 0) + 1;
-    l.lastFuAt = NOWV();
-    l.next = null;
-    if (l.fuNoAnswer >= FREDDO_DOPO) {
-      addHistory(l, { k: 'stato', t: 'Stato: Freddo (automatico)', s: FREDDO_DOPO + '° follow-up senza appuntamento' });
-      l.stato = 'Freddo'; closeRecovery(l);
-      return true;
-    }
-    return false;
-  }
-  const fuCounterHtml = l => `<div class="counter-line">Follow-up fatti: <b>${l.fuNoAnswer || 0} di ${FREDDO_DOPO}</b><span class="dots6">${Array.from({ length: FREDDO_DOPO }, (_, i) => `<i class="${i < (l.fuNoAnswer || 0) ? 'on' : ''}"></i>`).join('')}</span></div>`;
-  /** "Qual è la prossima azione?" dopo un follow-up fatto. after() ridisegna la pagina sotto. */
-  function askNextFollowUp(l, prevType, after) {
-    modal(`
-      <h3>Fatto · e adesso?</h3>
-      <p class="modal-sub">${leadName(l)} · follow-up fatti ${l.fuNoAnswer || 0} di ${FREDDO_DOPO}</p>
-      ${nextBlockHtml('q', { label: 'Qual è la prossima azione?', def: { type: prevType || 'whatsapp', date: workDay(2) } })}
-      <div class="mwarn" id="qWarn"></div>
-      <div class="modal-actions"><button class="btn-ghost" id="qNone">Nessun follow-up</button><button class="btn-primary" id="qSave">Salva</button></div>
-    `, box => {
-      wireNextBlock(box, 'q');
-      box.querySelector('#qNone').addEventListener('click', () => {
-        addHistory(l, { k: 'stato', t: 'Nessun follow-up in programma', s: '' });
-        persist(); closeModal(); after();
-      });
-      box.querySelector('#qSave').addEventListener('click', () => {
-        const r = readNextBlock(box, 'q');
-        if (!r.next.date) { box.querySelector('#qWarn').textContent = 'Scegli il giorno.'; return; }
-        l.next = r.next;
-        persist(); closeModal(); after(); showToast('Prossimo follow-up: ' + actDef(l.next).l + ' · ' + fmtShort(l.next.date) + '.');
-      });
-    });
-  }
-  /** "Fatto" dalla scheda: le chiamate si fanno dal round, il resto è fatto subito. */
-  function openFatto(leadId) {
-    const l = leadById(leadId); if (!l || !l.next) return;
-    const n = l.next;
-    if (n.type === 'recupero') {
-      const r = recoveryEntryFor(l);
-      if (r) { db.recoveryRoundActive = true; db.recoveryRoundRole = 'venditore'; db.recoveryRoundCurrentLeadId = r.id; persist(); renderRoute(); return; }
-    }
-    if (n.type === 'chiamata' || n.type === 'recupero') { startFollowUpRound(l.id); return; }
-    const freddo = markFollowUpDone(l, 'fatto');
-    persist(); renderRoute();
-    if (freddo) { showToast(`${l.name}: ${FREDDO_DOPO}° follow-up senza appuntamento, ora è Freddo.`); return; }
-    askNextFollowUp(l, n.type, () => renderRoute());
-  }
-
-  /** Schermata del Round Follow-up (stesso aspetto del Round Recupero). */
-  function renderFollowUpRound() {
-    document.body.classList.add('in-session');
-    const items = followUpItems();
-    // "Chiama ora" dalla scheda: il lead scelto anche se il suo follow-up è per un altro giorno.
-    const cur = db.followUpRoundCurrentLeadId && leadById(db.followUpRoundCurrentLeadId);
-    const l = (cur && isOpen(cur) && cur.next && FU_TYPES.includes(cur.next.type)) ? cur : (items[0] || null);
-    db.followUpRoundCurrentLeadId = l ? l.id : null;
-    const top = `<div class="session-topbar">
-        <button id="btnExitFuRound" class="btn-danger-ghost">■ Esci dal round</button>
-        <div class="session-pipeline-name">📋 Round Follow-up${items.length ? ' · ' + items.length + ' da fare' : ''}</div>
-        <div></div>
-      </div>`;
-    if (!l) {
-      appRoot.innerHTML = `<div class="session-screen">${top}
-        <div class="card" style="text-align:center; padding:60px 20px;"><h2>Nessun follow-up da fare 🎉</h2>
-        <p class="text-dim">I follow-up dei prossimi giorni compaiono qui il giorno previsto.</p></div></div>`;
-      document.getElementById('btnExitFuRound').addEventListener('click', exitFollowUpRound);
-      return;
-    }
-    const n = l.next, isCall = n.type === 'chiamata';
-    const late = n.date < TODAY();
-    const lastNote = (l.history || []).filter(h => h.k === 'nota' && h.s).pop();
-    const outs = isCall
-      ? [['non_risposto', 'Non risposto', 'conta come follow-up'], ['non_interessato', 'Non più interessato', 'il lead è Perso'], ['da_richiamare', 'Da richiamare', 'scegli il giorno'],
-        ['appuntamento', 'Appuntamento fissato', 'nasce l\'appuntamento'], ['skip', 'Posticipato', 'resta nel round, dopo'], ['annullo', 'Rimuovi dal round', 'il follow-up si cancella']]
-      : [['fatto', 'Fatto', 'poi scegli la prossima azione'], ['skip', 'Skip', 'resta nel round, dopo'], ['annullo', 'Annullo', 'il follow-up si cancella']];
-    appRoot.innerHTML = `<div class="session-screen">${top}
-      <div class="session-body"><div class="session-main-col">
-        <div class="card recov-hero">
-          <span class="role-badge venditore">${actLabel(n)}</span>
-          <div class="recov-hero-name">${leadName(l)}</div>
-          ${centroTxt(l) ? `<div class="text-dim">${centroTxt(l)}</div>` : ''}
-          <div class="recov-hero-phone-row">
-            <span class="recov-hero-phone">${l.phone ? esc(l.phone) : 'Nessun numero salvato'}</span>
-            ${l.phone ? `<button class="crm-copy-phone-btn" id="btnCopyFuPhone" title="Copia numero">⧉</button>` : ''}
-          </div>
-          <div class="recov-hero-counter">${late ? `<span class="late-tag">era per ${fmtShort(n.date)}</span>` : 'per oggi'}${n.note ? ` · <q>${esc(n.note)}</q>` : ''}</div>
-          ${fuCounterHtml(l)}
-          ${lastNote ? `<p class="text-dim" style="margin:8px 0 0;">Ultima nota: ${esc(lastNote.s)}</p>` : ''}
-          <button class="linkish" id="btnFuOpenLead">Apri la scheda del lead</button>
-        </div>
-        <div class="outcome-grid">${outs.map(([k, t, sub]) => `<button class="outcome-btn ${k === 'annullo' ? 'outcome-btn-danger' : ''}" data-fu-out="${k}">${t}<span class="outcome-btn-sub">${sub}</span></button>`).join('')}</div>
-      </div></div></div>`;
-    document.getElementById('btnExitFuRound').addEventListener('click', exitFollowUpRound);
-    document.getElementById('btnFuOpenLead').addEventListener('click', () => {
-      db.followUpRoundActive = false; db.followUpRoundCurrentLeadId = null; persist();
-      document.body.classList.remove('in-session'); ui.leadTab = 'storico'; location.hash = '#/lead/' + l.id; renderRoute();
-    });
-    const copyBtn = document.getElementById('btnCopyFuPhone');
-    if (copyBtn) copyBtn.addEventListener('click', async () => { const ok = await copyToClipboard(l.phone); showToast(ok ? 'Numero copiato.' : 'Seleziona e copia il numero.', !ok); });
-    const nextLead = () => { db.followUpRoundCurrentLeadId = null; persist(); renderFollowUpRound(); };
-    appRoot.querySelectorAll('[data-fu-out]').forEach(b => b.addEventListener('click', () => {
-      const out = b.dataset.fuOut;
-      if (!l.next) { nextLead(); return; } // finestra "e adesso?" chiusa con Esc: si va avanti
-      if (out === 'skip') { l.next.skippedAt = new Date().toISOString(); nextLead(); return; }
-      if (out === 'annullo') {
-        addHistory(l, { k: 'stato', t: actDef(n).l + ' annullata', s: 'Round Follow-up' });
-        l.next = null; nextLead(); return;
-      }
-      if (out === 'fatto' || out === 'non_risposto') {
-        if (isCall) logLeadFollowUpCall(l, 'non_risposto');
-        const freddo = markFollowUpDone(l, isCall ? 'non ha risposto' : 'fatto');
-        persist();
-        if (freddo) { nextLead(); showToast(`${l.name}: ${FREDDO_DOPO}° follow-up senza appuntamento, ora è Freddo.`); return; }
-        // Si passa al lead dopo solo quando la finestra si chiude (Salva o Nessun follow-up).
-        askNextFollowUp(l, n.type, nextLead);
-        return;
-      }
-      if (out === 'non_interessato') {
-        logLeadFollowUpCall(l, 'non_interessato');
-        addHistory(l, { k: 'azione', t: actDef(n).l + ' · non più interessato', s: 'Round Follow-up' });
-        addHistory(l, { k: 'stato', t: 'Stato: Perso', s: 'non più interessato' });
-        l.stato = 'Perso'; l.next = null; closeRecovery(l); nextLead(); return;
-      }
-      if (out === 'da_richiamare') {
-        modal(`<h3>Da richiamare · ${leadName(l)}</h3>
-          <label class="mblock" style="display:block"><span class="mlabel">Giorno</span><input type="date" class="ld-input" id="rcDate" value="${workDay(1)}"></label>
-          <div class="modal-actions"><button class="btn-ghost" id="rcCancel">Annulla</button><button class="btn-primary" id="rcSave">Salva</button></div>`, box => {
-          box.querySelector('#rcCancel').addEventListener('click', closeModal);
-          box.querySelector('#rcSave').addEventListener('click', () => {
-            const d = box.querySelector('#rcDate').value; if (!d) return;
-            logLeadFollowUpCall(l, 'ha_risposto');
-            const freddo = markFollowUpDone(l, 'da richiamare');
-            if (!freddo) l.next = { type: 'chiamata', date: d, time: '', note: 'Da richiamare' };
-            closeModal(); nextLead();
-            showToast(freddo ? `${l.name}: ${FREDDO_DOPO}° follow-up senza appuntamento, ora è Freddo.` : 'Da richiamare ' + fmtShort(d) + '.');
-          });
-        });
-        return;
-      }
-      if (out === 'appuntamento') {
-        modal(`<h3>Appuntamento fissato · ${leadName(l)}</h3>
-          <label class="mblock" style="display:block"><span class="mlabel">Data e ora</span><input type="datetime-local" class="ld-input" id="faAt" value=""></label>
-          <div class="mwarn" id="faWarn"></div>
-          <div class="modal-actions"><button class="btn-ghost" id="faCancel">Annulla</button><button class="btn-primary" id="faSave">Salva</button></div>`, box => {
-          box.querySelector('#faCancel').addEventListener('click', closeModal);
-          box.querySelector('#faSave').addEventListener('click', () => {
-            const at = box.querySelector('#faAt').value;
-            if (!at) { box.querySelector('#faWarn').textContent = 'Scegli data e ora.'; return; }
-            logLeadFollowUpCall(l, 'appuntamento_fissato');
-            addHistory(l, { k: 'azione', t: actDef(n).l + ' · appuntamento fissato', s: 'Round Follow-up · ' + fmtDT(at) });
-            if (l.stato === 'Follow-up' || l.stato === 'Nuovo') { addHistory(l, { k: 'stato', t: 'Stato: In trattativa', s: 'appuntamento fissato' }); l.stato = 'Trattativa'; }
-            addApptToLead(l, at, '');
-            closeModal(); nextLead(); showToast('Appuntamento creato per ' + fmtDT(at) + '.');
-          });
-        });
-      }
-    }));
-  }
-
-  /** "Da richiamare" dal Round Recupero su un lead Venditore aperto (Simone, 24/10: una riga
-   * sola): niente Da richiamare Setter, il lead prende una 📞 Chiamata nel Round Follow-up
-   * per il giorno scelto. false = non è un lead Venditore aperto (resta il Da richiamare). */
-  function recoveryCallLater(entry, done) {
-    const l = isOn() && leadOfEntry(entry);
-    if (!l || !isOpen(l)) return false;
-    modal(`<h3>Da richiamare · ${leadName(l)}</h3>
-      <p class="modal-sub">Il lead va nel Round Follow-up il giorno scelto.</p>
-      <label class="mblock" style="display:block"><span class="mlabel">Giorno</span><input type="date" class="ld-input" id="rlDate" value="${workDay(1)}"></label>
-      <div class="modal-actions"><button class="btn-ghost" id="rlCancel">Annulla</button><button class="btn-primary" id="rlSave">Salva</button></div>`, box => {
-      box.querySelector('#rlCancel').addEventListener('click', closeModal);
-      box.querySelector('#rlSave').addEventListener('click', () => {
-        const d = box.querySelector('#rlDate').value; if (!d) return;
-        addHistory(l, { k: 'azione', t: AZIONI.recupero.l + ' · da richiamare', s: 'Round Recupero · ' + fmtShort(d) });
-        l.next = { type: 'chiamata', date: d, time: '', note: 'Da richiamare (Round Recupero)' };
-        closeModal(); done();
-      });
-    });
-    return true;
+    openApptMenu(l, apptId, () => renderRoute());
   }
 
   /** Nuovo appuntamento Venditore per un lead ("Appuntamento fissato per" nel Fatto, "+ Appuntamento"). */
@@ -908,48 +487,6 @@ const LeadCRM = (function () {
     db.appointments.unshift(apt);
     addHistory(l, { k: 'azione', t: 'Appuntamento fissato', s: 'Per ' + fmtDT(when) });
     return apt;
-  }
-
-  /* ===================== Sposta azione ===================== */
-  function openSposta(leadId) {
-    const l = leadById(leadId); if (!l || !l.next) return; const n = l.next;
-    modal(`
-      <h3>Sposta · ${leadName(l)}</h3>
-      <p class="modal-sub">${actLabel(n)} · era ${relDay(n.date)}</p>
-      <div class="mrow">
-        <label><span class="mlabel">Nuovo giorno</span><input type="date" class="ld-input" id="sDate" value="${workDay(1)}"></label>
-        <label><span class="mlabel">Ora (facoltativa)</span><input type="time" class="ld-input" id="sTime" value="${n.time || ''}"></label>
-      </div>
-      <div class="modal-actions"><button class="btn-ghost" id="sCancel">Annulla</button><button class="btn-primary" id="sSave">Sposta</button></div>
-    `, box => {
-      box.querySelector('#sCancel').addEventListener('click', closeModal);
-      box.querySelector('#sSave').addEventListener('click', () => {
-        const d = box.querySelector('#sDate').value; if (!d) return;
-        addHistory(l, { k: 'stato', t: actDef(n).l + ' spostata', s: 'da ' + fmtShort(n.date) + ' a ' + fmtShort(d) });
-        n.date = d; n.time = box.querySelector('#sTime').value;
-        persist(); rerender(); showToast('Spostata a ' + relDay(d) + '.');
-      });
-    });
-  }
-
-  /* ===================== Imposta / cambia prossima azione ===================== */
-  function openSetNext(leadId) {
-    const l = leadById(leadId); if (!l) return;
-    modal(`
-      <h3>Prossima azione · ${leadName(l)}</h3>
-      ${nextBlockHtml('n', { def: l.next && FU_TYPES.includes(l.next.type) ? l.next : { type: 'chiamata', date: workDay(1) } })}
-      <div class="mwarn" id="nWarn"></div>
-      <div class="modal-actions"><button class="btn-ghost" id="nCancel">Annulla</button><button class="btn-primary" id="nSave">Salva</button></div>
-    `, box => {
-      box.querySelector('#nCancel').addEventListener('click', closeModal); wireNextBlock(box, 'n');
-      box.querySelector('#nSave').addEventListener('click', () => {
-        const r = readNextBlock(box, 'n');
-        if (!r.next.date) { box.querySelector('#nWarn').textContent = 'Scegli il giorno.'; return; }
-        l.next = r.next;
-        if (l.stato === 'Nuovo' && svoltiCount(l)) l.stato = 'Trattativa';
-        persist(); rerender(); showToast('Prossima azione salvata.');
-      });
-    });
   }
 
   /* ===================== Venditore → Lead (lista) =====================
@@ -988,9 +525,8 @@ const LeadCRM = (function () {
     const qPhone = String(ui.search).replace(/\D/g, '');
     let rows = leads().filter(F[ui.leadFilter][1]).filter(l => !q || normName(l.name + ' ' + l.centro + ' ' + l.city).includes(q) || (qPhone.length >= 3 && String(l.phone).replace(/\D/g, '').includes(qPhone)));
     const sortKey = l => {
-      if (missingNext(l)) return '0';
-      if (l.next) return '1' + l.next.date + (l.next.time || '');
       const pa = pendingAppt(l); if (pa) return '1' + String(pa.scheduledAt).replace('T', '');
+      if (inRecoveryRound(l)) return '2';
       return '9' + normName(l.name);
     };
     rows.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
@@ -1018,15 +554,14 @@ const LeadCRM = (function () {
       </section>
       <section class="card crm-table-wrap lead-list-card">
         <div class="lead-list-head"><span class="appt-list-title">Lead</span><span class="count-pill">${rows.length}</span></div>
-        ${rows.length ? `<table class="crm-table leads-tbl"><thead><tr><th>Lead</th><th>Stato</th><th>Appuntamenti</th><th>Prossima azione</th><th>Quando</th><th>Setter</th><th></th></tr></thead><tbody>
+        ${rows.length ? `<table class="crm-table leads-tbl"><thead><tr><th>Lead</th><th>Stato</th><th>Appuntamenti</th><th>Prossimo passo</th><th>Quando</th><th>Setter</th><th></th></tr></thead><tbody>
         ${rows.map(l => {
           const sv = svoltiCount(l); const pend = pendingAppt(l);
           let azione = '<span class="sub">—</span>', quando = '';
-          if (missingNext(l)) azione = '<span class="miss">⚠️ Manca</span>';
-          else if (inRecoveryRound(l)) { azione = '🔁 Nel Round Recupero'; quando = ''; }
-          else if (l.next) { azione = actLabel(l.next); quando = `<span class="${l.next.date < TODAY() ? 'red' : ''}">${relDay(l.next.date)}${l.next.time ? ' ' + l.next.time : ''}</span>`; }
-          else if (noFollowUp(l)) { const gg = daysSinceFu(l); azione = '<span class="miss">Nessun follow-up</span>'; quando = `<span class="red">da ${gg} ${gg === 1 ? 'giorno' : 'giorni'}</span>`; }
-          else if (pend) { azione = '📅 ' + nOrd(apptNumber(pend)) + ' appuntamento'; quando = isDue(pend) ? '<span class="red">da esitare</span>' : relDay(String(pend.scheduledAt).slice(0, 10)) + ' ' + String(pend.scheduledAt).slice(11, 16); }
+          // Simone, 30/10: niente più follow-up nel tool. Il prossimo passo è l'appuntamento
+          // in programma (o da esitare) oppure il Round Recupero.
+          if (pend) { azione = '📅 ' + nOrd(apptNumber(pend)) + ' appuntamento'; quando = isDue(pend) ? '<span class="red">da esitare</span>' : relDay(String(pend.scheduledAt).slice(0, 10)) + ' ' + String(pend.scheduledAt).slice(11, 16); }
+          else if (inRecoveryRound(l)) azione = '🔁 Nel Round Recupero';
           return `<tr data-lead-row="${l.id}">
             <td class="crm-cell-center"><button class="who" data-lead="${l.id}">${leadName(l)}</button>${centroTxt(l) ? `<div class="sub">${centroTxt(l)}</div>` : ''}${leadMissingCenter(l) ? `<div><button type="button" class="cm-tag-btn" data-lead-center="${l.id}" title="Aggiungi il nome del centro">${centerMissingTagHtml()}</button></div>` : ''}</td>
             <td class="crm-cell-center">${stPill(l.stato)}</td>
@@ -1250,51 +785,6 @@ const LeadCRM = (function () {
   function renderLead(id) {
     if (ensureLeads()) persist();
     const l = leadById(id); if (!l) { location.hash = '#/venditore-lead'; return; }
-    const pend = pendingAppt(l);
-    let nextHtml;
-    if (inRecoveryRound(l)) {
-      nextHtml = `<section class="card next-card">
-        <div class="card-label">Cosa fare adesso</div>
-        <div class="next-big">🔁 Nel Round Recupero</div>
-        <div class="next-meta">Lo richiami dal Round Recupero, in Setting → Appuntamenti.</div>
-        ${l.fuNoAnswer ? `<div class="counter-line">Senza risposta: <b>${l.fuNoAnswer} di ${FREDDO_DOPO}</b><span class="dots6">${Array.from({ length: FREDDO_DOPO }, (_, i) => `<i class="${i < l.fuNoAnswer ? 'on' : ''}"></i>`).join('')}</span></div>` : ''}
-        <div class="row-btns"><button class="btn-primary" data-open-round="${recoveryEntryFor(l).id}">Chiamalo ora</button></div>
-      </section>`;
-    } else if (l.next) {
-      const late = l.next.date < TODAY();
-      nextHtml = `<section class="card next-card ${late ? 'is-late' : ''}">
-        <div class="card-label">Cosa fare adesso ${late ? '<span class="late-tag">in ritardo</span>' : ''}</div>
-        <div class="next-big">${actLabel(l.next)}</div>
-        <div class="next-meta">${relDay(l.next.date)} · ${fmtShort(l.next.date)}${l.next.time ? ' · ore ' + l.next.time : ''}${l.next.apptAt ? ' · appuntamento per ' + fmtDT(l.next.apptAt) : ''}</div>
-        ${l.next.note ? `<div>"${esc(l.next.note)}"</div>` : ''}
-        ${l.fuNoAnswer ? fuCounterHtml(l) : ''}
-        <div class="row-btns"><button class="btn-primary" data-done="${l.id}">${l.next.type === 'chiamata' ? 'Chiama ora' : 'Fatto'}</button><button class="linkish" data-move="${l.id}">Sposta</button><button class="linkish" data-setnext="${l.id}">Cambia</button></div>
-      </section>`;
-    } else if (pend) {
-      const st = setterOf(pend);
-      nextHtml = `<section class="card next-card">
-        <div class="card-label">Cosa fare adesso</div>
-        <div class="next-big">📅 ${nOrd(apptNumber(pend))} appuntamento</div>
-        <div class="next-meta">${fmtDT(pend.scheduledAt)}${st ? ' · Setter ' + esc(st) : ''}</div>
-        <div class="row-btns">${isDue(pend) ? `<button class="btn-primary" data-esita="${pend.id}">Com'è finita?</button>` : ''}<button class="linkish" data-setnext="${l.id}">Aggiungi azione</button></div>
-      </section>`;
-    } else if (noFollowUp(l)) {
-      const gg = daysSinceFu(l);
-      nextHtml = `<section class="card next-card is-missing">
-        <div class="card-label">Cosa fare adesso</div>
-        <p class="ld-p">Nessun follow-up in programma · <b class="late-tag">${gg ? 'ultimo ' + gg + (gg === 1 ? ' giorno' : ' giorni') + ' fa' : 'ultimo oggi'}</b></p>
-        ${l.fuNoAnswer ? fuCounterHtml(l) : ''}
-        <div class="row-btns"><button class="btn-primary" data-setnext="${l.id}">Imposta follow-up</button></div>
-      </section>`;
-    } else if (isOpen(l)) {
-      nextHtml = `<section class="card next-card is-missing">
-        <div class="card-label">Cosa fare adesso <span class="late-tag">manca</span></div>
-        <p class="ld-p">Questo lead è aperto ma non ha niente in programma.</p>
-        <div class="row-btns"><button class="btn-primary" data-setnext="${l.id}">Imposta prossima azione</button></div>
-      </section>`;
-    } else {
-      nextHtml = `<section class="card"><div class="card-label">Cosa fare adesso</div><p class="text-dim ld-p">${l.stato === 'Cliente' ? 'Cliente: niente da inseguire. Controlla le rate in Pagamenti.' : l.stato === 'Freddo' ? 'Freddo: nessuna azione. Puoi riaprirlo cambiando lo stato.' : 'Perso: nessuna azione. Puoi riaprirlo cambiando lo stato.'}</p></section>`;
-    }
     const tab = ui.leadTab;
     appRoot.innerHTML = `
       <div class="ld-top"><button class="ld-back" data-back="1">← Tutti i lead</button><button class="btn-icon ld-del-btn" id="leadDelete" title="Elimina il lead e i suoi appuntamenti" aria-label="Elimina il lead">🗑</button></div>
@@ -1309,7 +799,6 @@ const LeadCRM = (function () {
             <div class="ld-head-line ld-phone">${l.phone ? `<a href="tel:${esc(String(l.phone).replace(/\s/g, ''))}">${esc(l.phone)}</a> <button class="copy-mini" id="leadCopy">copia</button>` : '<span class="text-dim">Nessun telefono</span>'}</div>
             <button class="linkish ld-edit-link" id="leadEditData">✎ Modifica dati</button>
           </section>
-          ${nextHtml}
           ${apptsCardHtml(l)}
         </div>
         <div class="lead-col">
@@ -1356,7 +845,6 @@ const LeadCRM = (function () {
         delete l.prevNext;
       }
       persist(); renderLead(id);
-      if (missingNext(l)) openSetNext(l.id);
     });
     document.getElementById('leadDelete').addEventListener('click', () => openDeleteLead(l.id));
     wireApptsCard(l);
@@ -1403,7 +891,7 @@ const LeadCRM = (function () {
     appRoot.querySelectorAll('[data-appt-menu]').forEach(b => b.addEventListener('click', () => openApptMenu(l, b.dataset.apptMenu)));
   }
   /** ⋯ di un appuntamento: data e ora, esito (tendina colorata), € Pagamenti se chiuso, Elimina. */
-  function openApptMenu(l, apptId) {
+  function openApptMenu(l, apptId, onDone) {
     const a = db.appointments.find(x => x.id === apptId); if (!a) return;
     const opts = `<option value="" ${!a.dealStage ? 'selected' : ''}>— Da impostare —</option>` +
       DEAL_STAGES.map(s => `<option value="${s.key}" ${a.dealStage === s.key ? 'selected' : ''}>${esc(s.label)}</option>`).join('');
@@ -1418,12 +906,12 @@ const LeadCRM = (function () {
       </div>
     `, box => {
       box.querySelector('#apMenuClose').addEventListener('click', closeModal);
-      wireApptControls(l, box);
+      wireApptControls(l, box, onDone);
     });
   }
   /** Comandi di un appuntamento (dentro il ⋯): stesse regole della vecchia riga. */
-  function wireApptControls(l, root) {
-    const again = () => { closeModal(); if (leadById(l.id)) renderLead(l.id); else { location.hash = '#/venditore-lead'; renderRoute(); } };
+  function wireApptControls(l, root, onDone) {
+    const again = () => { closeModal(); if (onDone) { onDone(); return; } if (leadById(l.id)) renderLead(l.id); else { location.hash = '#/venditore-lead'; renderRoute(); } };
     const find = id => db.appointments.find(a => a.id === id);
     root.querySelectorAll('[data-appt-when]').forEach(inp => inp.addEventListener('change', () => {
       const a = find(inp.dataset.apptWhen); if (!a || !inp.value) return;
@@ -1461,7 +949,7 @@ const LeadCRM = (function () {
       again();
     }));
     root.querySelectorAll('[data-appt-pay]').forEach(b => b.addEventListener('click', () => {
-      closeModal(); ui.payApptId = b.dataset.apptPay; ui.leadTab = 'pagamenti'; renderLead(l.id);
+      closeModal(); ui.payApptId = b.dataset.apptPay; ui.leadTab = 'pagamenti'; location.hash = '#/lead/' + l.id; renderRoute();
     }));
     root.querySelectorAll('[data-appt-del]').forEach(b => b.addEventListener('click', () => {
       const a = find(b.dataset.apptDel); if (!a) return;
@@ -1581,21 +1069,17 @@ const LeadCRM = (function () {
     const clienti = leads().filter(l => l.stato === 'Cliente' && (() => { const c = lastClosedAppt(l); return !range || (c && inR(c.scheduledAt)); })());
     const cFu = clienti.filter(l => l.wasFollowUp).length;
     const pctFu = clienti.length ? Math.round(cFu / clienti.length * 100) : 0;
-    const az = leads().flatMap(l => (l.history || []).filter(h => (h.k === 'azione' || h.k === 'late') && h.t !== 'Appuntamento fissato' && inR(h.d)));
-    const inT = az.filter(h => !h.late).length, rit = az.filter(h => h.late).length;
-    return { show2, p2, n2, pctFu, cFu, clienti: clienti.length, inT, rit };
+    return { show2, p2, n2, pctFu, cFu, clienti: clienti.length };
   }
 
   function renderNewStatsSection(range) {
-    const { show2, p2, n2, pctFu, cFu, clienti, inT, rit } = newStatsValues(range);
-    const tot = inT + rit || 1;
+    const { show2, p2, n2, pctFu, cFu, clienti } = newStatsValues(range);
     return `
       <section class="card">
         <h3 class="ld-h3">Numeri dei lead</h3>
         <div class="new-stats">
           <div class="nstat"><span class="lab">Show rate 2° appuntamento</span><span class="val">${show2}%</span><div class="meter"><i class="ok" style="width:${show2}%"></i></div><span class="formula">${p2} presentati ÷ (${p2} presentati + ${n2} no show) dal 2° appuntamento in poi</span></div>
           <div class="nstat"><span class="lab">Chiuse in follow-up</span><span class="val">${pctFu}%</span><div class="meter"><i style="width:${pctFu}%"></i></div><span class="formula">${cFu} clienti passati da Follow-up ÷ ${clienti} clienti</span></div>
-          <div class="nstat"><span class="lab">Follow-up in tempo</span><span class="val">${inT} <small>in tempo</small> · <span class="late-tag">${rit}</span> <small>in ritardo</small></span><div class="meter"><i class="ok" style="width:${inT / tot * 100}%"></i><i class="ko" style="width:${rit / tot * 100}%"></i></div><span class="formula">azioni fatte entro il giorno previsto / dopo</span></div>
         </div>
       </section>`;
   }
@@ -1649,6 +1133,6 @@ const LeadCRM = (function () {
   return {
     isOn, applyNav, ensureLeads, dashboardTaskItems, renderLeadList, renderLead, renderNewStatsSection, newStatsValues,
     wireRowButtons, accountToggleHtml, wireAccountToggle,
-    parseApptName, onRecoveryOutcome, addApptFromRecovery, recoveryCallLater, renderFollowUpRound, reportInfo, onInstallmentPaid
+    parseApptName, onRecoveryOutcome, addApptFromRecovery, reportInfo, onInstallmentPaid
   };
 })();
