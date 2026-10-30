@@ -571,6 +571,29 @@ function hourlyBarsHtml(hours, valueOf, labelOf, tipOf, maxV) {
   }).join('');
   return `<div class="cchart-wrap"><div class="cchart-scroll"><div class="cchart-cols">${cols}</div></div></div>`;
 }
+/** Tasso di risposta come mappa di calore (Simone, 30/10: opzione C): una casella per ora,
+ * più accesa = rispondono di più (scala dal tasso più basso al più alto delle ore con almeno 5
+ * chiamate, così le differenze si vedono). Ore con
+ * meno di 5 chiamate in grigio tratteggiato: il dato non è affidabile. */
+const HOURLY_MIN_CALLS = 5;
+function hourlyHeatHtml(d, rate) {
+  const solid = d.hours.filter(h => d.calls[h] >= HOURLY_MIN_CALLS);
+  const rates = solid.map(rate);
+  const minR = rates.length ? Math.min(...rates) : 0, maxR = rates.length ? Math.max(...rates) : 0;
+  const level = r => (maxR > minR ? (r - minR) / (maxR - minR) : 1);
+  const cells = d.hours.map(h => {
+    const n = d.calls[h], low = n > 0 && n < HOURLY_MIN_CALLS;
+    const a = n && !low ? 0.18 + level(rate(h)) * 0.82 : 0;
+    const style = a ? ` style="background:color-mix(in srgb, var(--accent-500) ${Math.round(a * 100)}%, transparent);color:${a >= 0.6 ? 'var(--on-accent)' : 'var(--neutral-900)'}"` : '';
+    return `<div class="hheat-cell" title="${escapeHtml(n ? `ore ${h}: ${d.answered[h]} risposte su ${n} chiamate` : `ore ${h}: nessuna chiamata`)}">
+        <div class="hheat-box${low ? ' is-low' : ''}${n ? '' : ' is-empty'}"${style}>${n ? fmtPctIt(rate(h)) : ''}</div>
+        <div class="hheat-h">${h}</div>
+        <div class="hheat-n">${n ? n + ' ch.' : '—'}</div>
+      </div>`;
+  }).join('');
+  return `<div class="hheat-scroll"><div class="hheat" style="grid-template-columns:repeat(${d.hours.length}, minmax(52px, 1fr))">${cells}</div></div>
+    <div class="hheat-legend"><span>più basso</span><i></i><span>più alto</span><span class="hheat-legend-note">Grigio tratteggiato = meno di ${HOURLY_MIN_CALLS} chiamate</span></div>`;
+}
 function renderHourlyChartsSection(range) {
   const d = hourlyChartData(range);
   const totF = d.fissati.reduce((x, y) => x + y, 0);
@@ -585,7 +608,7 @@ function renderHourlyChartsSection(range) {
       ${totF ? hourlyBarsHtml(d.hours, h => d.fissati[h], h => String(d.fissati[h]), h => `ore ${h}: ${d.fissati[h]} ${d.fissati[h] === 1 ? 'fissato' : 'fissati'}`, maxF) : '<p class="text-dim checklist-chart-empty">Nessun appuntamento fissato in questo periodo.</p>'}
       <h3 class="hourly-second">Tasso di risposta per ora</h3>
       <p class="text-dim cchart-sub">Risposte su chiamate fatte (ogni tentativo) · ${totC} ${totC === 1 ? 'chiamata' : 'chiamate'} · ${per}</p>
-      ${totC ? hourlyBarsHtml(d.hours, rate, h => fmtPctIt(rate(h)) + ' · ' + d.calls[h], h => `ore ${h}: ${d.answered[h]} risposte su ${d.calls[h]} chiamate`, 100) : '<p class="text-dim checklist-chart-empty">Nessuna chiamata in questo periodo.</p>'}
+      ${totC ? hourlyHeatHtml(d, rate) : '<p class="text-dim checklist-chart-empty">Nessuna chiamata in questo periodo.</p>'}
     </section>`;
 }
 

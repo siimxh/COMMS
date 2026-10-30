@@ -2684,3 +2684,16 @@ body { overflow-wrap: break-word; }
 .hchart-col { cursor: default; }
 /* Cestino accanto a "Chiama" nei Da richiamare delle Task. */
 .task-del-btn { width: 32px; height: 32px; font-size: 0.9rem; }
+
+/* Tasso di risposta per ora: mappa di calore (Simone, 30/10, opzione C). */
+.hheat-scroll { overflow-x: auto; margin-top: 12px; padding-bottom: 4px; }
+.hheat { display: grid; gap: 8px; min-width: 0; }
+.hheat-cell { text-align: center; }
+.hheat-box { height: 64px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 0.86rem; font-weight: 700; border: var(--border-line); background: var(--neutral-50); color: var(--neutral-900); font-variant-numeric: tabular-nums; }
+.hheat-box.is-low { background: var(--neutral-100); color: var(--neutral-600); border-style: dashed; }
+.hheat-box.is-empty { background: var(--neutral-50); }
+.hheat-h { font-size: 0.82rem; margin-top: 6px; color: var(--neutral-900); }
+.hheat-n { font-size: 0.72rem; color: var(--neutral-600); margin-top: 1px; white-space: nowrap; }
+.hheat-legend { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; font-size: 0.78rem; color: var(--neutral-600); }
+.hheat-legend i { width: 140px; height: 10px; border-radius: 999px; background: linear-gradient(90deg, color-mix(in srgb, var(--accent-500) 18%, transparent), var(--accent-500)); }
+.hheat-legend-note { margin-left: auto; }

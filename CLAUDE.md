@@ -137,7 +137,7 @@ Cerca per nome funzione (`grep -n "function nome"`), i numeri di riga cambiano.
 - Report da copiare: `generateSessionReport`, `generateAppointmentsReport`, `generateVenditoreAppointmentsReport`.
 
 **Stats**
-- Setting: `renderSettingStatistiche` (KPI, grafici per ora `renderHourlyChartsSection`/`hourlyChartData`: appuntamenti fissati per ora di `createdAt`, spostati esclusi, e tasso di risposta per ora su OGNI chiamata, risposta = non `isNoAnswer` (richiesta di Hamza, Simone 30/10); divisione per tipo di chiamata `renderCallTypesSection`). Venditore: `renderVenditoreStatistiche` (+ `LeadCRM.renderNewStatsSection`). Niente "Esiti nel periodo" (decisione di Simone).
+- Setting: `renderSettingStatistiche` (KPI, grafici per ora `renderHourlyChartsSection`/`hourlyChartData`: appuntamenti fissati per ora di `createdAt`, spostati esclusi, e tasso di risposta per ora su OGNI chiamata, risposta = non `isNoAnswer`, come mappa di calore `hourlyHeatHtml` (scala dal tasso più basso al più alto, ore con meno di 5 chiamate in grigio) (richiesta di Hamza, Simone 30/10); divisione per tipo di chiamata `renderCallTypesSection`). Venditore: `renderVenditoreStatistiche` (+ `LeadCRM.renderNewStatsSection`). Niente "Esiti nel periodo" (decisione di Simone).
 
 **Sessioni di chiamata (Setter)**
 - Nuova sessione: `openNewSessionModal` → `startSessionAction` → `beginPipelineSession` / `createPipelineSession`.
